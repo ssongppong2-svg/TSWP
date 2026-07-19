@@ -36,6 +36,13 @@ namespace TSWP.Combat
         [SerializeField] private Color flashColor = Color.white;
         [SerializeField, Min(0f)] private float flashDuration = 0.08f;
 
+        [Header("타격 이펙트")]
+        [Tooltip("일반 타격에 재생할 이펙트 id (Art.VfxId).")]
+        [SerializeField] private string hitVfxId = Art.VfxId.HitNeutral;
+
+        [Tooltip("치명타에 재생할 이펙트 id.")]
+        [SerializeField] private string criticalVfxId = Art.VfxId.HitCritical;
+
         private Coroutine _hitStopRoutine;
         private Coroutine _shakeRoutine;
         private Transform _cameraTransform;
@@ -62,6 +69,21 @@ namespace TSWP.Combat
             PlayHitStop(isCritical);
             PlayShake(finalDamage);
             PlayFlash(target);
+            PlayVfx(target, isCritical);
+        }
+
+        /// <summary>타격 지점에 이펙트를 재생한다. VfxSpawner가 없으면 조용히 생략된다.</summary>
+        private void PlayVfx(CombatEntity target, bool isCritical)
+        {
+            if (target == null) return;
+
+            var spawner = Art.VfxSpawner.Instance;
+            if (spawner == null) return;
+
+            string id = isCritical ? criticalVfxId : hitVfxId;
+            if (string.IsNullOrEmpty(id)) return;
+
+            spawner.Play(id, target.transform.position);
         }
 
         // ── 히트스톱 ──────────────────────────────────────────────
