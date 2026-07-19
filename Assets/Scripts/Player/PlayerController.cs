@@ -23,7 +23,47 @@ namespace TSWP.Player
         [Header("이동")]
         [SerializeField] private float fallbackMoveSpeed = 5f;   // TODO(밸런스): 문서 미정 — PlayerStats 부재 시 임시 이동속도
         [SerializeField] private float runSpeedMultiplier = 1.5f; // TODO(밸런스): 문서 미정 — 달리기는 '이동속도 증가'만 확정
+
+        [Header("가속 (조작감)")]
+        [Tooltip("지상 가속도. 높을수록 즉각 반응하고, 낮을수록 묵직하다.")]
+        [SerializeField] private float groundAcceleration = 90f;  // TODO(밸런스): 플레이 테스트로 조정
+        [Tooltip("지상 감속도. 높을수록 칼같이 멈춘다(미끄러짐 감소).")]
+        [SerializeField] private float groundDeceleration = 110f;
+        [Tooltip("공중 가속도 — 지상보다 낮게 두면 공중 제어가 무겁게 느껴진다.")]
+        [SerializeField] private float airAcceleration = 55f;
+        [SerializeField] private float airDeceleration = 35f;
+
+        [Header("점프 (조작감)")]
         [SerializeField] private float jumpSpeed = 12f;           // TODO(밸런스): 문서 미정 — 점프 초기 속도
+        [Tooltip("발판에서 떨어진 뒤에도 점프를 받아주는 유예 시간(초). 낭떠러지 점프 실패를 줄인다.")]
+        [SerializeField] private float coyoteTime = 0.1f;
+        [Tooltip("착지 직전에 누른 점프를 기억하는 시간(초). 착지 순간 자동 발동한다.")]
+        [SerializeField] private float jumpBufferTime = 0.12f;
+        [Tooltip("점프 키를 일찍 뗐을 때 상승 속도에 곱하는 값. 낮을수록 짧은 점프가 확실히 낮아진다.")]
+        [Range(0f, 1f)][SerializeField] private float jumpCutMultiplier = 0.45f;
+        [Tooltip("하강 시 중력 배수. 1보다 크면 붕 뜨는 느낌이 줄고 낙하가 경쾌해진다.")]
+        [SerializeField] private float fallGravityMultiplier = 1.9f;
+        [Tooltip("점프 정점 부근에서 중력을 약간 줄여 체공 제어를 돕는다(1 = 사용 안 함).")]
+        [SerializeField] private float apexGravityMultiplier = 0.85f;
+        [Tooltip("정점 판정 기준 — 수직 속도 절댓값이 이 값보다 작으면 정점으로 본다.")]
+        [SerializeField] private float apexThreshold = 2.5f;
+
+        [Header("대쉬")]
+        // NOTE(문서 갱신 필요): 조작과 시스템.md v1.1에 없는 신규 조작 (우클릭).
+        [Tooltip("대쉬 속도.")]
+        [SerializeField] private float dashSpeed = 18f;           // TODO(밸런스): 문서 미정
+        [Tooltip("대쉬 지속 시간(초).")]
+        [SerializeField] private float dashDuration = 0.16f;
+        [Tooltip("대쉬 재사용 대기시간(초).")]
+        [SerializeField] private float dashCooldown = 0.6f;
+        [Tooltip("대쉬 중 무적 시간(초). 0이면 무적 없음.")]
+        // NOTE(기획 확인 필요): 게임 성경.md "모든 강력한 능력에는 반드시 위험이 따른다" —
+        //   무적 대쉬는 강력하므로 기본 0으로 두고 밸런스 논의 후 결정한다.
+        [SerializeField] private float dashInvincibility = 0f;
+        [Tooltip("대쉬 중 중력 무시 — 켜면 수평으로 곧게 날아간다.")]
+        [SerializeField] private bool dashIgnoresGravity = true;
+        [Tooltip("공중에서 사용 가능한 대쉬 횟수. 착지하면 회복된다.")]
+        [SerializeField] private int airDashCount = 1;
 
         [Header("접지 판정")]
         [SerializeField] private LayerMask groundMask = ~0;       // TODO(레벨): 지형 전용 레이어 확정 시 지정 (자기 콜라이더 제외 필요)
@@ -40,11 +80,23 @@ namespace TSWP.Player
         private IPlayerInput _input;
         private float _moveAxis;
         private bool _runHeld;
-        private bool _jumpQueued;            // Update에서 에지 수집 → FixedUpdate에서 소비 (물리 프레임 유실 방지)
+        private bool _jumpHeld;
         private int _facingSign = 1;         // +1 오른쪽 / -1 왼쪽 (Art.CharacterVisual flipX 연동 예정)
         private bool _gravityInverted;       // 밈 규칙 '중력 반전' 상태 // SYNC: 호스트 권위
         private float _baseGravityScale = 1f;
         private Vector2 _lastBodyPosition;
+
+        // 조작감 타이머 — Update에서 갱신, FixedUpdate에서 소비
+        private float _coyoteTimer;          // 발판을 떠난 뒤 남은 점프 유예
+        private float _jumpBufferTimer;      // 착지 전에 누른 점프 기억
+        private bool _isJumping;             // 상승 중인 점프가 진행 중인가 (가변 높이 판정용)
+
+        // 대쉬 상태
+        private float _dashTimer;            // 남은 대쉬 지속 시간
+        private float _dashCooldownTimer;
+        private int _airDashesLeft;
+        private int _dashDirection = 1;
+        private bool _dashQueued;
 
         // ── 외부 조회 ─────────────────────────────────────────────
         /// <summary>입력 소스. PlayerInteraction/PingEmitter/EmoteWheel이 공유 폴링한다.</summary>
@@ -57,6 +109,16 @@ namespace TSWP.Player
         public int FacingSign => _facingSign;
 
         public bool IsGravityInverted => _gravityInverted;
+
+        /// <summary>대쉬 중인가 (연출·무적·애니메이션 판정용).</summary>
+        public bool IsDashing => _dashTimer > 0f;
+
+        /// <summary>대쉬 쿨타임 진행률 0(방금 씀)~1(사용 가능) — HUD 표시용.</summary>
+        public float DashCooldownProgress =>
+            dashCooldown <= 0f ? 1f : 1f - Mathf.Clamp01(_dashCooldownTimer / dashCooldown);
+
+        /// <summary>중력 기준 '위' 방향 부호. 중력 반전 시 -1이 된다.</summary>
+        private float UpSign => _gravityInverted ? -1f : 1f;
 
         /// <summary>이동 가능 게이트 — 사망 + 상태이상(속박/기절/빙결) 종합. 이동·점프가 공용으로 사용.</summary>
         public bool CanMove =>
@@ -101,10 +163,43 @@ namespace TSWP.Player
         {
             if (_input == null) return;
 
+            float dt = Time.deltaTime;
+
             // ── 이동 입력 수집 (물리 적용은 FixedUpdate) ──
             _moveAxis = Mathf.Clamp(_input.MoveAxis, -1f, 1f);
             _runHeld = _input.RunHeld;
-            if (_input.JumpPressed) _jumpQueued = true;
+            _jumpHeld = _input.JumpHeld;
+
+            // ── 조작감 타이머 ──
+            // 코요테 타임: 접지 중엔 가득 채우고, 공중에선 줄어든다 → 발판을 막 벗어나도 잠시 점프 가능.
+            if (IsGrounded)
+            {
+                _coyoteTimer = coyoteTime;
+                _airDashesLeft = airDashCount; // 착지 시 공중 대쉬 회복
+                if (_body.linearVelocity.y * UpSign <= 0.01f) _isJumping = false;
+            }
+            else
+            {
+                _coyoteTimer -= dt;
+            }
+
+            // 점프 버퍼: 착지 직전에 누른 점프를 기억했다가 착지 순간 발동.
+            if (_input.JumpPressed) _jumpBufferTimer = jumpBufferTime;
+            else _jumpBufferTimer -= dt;
+
+            // 가변 점프 높이: 상승 중에 키를 떼면 즉시 상승을 잘라 낮게 뛴다.
+            if (_isJumping && !_jumpHeld && _body.linearVelocity.y * UpSign > 0f)
+            {
+                Vector2 v = _body.linearVelocity;
+                v.y *= jumpCutMultiplier;
+                _body.linearVelocity = v;
+                _isJumping = false;
+            }
+
+            // ── 대쉬 타이머 ──
+            if (_dashTimer > 0f) _dashTimer -= dt;
+            if (_dashCooldownTimer > 0f) _dashCooldownTimer -= dt;
+            if (_input.DashPressed) _dashQueued = true;
 
             // 바라보는 방향 갱신 (변조 전 원 입력 기준 — 혼란 중에도 의도 방향을 바라본다)
             if (_moveAxis > 0.01f) _facingSign = 1;
@@ -123,7 +218,31 @@ namespace TSWP.Player
 
         private void FixedUpdate()
         {
-            // ── 수평 이동 ──
+            float dt = Time.fixedDeltaTime;
+
+            // ── 대쉬 발동 판정 ──
+            if (_dashQueued)
+            {
+                _dashQueued = false;
+                TryStartDash();
+            }
+
+            // 대쉬 중에는 일반 이동/중력 로직을 건너뛰고 고정 속도로 밀어낸다.
+            if (IsDashing)
+            {
+                Vector2 dashVelocity = new Vector2(_dashDirection * dashSpeed, 0f);
+                if (dashIgnoresGravity)
+                    _body.gravityScale = 0f; // 물리 단계에서 중력이 누적되지 않도록 완전히 차단
+                else
+                    dashVelocity.y = _body.linearVelocity.y;
+
+                _body.linearVelocity = dashVelocity;
+
+                TrackMovedDistance();
+                return;
+            }
+
+            // ── 수평 이동 (가속 기반) ──
             // 상태이상 변조 경유: 공포(전체 반전)/혼란(x축 반전)/이동 차단 CC(0 벡터) — StatusEffectController 계약.
             Vector2 desired = new Vector2(_moveAxis, 0f);
             if (_statusController != null) desired = _statusController.MoveInputModifier(desired);
@@ -133,29 +252,101 @@ namespace TSWP.Player
             if (_runHeld) speed *= runSpeedMultiplier; // 스태미나 없음 — 게이트 없이 상시 적용
             if (_statusController != null) speed *= _statusController.GetMoveSpeedMultiplier(); // 감전/둔화
 
+            float targetSpeed = desired.x * speed;
+            bool grounded = IsGrounded;
+            bool accelerating = Mathf.Abs(targetSpeed) > 0.01f;
+
+            // 즉시 대입 대신 가속/감속으로 접근 — 둔함(가속 부족)과 미끄러짐(감속 부족)을 각각 조절한다.
+            float rate = grounded
+                ? (accelerating ? groundAcceleration : groundDeceleration)
+                : (accelerating ? airAcceleration : airDeceleration);
+
             Vector2 velocity = _body.linearVelocity;
-            velocity.x = desired.x * speed;
+            velocity.x = Mathf.MoveTowards(velocity.x, targetSpeed, rate * dt);
             // TODO(물리): 넉백 임펄스(Combat.KnockbackInfo)와 직접 속도 대입 간 간섭 — 넉백 중 입력 가속 보류 검토.
             _body.linearVelocity = velocity;
 
-            // ── 점프 (중력 반전 대응: 반전 시 아래로 도약) ──
-            if (_jumpQueued)
+            // ── 점프 (코요테 타임 + 버퍼, 중력 반전 대응) ──
+            if (_jumpBufferTimer > 0f && _coyoteTimer > 0f && CanMove)
             {
-                _jumpQueued = false;
-                if (CanMove && IsGrounded)
-                {
-                    Vector2 v = _body.linearVelocity;
-                    v.y = jumpSpeed * (_gravityInverted ? -1f : 1f);
-                    _body.linearVelocity = v;
-                    // TODO(조작감): 코요테 타임/점프 버퍼/가변 점프 높이 — 문서 미정 (점프는 플랫폼·회피·퍼즐 핵심).
-                }
+                _jumpBufferTimer = 0f;
+                _coyoteTimer = 0f;      // 연속 발동 방지
+                _isJumping = true;
+
+                Vector2 v = _body.linearVelocity;
+                v.y = jumpSpeed * UpSign;
+                _body.linearVelocity = v;
             }
 
-            // ── 이동 거리 훅 (출혈: 움직일수록 추가 피해 — StatusEffects.OnMoved) ──
+            ApplyGravityFeel();
+
+            TrackMovedDistance();
+        }
+
+        /// <summary>
+        /// 중력 체감 보정. 하강할 때 중력을 키워 '붕 뜨는' 느낌을 없애고,
+        /// 정점 부근에서는 살짝 줄여 공중 제어 여유를 준다.
+        /// </summary>
+        private void ApplyGravityFeel()
+        {
+            float verticalSpeed = _body.linearVelocity.y * UpSign; // 양수 = 상승
+            float multiplier = 1f;
+
+            if (verticalSpeed < -0.01f)
+            {
+                multiplier = fallGravityMultiplier;              // 하강 — 빠르게 떨어진다
+            }
+            else if (Mathf.Abs(verticalSpeed) < apexThreshold && !IsGrounded)
+            {
+                multiplier = apexGravityMultiplier;              // 정점 — 잠깐 체공
+            }
+
+            _body.gravityScale = _baseGravityScale * multiplier * UpSign;
+        }
+
+        /// <summary>이동 거리 훅 (출혈: 움직일수록 추가 피해 — StatusEffects.OnMoved).</summary>
+        private void TrackMovedDistance()
+        {
             float moved = Vector2.Distance(_body.position, _lastBodyPosition);
             _lastBodyPosition = _body.position;
             if (moved > 0f) _statusController?.OnMoved(moved);
             // NOTE(기획 확인 필요): 낙하/넉백에 의한 이동도 출혈 피해에 포함할지 — 우선 전체 이동 거리 산정.
+        }
+
+        // ── 대쉬 ──────────────────────────────────────────────────
+
+        /// <summary>
+        /// 대쉬 시작 시도. 쿨타임·이동 가능 여부·공중 횟수를 검사한다.
+        /// 방향은 입력이 있으면 입력 방향, 없으면 바라보는 방향.
+        /// </summary>
+        private void TryStartDash()
+        {
+            if (IsDashing || _dashCooldownTimer > 0f) return;
+            if (!CanMove) return; // 기절·빙결·속박 중 대쉬 불가
+
+            bool grounded = IsGrounded;
+            if (!grounded)
+            {
+                if (_airDashesLeft <= 0) return;
+                _airDashesLeft--;
+            }
+
+            _dashDirection = Mathf.Abs(_moveAxis) > 0.01f ? (int)Mathf.Sign(_moveAxis) : _facingSign;
+            _dashTimer = dashDuration;
+            _dashCooldownTimer = dashCooldown;
+
+            // 대쉬 중 낙하 누적 속도 제거 — 수평으로 곧게 나가도록
+            if (dashIgnoresGravity)
+            {
+                Vector2 v = _body.linearVelocity;
+                v.y = 0f;
+                _body.linearVelocity = v;
+            }
+
+            if (dashInvincibility > 0f)
+                _entity?.SetInvincibleFor(dashInvincibility);
+
+            // TODO(연출): 잔상·먼지 파티클·대쉬 효과음 — Art 담당.
         }
 
         // ── 중력 반전 (밈 모드 규칙 훅) ──────────────────────────

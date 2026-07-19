@@ -75,7 +75,12 @@ namespace TSWP.Combat
                 }
             }
 
-            // 7) 통계/UI 통지 — 공격자가 플레이어일 때만 (환경·적 피해는 플레이어 통계 비대상).
+            // 7) 타격 연출 — 히트스톱·화면 흔들림·피격 플래시 (전투 시스템.md '공격은 명확해야 한다').
+            //    연출 서비스가 씬에 없으면 조용히 생략된다 (게임 로직은 연출에 의존하지 않는다).
+            if (finalDamage > 0f)
+                HitFeedback.Instance?.PlayHit(target, finalDamage, info.IsCritical);
+
+            // 8) 통계/UI 통지 — 공격자가 플레이어일 때만 (환경·적 피해는 플레이어 통계 비대상).
             //    wasFriendly는 트롤 통계(결과 화면 '가장 많은 트롤') 집계에 쓰인다.
             if (info.Source != null && info.Source.OwnerPlayerId >= 0)
                 GameEvents.RaiseDamageDealt(info.Source.OwnerPlayerId, finalDamage, friendly);

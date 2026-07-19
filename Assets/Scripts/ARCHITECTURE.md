@@ -143,7 +143,8 @@ public class ItemDropManager : MonoBehaviour { /* LootTable SO, 시작 아이템
 ### TSWP.Player
 
 ```csharp
-public interface IPlayerInput { /* MoveAxis, JumpPressed, RunHeld, AttackPressed, SkillPressed, InteractPressed, PingPressed, EmotePressed */ }
+// 조작 8종(문서 확정) + JumpHeld·DashPressed(조작감 보강으로 추가 — 조작과 시스템.md 갱신 필요)
+public interface IPlayerInput { /* MoveAxis, JumpPressed, JumpHeld, RunHeld, DashPressed, AttackPressed, SkillPressed, InteractPressed, PingPressed, EmotePressed */ }
 public class LegacyPlayerInput : IPlayerInput { /* UnityEngine.Input 기반. TODO: Input System 교체(리바인딩) */ }
 public class PlayerController : MonoBehaviour { /* A/D 이동, Space 점프, LShift 달리기(스태미나 없음), 중력반전 대응(gravityScale 부호), StatusEffectController.MoveInputModifier 경유 */ }
 public interface IInteractable { string PromptDescription { get; } bool CanInteract(PlayerController user); void Interact(PlayerController user); }

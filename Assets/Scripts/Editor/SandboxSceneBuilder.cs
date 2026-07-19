@@ -6,11 +6,14 @@
 //   기본값(~0 = 모든 레이어)이면 접지 판정이 자기 콜라이더를 감지해 무한 점프가 된다.
 //   여기서는 SerializedObject로 정확히 Ground 레이어만 지정한다.
 #if UNITY_EDITOR
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using TSWP.Art;
 using TSWP.Combat;
 using TSWP.Core;
 using TSWP.Jobs;
@@ -41,6 +44,7 @@ namespace TSWP.EditorTools
             CreateCamera(player);
             CreateHud(player);
             CreateManagers();
+            CreatePostFx(player);
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -206,6 +210,10 @@ namespace TSWP.EditorTools
 
             go.AddComponent<AudioListener>();
 
+            // 색수차 등 상태이상 화면 효과를 쓰려면 후처리를 켜야 한다 (URP).
+            var urpData = go.AddComponent<UniversalAdditionalCameraData>();
+            urpData.renderPostProcessing = true;
+
             var follow = go.AddComponent<SandboxCamera>();
             follow.SetTarget(player.transform);
         }
@@ -223,6 +231,90 @@ namespace TSWP.EditorTools
             var go = new GameObject("GameManagers");
             go.AddComponent<GameFlowManager>();
             go.AddComponent<RunManager>();
+
+            // 타격 연출 — DamageSystem이 피해 적용 직후 자동 호출한다.
+            go.AddComponent<TSWP.Combat.HitFeedback>();
+        }
+
+        /// <summary>상태이상 화면 효과(색수차 등)용 전역 Volume과 디버그 키를 구성한다.</summary>
+        private static void CreatePostFx(GameObject player)
+        {
+            var go = new GameObject("StatusEffectPostFx");
+
+            var volume = go.AddComponent<Volume>();
+            volume.isGlobal = true;
+            volume.priority = 10f; // 기본 볼륨보다 우선
+
+            go.AddComponent<StatusEffectPostFx>();
+
+            // 디버그 키 — 1~4로 상태이상을 걸어 화면 효과를 확인한다.
+            var debugKeys = go.AddComponent<SandboxDebugKeys>();
+            debugKeys.SetTarget(player.GetComponent<StatusEffectController>());
+            debugKeys.SetEffects(EnsureTestStatusEffects());
+        }
+
+        /// <summary>테스트용 상태이상 SO 4종을 생성한다 (혼란/공포/감전/중독).</summary>
+        private static List<StatusEffectData> EnsureTestStatusEffects()
+        {
+            const string folder = "Assets/Settings/StatusEffects";
+            Directory.CreateDirectory(folder);
+
+            var specs = new (StatusEffectType type, string ko, float moveMul, float atkSpeedMul)[]
+            {
+                (StatusEffectType.Confusion, "혼란", 1f, 1f),
+                (StatusEffectType.Fear,      "공포", 1f, 1f),
+                (StatusEffectType.Shock,     "감전", 0.6f, 0.6f),
+                (StatusEffectType.Poison,    "중독", 1f, 1f),
+            };
+
+            var result = new List<StatusEffectData>();
+
+            foreach (var spec in specs)
+            {
+                string path = $"{folder}/{spec.type}.asset";
+                var existing = AssetDatabase.LoadAssetAtPath<StatusEffectData>(path);
+
+                if (existing == null)
+                {
+                    existing = ScriptableObject.CreateInstance<StatusEffectData>();
+
+                    // private 필드라 SerializedObject로 채운다.
+                    var so = new SerializedObject(existing);
+                    SetProp(so, "effectType", (int)spec.type, isEnum: true);
+                    SetProp(so, "displayNameKo", spec.ko);
+                    SetProp(so, "duration", 6f);           // TODO(밸런스): 문서 미정 — 테스트용 값
+                    SetProp(so, "moveSpeedMultiplier", spec.moveMul);
+                    SetProp(so, "attackSpeedMultiplier", spec.atkSpeedMul);
+                    if (spec.type == StatusEffectType.Poison)
+                    {
+                        SetProp(so, "tickDamage", 2f);
+                        SetProp(so, "tickInterval", 1f);
+                    }
+                    so.ApplyModifiedPropertiesWithoutUndo();
+
+                    AssetDatabase.CreateAsset(existing, path);
+                }
+
+                result.Add(existing);
+            }
+
+            AssetDatabase.SaveAssets();
+            return result;
+        }
+
+        private static void SetProp(SerializedObject so, string name, object value, bool isEnum = false)
+        {
+            var prop = so.FindProperty(name);
+            if (prop == null) return;
+
+            switch (value)
+            {
+                case int i when isEnum: prop.enumValueIndex = i; break;
+                case int i: prop.intValue = i; break;
+                case float f: prop.floatValue = f; break;
+                case bool b: prop.boolValue = b; break;
+                case string s: prop.stringValue = s; break;
+            }
         }
 
         private static void CreateLighting()

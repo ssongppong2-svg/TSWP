@@ -16,6 +16,16 @@ namespace TSWP.Player
         /// <summary>점프 (Space) — 이번 프레임 눌림.</summary>
         bool JumpPressed { get; }
 
+        /// <summary>점프 키 유지 (Space) — 가변 점프 높이에 사용. 일찍 떼면 낮게 뛴다.</summary>
+        bool JumpHeld { get; }
+
+        /// <summary>
+        /// 대쉬 (마우스 우클릭) — 이번 프레임 눌림.
+        /// NOTE(문서 갱신 필요): 조작과 시스템.md v1.1의 조작 8종에 없는 신규 조작이다.
+        /// 게임 성경.md "재미가 현실성보다 우선한다"에 따라 조작감 강화를 위해 추가했다.
+        /// </summary>
+        bool DashPressed { get; }
+
         /// <summary>달리기 (Left Shift) — 누르고 있는 동안 true. 스태미나 없음, 언제든 사용 가능 (조작과 시스템.md).</summary>
         bool RunHeld { get; }
 

@@ -25,7 +25,16 @@ namespace TSWP.Player
 
         public bool JumpPressed => Input.GetKeyDown(KeyCode.Space);
 
+        /// <summary>가변 점프 높이용 — 떼는 순간 상승이 잘린다.</summary>
+        public bool JumpHeld => Input.GetKey(KeyCode.Space);
+
         public bool RunHeld => Input.GetKey(KeyCode.LeftShift);
+
+        /// <summary>
+        /// 대쉬 = 마우스 우클릭(1). 좌클릭 공격과 대칭이라 손가락 이동 없이 즉시 쓸 수 있다.
+        /// NOTE(문서 갱신 필요): 조작과 시스템.md에 대쉬 항목 추가 필요.
+        /// </summary>
+        public bool DashPressed => Input.GetMouseButtonDown(1);
 
         // TODO(조작감): 홀드 연사(GetMouseButton) 지원 여부 문서 미정 — 우선 단발 에지 입력 (공격 간격은 Jobs.BasicAttacker가 관리).
         public bool AttackPressed => Input.GetMouseButtonDown(0);
