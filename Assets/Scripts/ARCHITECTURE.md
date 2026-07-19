@@ -33,6 +33,8 @@
 | Meta/ | TSWP.Meta | 업적, 칭호, 플레이어 정체성(Steam 닉네임+칭호) |
 | Online/ | TSWP.Online | 로비/세션/재접속/채팅/보이스 설정 (전부 네트워크 도입 전 스텁) |
 | Art/ | TSWP.Art | 팔레트/색상 규칙 SO, 아트 규격, CharacterVisual |
+| Sandbox/ | TSWP.Sandbox | **임시** — 프로토타입 검증용 (허수아비/추적 카메라/IMGUI HUD). 실제 시스템 완성 시 삭제 |
+| Editor/ | TSWP.EditorTools | 에디터 전용 도구. 테스트 씬 자동 생성기 등 (Editor 폴더 = 에디터 어셈블리) |
 
 단일 어셈블리(asmdef 없음)이므로 네임스페이스 간 상호 참조는 자유다.
 단, **타입 정의 위치는 아래 §4의 소유권 표를 따른다** (중복 정의 금지).
