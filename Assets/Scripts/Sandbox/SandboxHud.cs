@@ -66,6 +66,13 @@ namespace TSWP.Sandbox
             if (_entity != null)
                 GUILayout.Label($"체력: {_entity.CurrentHp:0} / {_entity.MaxHp:0}", _labelStyle);
 
+#if UNITY_EDITOR
+            // 이펙트 풀 상태 — 활성 수가 계속 늘기만 하면 누수다(이펙트가 안 나오는 원인).
+            var spawner = TSWP.Art.VfxSpawner.Instance;
+            if (spawner != null)
+                GUILayout.Label($"이펙트: {spawner.DebugStatus}", _labelStyle);
+#endif
+
             GUILayout.EndArea();
         }
 

@@ -91,6 +91,10 @@ namespace TSWP.Player
         private float _jumpBufferTimer;      // 착지 전에 누른 점프 기억
         private bool _isJumping;             // 상승 중인 점프가 진행 중인가 (가변 높이 판정용)
 
+        /// <summary>접지 판정 버퍼 — 매 프레임 할당을 피한다.</summary>
+        private readonly Collider2D[] _groundHits = new Collider2D[8];
+        private ContactFilter2D _groundFilter;
+
         // 대쉬 상태
         private float _dashTimer;            // 남은 대쉬 지속 시간
         private float _dashCooldownTimer;
@@ -128,14 +132,37 @@ namespace TSWP.Player
         /// <summary>이동속도 — Core.StatCollection(StatType.MoveSpeed) 조회. 아이템 modifier가 즉시 반영된다.</summary>
         public float MoveSpeed => _stats != null ? _stats.GetValue(StatType.MoveSpeed) : fallbackMoveSpeed;
 
-        /// <summary>접지 여부 — 발밑 원 판정. 중력 반전 시 머리 위를 검사한다.</summary>
+        /// <summary>
+        /// 접지 여부 — 발밑 원 판정. 중력 반전 시 머리 위를 검사한다.
+        /// 자기 콜라이더는 제외하므로, groundMask에 캐릭터 레이어를 포함시켜
+        /// 적을 밟고 있을 때도 정상적으로 접지로 인식할 수 있다.
+        /// </summary>
         public bool IsGrounded
         {
             get
             {
                 Vector2 offset = groundCheckOffset;
                 if (_gravityInverted) offset.y = -offset.y;
-                return Physics2D.OverlapCircle(_body.position + offset, groundCheckRadius, groundMask) != null;
+
+                _groundFilter.SetLayerMask(groundMask);
+                _groundFilter.useLayerMask = true;
+                _groundFilter.useTriggers = false; // 트리거는 밟을 수 없다
+
+                int count = Physics2D.OverlapCircle(
+                    _body.position + offset, groundCheckRadius, _groundFilter, _groundHits);
+
+                for (int i = 0; i < count; i++)
+                {
+                    var hit = _groundHits[i];
+                    if (hit == null) continue;
+
+                    // 자기 자신(및 자식 콜라이더)은 접지 대상이 아니다.
+                    if (hit.transform == transform || hit.transform.IsChildOf(transform)) continue;
+
+                    return true;
+                }
+
+                return false;
             }
         }
 

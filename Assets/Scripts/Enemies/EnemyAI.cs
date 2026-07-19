@@ -44,6 +44,7 @@ namespace TSWP.Enemies
 
         private readonly EnemyAIContext _context = new EnemyAIContext();
         private readonly Collider2D[] _overlapBuffer = new Collider2D[16];
+        private ContactFilter2D _scanFilter;
 
         private float _decisionTimer;
         private float _attackCooldown;
@@ -85,7 +86,9 @@ namespace TSWP.Enemies
             _context.selfHealthRatio = _combat.MaxHp > 0f ? _combat.CurrentHp / _combat.MaxHp : 0f;
 
             // ① 최근접 생존 플레이어 + ⑥ 아군 적 위치
-            int hitCount = Physics2D.OverlapCircleNonAlloc(self, Mathf.Max(detectionRange, allyScanRadius), _overlapBuffer);
+            _scanFilter.useTriggers = false;
+            int hitCount = Physics2D.OverlapCircle(
+                self, Mathf.Max(detectionRange, allyScanRadius), _scanFilter, _overlapBuffer);
             float bestDistance = float.PositiveInfinity;
 
             for (int i = 0; i < hitCount; i++)

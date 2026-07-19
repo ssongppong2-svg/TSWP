@@ -102,10 +102,13 @@ namespace TSWP.EditorTools
 
             var controller = go.AddComponent<PlayerController>();
 
-            // 접지 판정은 Ground 레이어만 본다 (자기 콜라이더 오검출 방지 — 무한 점프 차단)
+            // 접지 판정 대상 = 지형 + 캐릭터(Default).
+            // PlayerController가 자기 콜라이더를 걸러내므로 Default를 포함해도 무한 점프가 나지 않고,
+            // 적을 밟고 있을 때도 정상적으로 접지로 인식된다.
             var so = new SerializedObject(controller);
             var maskProp = so.FindProperty("groundMask");
-            if (maskProp != null) maskProp.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
+            if (maskProp != null)
+                maskProp.intValue = (1 << LayerMask.NameToLayer(GroundLayerName)) | (1 << 0); // 0 = Default
 
             // 콜라이더 하단(-0.5) 바로 아래를 검사
             var offsetProp = so.FindProperty("groundCheckOffset");

@@ -23,6 +23,13 @@ namespace TSWP.Art
 
         public bool IsPlaying => _playing;
 
+        /// <summary>
+        /// 현재 풀에 들어가 있는가. 이중 반납을 막는 자물쇠 —
+        /// 이 값이 없으면 Play 실패 시 풀에 들어가면서도 '사용 중'으로 세어져
+        /// 카운터가 새고, 결국 모든 이펙트가 차단된다.
+        /// </summary>
+        internal bool IsPooled { get; set; } = true;
+
         private void Awake()
         {
             _renderer = GetComponent<SpriteRenderer>();

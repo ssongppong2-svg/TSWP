@@ -90,12 +90,19 @@ namespace TSWP.Art
 
             Color finalTint = tint ?? layer.tint;
 
+            // 풀에서 꺼낸 시점에 '사용 중'으로 표시한다.
+            // Play가 실패해 즉시 Stop→Release로 되돌아와도 카운터가 정확히 상쇄된다.
+            player.IsPooled = false;
+            _activeCount++;
+
             player.transform.position = position + offset;
             player.Play(layer.definition, flipX, finalTint, layer.scaleMultiplier, finalRotation, layer.speedMultiplier);
 
+            // Play가 실패했으면 이미 반납된 상태 — 호출 측에 넘기지 않는다.
+            if (player.IsPooled) return null;
+
             if (follow != null) player.SetFollow(follow, offset);
 
-            _activeCount++;
             return player;
         }
 
@@ -118,11 +125,16 @@ namespace TSWP.Art
             return player;
         }
 
-        /// <summary>VfxPlayer가 재생을 마치면 스스로 호출한다.</summary>
+        /// <summary>
+        /// VfxPlayer가 재생을 마치면 스스로 호출한다.
+        /// 이중 호출되어도 안전하다 — 같은 인스턴스가 풀에 두 번 들어가면
+        /// 서로 다른 두 이펙트가 하나의 오브젝트를 공유해 화면이 깨진다.
+        /// </summary>
         public void Release(VfxPlayer player)
         {
-            if (player == null) return;
+            if (player == null || player.IsPooled) return;
 
+            player.IsPooled = true;
             _activeCount = Mathf.Max(0, _activeCount - 1);
             player.transform.SetParent(transform);
             _pool.Push(player);
@@ -135,8 +147,14 @@ namespace TSWP.Art
             go.AddComponent<SpriteRenderer>();
             var player = go.AddComponent<VfxPlayer>();
             go.SetActive(false);
+            player.IsPooled = true;
             return player;
         }
+
+#if UNITY_EDITOR
+        /// <summary>진단용 — 인스펙터에서 누수를 확인할 수 있다.</summary>
+        public string DebugStatus => $"활성 {_activeCount} / 풀 {_pool.Count}";
+#endif
 
 #if UNITY_EDITOR
         public void SetLibrary(VfxLibrary value) => library = value;
