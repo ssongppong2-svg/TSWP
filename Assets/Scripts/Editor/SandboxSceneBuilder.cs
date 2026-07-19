@@ -77,6 +77,10 @@ namespace TSWP.EditorTools
             var collider = go.AddComponent<BoxCollider2D>();
             collider.size = new Vector2(1f, 1f);
 
+            // 마찰 0 — 공중에서 벽을 밀고 있어도 벽에 붙지 않고 정상 낙하한다.
+            // PlayerController가 매 FixedUpdate에 velocity.x를 직접 지정하므로 마찰이 필요 없다.
+            collider.sharedMaterial = EnsureZeroFrictionMaterial();
+
             // 전투 — 플레이어 진영, playerId 0
             var entity = go.AddComponent<CombatEntity>();
             SetPrivateField(entity, "team", (int)TeamType.Players, isEnum: true);
@@ -276,6 +280,30 @@ namespace TSWP.EditorTools
             }
 
             Debug.LogError("[TSWP] 빈 레이어 슬롯이 없어 Ground 레이어를 만들지 못했습니다.");
+        }
+
+        /// <summary>
+        /// 마찰 0 물리 머티리얼. 공중에서 벽에 밀착했을 때 마찰로 낙하가 멈추는 문제를 막는다
+        /// (2D 플랫포머의 전형적인 '벽 끼임' 현상).
+        /// </summary>
+        private static PhysicsMaterial2D EnsureZeroFrictionMaterial()
+        {
+            const string path = "Assets/Settings/Physics/NoFriction.physicsMaterial2D";
+
+            var existing = AssetDatabase.LoadAssetAtPath<PhysicsMaterial2D>(path);
+            if (existing != null) return existing;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+
+            var material = new PhysicsMaterial2D("NoFriction")
+            {
+                friction = 0f,   // 벽·바닥과의 마찰 제거
+                bounciness = 0f, // 튕김 없음
+            };
+
+            AssetDatabase.CreateAsset(material, path);
+            AssetDatabase.SaveAssets();
+            return material;
         }
 
         /// <summary>임시 흰 사각형 스프라이트를 생성한다 (실제 도트는 추후 교체).</summary>
