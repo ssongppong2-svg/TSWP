@@ -8,14 +8,6 @@ using TSWP.Core;
 
 namespace TSWP.UI
 {
-    /// <summary>표시 대기 중인 알림 1건.</summary>
-    public sealed class NotificationEntry
-    {
-        public NotificationType Type;
-        public string Message;
-        public float RemainingSeconds;
-    }
-
     /// <summary>
     /// 토스트 알림 큐. 실제 렌더링은 뷰 컴포넌트가 ActiveNotifications를 읽어 수행한다.
     /// </summary>
@@ -68,21 +60,24 @@ namespace TSWP.UI
 
         private void Update()
         {
-            float dt = Time.deltaTime;
+            float now = Time.unscaledTime;
             bool changed = false;
 
+            // 표시 시간이 지난 알림 제거 (RaisedTime 기준 — 일시정지 중에도 흐른다)
             for (int i = _active.Count - 1; i >= 0; i--)
             {
-                _active[i].RemainingSeconds -= dt;
-                if (_active[i].RemainingSeconds > 0f) continue;
+                if (now - _active[i].RaisedTime < displaySeconds) continue;
 
                 _active.RemoveAt(i);
                 changed = true;
             }
 
+            // 자리가 나면 대기 중인 알림을 올린다 (표시 시작 시각을 지금으로 갱신)
             while (_active.Count < maxVisible && _pending.Count > 0)
             {
-                _active.Add(_pending.Dequeue());
+                var entry = _pending.Dequeue();
+                entry.RaisedTime = now;
+                _active.Add(entry);
                 changed = true;
             }
 
@@ -90,14 +85,9 @@ namespace TSWP.UI
         }
 
         /// <summary>알림 표시 요청.</summary>
-        public void Push(NotificationType type, string message)
+        public void Push(NotificationType type, string message, string sourceId = null, Sprite icon = null)
         {
-            var entry = new NotificationEntry
-            {
-                Type = type,
-                Message = message,
-                RemainingSeconds = displaySeconds,
-            };
+            var entry = new NotificationEntry(type, message, sourceId, icon, Time.unscaledTime);
 
             if (_active.Count < maxVisible)
             {
@@ -114,18 +104,18 @@ namespace TSWP.UI
         // TODO(표시): id를 표시 문구로 변환 — AchievementData/ItemDefinition/BossData 조회 후 displayName 사용.
 
         private void OnAchievementUnlocked(string achievementId)
-            => Push(NotificationType.AchievementUnlocked, $"업적 달성: {achievementId}");
+            => Push(NotificationType.AchievementUnlocked, $"업적 달성: {achievementId}", achievementId);
 
         private void OnItemAcquired(int playerId, string itemCode)
-            => Push(NotificationType.ItemAcquired, $"아이템 획득: {itemCode}");
+            => Push(NotificationType.ItemAcquired, $"아이템 획득: {itemCode}", itemCode);
 
         private void OnBossAppeared(string bossId)
-            => Push(NotificationType.BossAppeared, $"보스 등장: {bossId}");
+            => Push(NotificationType.BossAppeared, $"보스 등장: {bossId}", bossId);
 
         private void OnPlayerDied(int playerId)
-            => Push(NotificationType.PlayerDeath, $"플레이어 {playerId} 사망");
+            => Push(NotificationType.PlayerDeath, $"플레이어 {playerId} 사망", playerId.ToString());
 
         private void OnPlayerRevived(int playerId)
-            => Push(NotificationType.PlayerRevived, $"플레이어 {playerId} 부활");
+            => Push(NotificationType.PlayerRevived, $"플레이어 {playerId} 부활", playerId.ToString());
     }
 }
