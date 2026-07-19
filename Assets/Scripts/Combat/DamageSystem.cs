@@ -78,7 +78,18 @@ namespace TSWP.Combat
             // 7) 타격 연출 — 히트스톱·화면 흔들림·피격 플래시 (전투 시스템.md '공격은 명확해야 한다').
             //    연출 서비스가 씬에 없으면 조용히 생략된다 (게임 로직은 연출에 의존하지 않는다).
             if (finalDamage > 0f)
-                HitFeedback.Instance?.PlayHit(target, finalDamage, info.IsCritical);
+            {
+                // 히트스톱은 '타격'에만 건다. 도트(화상·중독 틱)와 환경 지속피해는 Source가 없으므로
+                // 여기서 걸러낸다 — 걸러내지 않으면 8인 전투에서 전역 정지가 끊이지 않는다 (성능 감사 §1).
+                bool isStrike = info.Source != null;
+                HitFeedback.Instance?.PlayHit(target, finalDamage, info.IsCritical, isStrike);
+
+                // 데미지 숫자 — 프로토타입 밸런스 확인용. 표시 창구가 없으면 조용히 생략된다.
+                // NOTE(계약): GameEvents는 원시타입/ID 페이로드만 다루고 월드 좌표 피해 이벤트가 없다.
+                //   숫자 표시는 HitFeedback과 동일한 '연출 서비스 단방향 호출'로 둔다 (UI→게임로직 참조는 없음).
+                UI.DamageNumberSpawner.Instance?.ShowDamage(
+                    target.transform.position, finalDamage, info.IsCritical, friendly);
+            }
 
             // 8) 통계/UI 통지 — 공격자가 플레이어일 때만 (환경·적 피해는 플레이어 통계 비대상).
             //    wasFriendly는 트롤 통계(결과 화면 '가장 많은 트롤') 집계에 쓰인다.

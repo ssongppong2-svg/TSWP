@@ -2,6 +2,9 @@
 // 근거: 게임 시작과 선택, 직업, 플레이.md — 밈 모드 '중력이 반전된다' → Rigidbody2D.gravityScale 부호 반전 대응.
 // 근거: 상태이상 시스템.md — 이동은 StatusEffectController의 CanMove / MoveInputModifier(공포·혼란) / 이동속도 배율만 질의,
 //       이동 거리는 OnMoved 훅으로 전달 (출혈: 움직일수록 추가 피해).
+// 근거: 전투 시스템.md — 사망 시 즉시 부활(공유 부활 1회 소모). 사망/부활 판정은 Combat.CombatEntity 소관이며
+//       이 컴포넌트는 IsDead / Died 이벤트만 참조해 조작을 정지·복구한다 (부활 횟수 판정 중복 금지 — ARCHITECTURE.md §5).
+// 근거: 도트 시스템.md / 이펙트 — 착지·점프·대쉬 잔상은 Art.VfxSpawner 경유. 씬에 이펙트 시스템이 없어도 조용히 생략된다.
 // 모든 직업 공통 컴포넌트 — 직업 차이는 Jobs(BasicAttacker/SkillCaster) 데이터 주입으로만 표현 (문서: 모든 직업 동일 조작 체계).
 // SYNC: 호스트 권위, 추후 NGO NetworkVariable — 위치/속도/중력 반전 상태 (원격 플레이어는 IPlayerInput을 네트워크 구현으로 교체).
 using UnityEngine;
@@ -70,6 +73,34 @@ namespace TSWP.Player
         [SerializeField] private Vector2 groundCheckOffset = new Vector2(0f, -0.5f); // 발밑 오프셋 (중력 반전 시 y 부호 반전)
         [SerializeField] private float groundCheckRadius = 0.1f;
 
+        [Header("낙하 / 벽")]
+        [Tooltip("낙하 속도 상한(초당). 너무 빨리 떨어져 화면 밖으로 사라지거나 얇은 지형을 통과하는 것을 막는다. 0 이하면 제한 없음.")]
+        [SerializeField] private float maxFallSpeed = 22f;        // TODO(밸런스): 문서 미정
+        // NOTE(문서 갱신 필요): 벽 슬라이드는 조작과 시스템.md v1.1의 조작/이동 규칙에 없는 신규 기능이다.
+        //   기획 확정 전까지 기본 비활성으로 두고, 켠 팀만 체험할 수 있게 한다.
+        [Tooltip("공중에서 벽에 밀착하면 낙하가 느려진다. 문서 미확정 기능이라 기본 꺼짐.")]
+        [SerializeField] private bool enableWallSlide = false;
+        [Tooltip("벽 슬라이드 중 최대 낙하 속도(초당).")]
+        [SerializeField] private float wallSlideSpeed = 3f;       // TODO(밸런스): 문서 미정
+        [Tooltip("벽 판정 지점 오프셋. x는 바라보는/입력 방향으로 부호가 뒤집힌다.")]
+        [SerializeField] private Vector2 wallCheckOffset = new Vector2(0.45f, 0f);
+        [SerializeField] private float wallCheckRadius = 0.12f;
+
+        [Header("피격 반응")]
+        [Tooltip("피격 직후 조작 불가 시간(초). 길면 답답하므로 상한을 0.1초로 강제한다.")]
+        [Range(0f, 0.1f)][SerializeField] private float hitstunDuration = 0.08f; // TODO(밸런스): 문서 미정
+        // NOTE(기획 확인 필요): 피격 시 대쉬 쿨타임 초기화 여부 — '반격 회피 기회 제공'(켬) vs '대쉬 남용 방지'(끔).
+        //   게임 성경.md "모든 강력한 능력에는 반드시 위험이 따른다"에 따라 기본은 끔.
+        [SerializeField] private bool resetDashCooldownOnHit = false;
+
+        [Header("이동 연출 훅 (Art.VfxSpawner 없으면 조용히 생략)")]
+        [Tooltip("이동 관련 이펙트 재생 여부. 끄면 착지/점프/대쉬 이펙트를 전부 생략한다.")]
+        [SerializeField] private bool playMovementVfx = true;
+        [Tooltip("착지 먼지를 재생할 최소 낙하 속도. 이보다 느리게 착지하면 먼지를 내지 않는다.")]
+        [SerializeField] private float landDustMinFallSpeed = 4f; // TODO(밸런스): 문서 미정
+        [Tooltip("대쉬 잔상 재생 간격(초). 0 이하면 대쉬 시작 시 1회만 재생한다.")]
+        [SerializeField] private float dashTrailInterval = 0.04f; // TODO(밸런스): 문서 미정
+
         private Rigidbody2D _body;
         private PlayerStats _stats;
         private CombatEntity _entity;
@@ -95,12 +126,28 @@ namespace TSWP.Player
         private readonly Collider2D[] _groundHits = new Collider2D[8];
         private ContactFilter2D _groundFilter;
 
+        /// <summary>벽 판정 버퍼 — 벽 슬라이드가 꺼져 있으면 질의 자체를 하지 않는다.</summary>
+        private readonly Collider2D[] _wallHits = new Collider2D[4];
+        private ContactFilter2D _wallFilter;
+
+        // 접지 캐시 — 감사 #28: 프로퍼티가 프레임당 4회 이상 물리 질의를 하던 문제.
+        // Update / FixedUpdate 시작 시 각 1회만 계산하고 그 값을 프레임 내내 공유한다.
+        private bool _isGrounded;
+        private bool _groundedLastFixed;     // 직전 물리 프레임의 접지 상태 (착지/이륙 전이 감지)
+        private float _fallSpeedLastFixed;   // 직전 물리 프레임의 낙하 속도(양수) — 착지 먼지 여부 판정
+
         // 대쉬 상태
         private float _dashTimer;            // 남은 대쉬 지속 시간
         private float _dashCooldownTimer;
         private int _airDashesLeft;
         private int _dashDirection = 1;
         private bool _dashQueued;
+        private float _dashTrailTimer;       // 대쉬 잔상 재생 간격 타이머
+
+        // 피격/사망 상태
+        private float _hitstunTimer;         // 피격 경직 잔여 시간 (짧게 — 0.1초 상한)
+        private bool _wallSliding;
+        private bool _deadLatch;             // 사망 처리 완료 표시 — IsDead가 다시 false가 되면 부활로 간주
 
         // ── 외부 조회 ─────────────────────────────────────────────
         /// <summary>입력 소스. PlayerInteraction/PingEmitter/EmoteWheel이 공유 폴링한다.</summary>
@@ -117,6 +164,12 @@ namespace TSWP.Player
         /// <summary>대쉬 중인가 (연출·무적·애니메이션 판정용).</summary>
         public bool IsDashing => _dashTimer > 0f;
 
+        /// <summary>피격 경직 중인가 (0.1초 이하의 짧은 조작 불가 — 애니메이션/연출 판정용).</summary>
+        public bool IsHitstunned => _hitstunTimer > 0f;
+
+        /// <summary>벽 슬라이드 중인가 (기본 비활성 기능 — Art 연출 판정용).</summary>
+        public bool IsWallSliding => _wallSliding;
+
         /// <summary>대쉬 쿨타임 진행률 0(방금 씀)~1(사용 가능) — HUD 표시용.</summary>
         public float DashCooldownProgress =>
             dashCooldown <= 0f ? 1f : 1f - Mathf.Clamp01(_dashCooldownTimer / dashCooldown);
@@ -129,41 +182,74 @@ namespace TSWP.Player
             (_entity == null || !_entity.IsDead)
             && (_statusController == null || _statusController.CanMove);
 
+        /// <summary>조작 가능 게이트 — CanMove + 피격 경직. 점프/대쉬/공격 입력이 공용으로 사용한다.</summary>
+        public bool CanControl => CanMove && !IsHitstunned;
+
         /// <summary>이동속도 — Core.StatCollection(StatType.MoveSpeed) 조회. 아이템 modifier가 즉시 반영된다.</summary>
         public float MoveSpeed => _stats != null ? _stats.GetValue(StatType.MoveSpeed) : fallbackMoveSpeed;
 
         /// <summary>
-        /// 접지 여부 — 발밑 원 판정. 중력 반전 시 머리 위를 검사한다.
-        /// 자기 콜라이더는 제외하므로, groundMask에 캐릭터 레이어를 포함시켜
+        /// 접지 여부 — Update / FixedUpdate 시작 시 1회 계산한 캐시 값.
+        /// (감사 #28: 프로퍼티가 매번 물리 질의를 해 프레임당 4회 이상 호출되던 문제 — 8인이면 부담이 크다)
+        /// </summary>
+        public bool IsGrounded => _isGrounded;
+
+        /// <summary>접지 판정 지점 — 발밑. 중력 반전 시 머리 위가 된다.</summary>
+        private Vector2 GroundCheckPoint()
+        {
+            Vector2 offset = groundCheckOffset;
+            if (_gravityInverted) offset.y = -offset.y;
+            return _body.position + offset;
+        }
+
+        /// <summary>
+        /// 실제 접지 물리 질의. 자기 콜라이더는 제외하므로, groundMask에 캐릭터 레이어를 포함시켜
         /// 적을 밟고 있을 때도 정상적으로 접지로 인식할 수 있다.
         /// </summary>
-        public bool IsGrounded
+        private bool ProbeGround()
         {
-            get
+            _groundFilter.SetLayerMask(groundMask);
+            _groundFilter.useLayerMask = true;
+            _groundFilter.useTriggers = false; // 트리거는 밟을 수 없다
+
+            int count = Physics2D.OverlapCircle(
+                GroundCheckPoint(), groundCheckRadius, _groundFilter, _groundHits);
+
+            for (int i = 0; i < count; i++)
             {
-                Vector2 offset = groundCheckOffset;
-                if (_gravityInverted) offset.y = -offset.y;
+                var hit = _groundHits[i];
+                if (hit == null) continue;
 
-                _groundFilter.SetLayerMask(groundMask);
-                _groundFilter.useLayerMask = true;
-                _groundFilter.useTriggers = false; // 트리거는 밟을 수 없다
+                // 자기 자신(및 자식 콜라이더)은 접지 대상이 아니다.
+                if (hit.transform == transform || hit.transform.IsChildOf(transform)) continue;
 
-                int count = Physics2D.OverlapCircle(
-                    _body.position + offset, groundCheckRadius, _groundFilter, _groundHits);
-
-                for (int i = 0; i < count; i++)
-                {
-                    var hit = _groundHits[i];
-                    if (hit == null) continue;
-
-                    // 자기 자신(및 자식 콜라이더)은 접지 대상이 아니다.
-                    if (hit.transform == transform || hit.transform.IsChildOf(transform)) continue;
-
-                    return true;
-                }
-
-                return false;
+                return true;
             }
+
+            return false;
+        }
+
+        /// <summary>
+        /// 벽 밀착 판정 (벽 슬라이드 전용). enableWallSlide가 꺼져 있으면 호출되지 않으므로
+        /// 기본 상태에서는 추가 물리 질의가 발생하지 않는다.
+        /// </summary>
+        private bool ProbeWall(int dirSign)
+        {
+            _wallFilter.SetLayerMask(groundMask); // 벽도 지형 — 별도 마스크가 생기면 분리한다
+            _wallFilter.useLayerMask = true;
+            _wallFilter.useTriggers = false;
+
+            Vector2 point = _body.position + new Vector2(wallCheckOffset.x * dirSign, wallCheckOffset.y);
+            int count = Physics2D.OverlapCircle(point, wallCheckRadius, _wallFilter, _wallHits);
+
+            for (int i = 0; i < count; i++)
+            {
+                var hit = _wallHits[i];
+                if (hit == null) continue;
+                if (hit.transform == transform || hit.transform.IsChildOf(transform)) continue;
+                return true;
+            }
+            return false;
         }
 
         private void Awake()
@@ -180,6 +266,22 @@ namespace TSWP.Player
             _lastBodyPosition = _body.position;
         }
 
+        // 피격/사망은 폴링 대신 CombatEntity의 C# event를 구독한다 (ARCHITECTURE.md §3-8).
+        // 부활은 CombatEntity에 전용 이벤트가 없으므로 IsDead 플래그 전이로 감지한다(아래 Update).
+        private void OnEnable()
+        {
+            if (_entity == null) return;
+            _entity.Damaged += OnEntityDamaged;
+            _entity.Died += OnEntityDied;
+        }
+
+        private void OnDisable()
+        {
+            if (_entity == null) return;
+            _entity.Damaged -= OnEntityDamaged;
+            _entity.Died -= OnEntityDied;
+        }
+
         /// <summary>입력 소스 교체 (테스트 더미/네트워크 원격 입력). null이면 무시.</summary>
         public void SetInputSource(IPlayerInput input)
         {
@@ -188,9 +290,19 @@ namespace TSWP.Player
 
         private void Update()
         {
-            if (_input == null) return;
-
             float dt = Time.deltaTime;
+
+            // 부활 감지 — Died 이후 IsDead가 다시 false가 되면 조작을 복구한다.
+            // (CombatEntity.Revive는 Died 호출 스택 안에서 즉시 실행될 수 있어, 다음 프레임에 확인한다)
+            if (_deadLatch && (_entity == null || !_entity.IsDead))
+                OnRevived();
+
+            // 접지 캐시 갱신 — 이번 프레임의 모든 IsGrounded 조회가 이 값을 공유한다.
+            _isGrounded = ProbeGround();
+
+            if (_hitstunTimer > 0f) _hitstunTimer -= dt;
+
+            if (_input == null) return;
 
             // ── 이동 입력 수집 (물리 적용은 FixedUpdate) ──
             _moveAxis = Mathf.Clamp(_input.MoveAxis, -1f, 1f);
@@ -233,8 +345,9 @@ namespace TSWP.Player
             else if (_moveAxis < -0.01f) _facingSign = -1;
             // TODO(연출): Art.CharacterVisual flipX 연동 — 좌우 반전 스프라이트.
 
-            // ── 전투 입력 (사망 중 차단 — 즉시부활 전제라 짧은 구간) ──
+            // ── 전투 입력 (사망 중 차단 — 즉시부활 전제라 짧은 구간, 피격 경직 중에도 차단) ──
             if (_entity != null && _entity.IsDead) return;
+            if (IsHitstunned) return;
 
             if (_input.AttackPressed)
                 _attacker?.TryAttack(GetAimDirection()); // 간격/기절·빙결 게이트는 BasicAttacker 소관
@@ -246,6 +359,10 @@ namespace TSWP.Player
         private void FixedUpdate()
         {
             float dt = Time.fixedDeltaTime;
+
+            // 접지 캐시 갱신 (물리 프레임 1회) 후 착지/이륙 전이 연출 처리.
+            _isGrounded = ProbeGround();
+            HandleGroundTransition();
 
             // ── 대쉬 발동 판정 ──
             if (_dashQueued)
@@ -265,36 +382,42 @@ namespace TSWP.Player
 
                 _body.linearVelocity = dashVelocity;
 
+                UpdateDashTrail(dt);
+                _wallSliding = false;
                 TrackMovedDistance();
+                EndPhysicsFrame();
                 return;
             }
 
             // ── 수평 이동 (가속 기반) ──
             // 상태이상 변조 경유: 공포(전체 반전)/혼란(x축 반전)/이동 차단 CC(0 벡터) — StatusEffectController 계약.
-            Vector2 desired = new Vector2(_moveAxis, 0f);
-            if (_statusController != null) desired = _statusController.MoveInputModifier(desired);
-            if (_entity != null && _entity.IsDead) desired = Vector2.zero;
+            // 피격 경직 중에는 수평 속도에 아예 손대지 않는다 — 넉백 임펄스를 감속으로 지우지 않기 위함.
+            if (!IsHitstunned)
+            {
+                Vector2 desired = new Vector2(_moveAxis, 0f);
+                if (_statusController != null) desired = _statusController.MoveInputModifier(desired);
+                if (_entity != null && _entity.IsDead) desired = Vector2.zero;
 
-            float speed = MoveSpeed;
-            if (_runHeld) speed *= runSpeedMultiplier; // 스태미나 없음 — 게이트 없이 상시 적용
-            if (_statusController != null) speed *= _statusController.GetMoveSpeedMultiplier(); // 감전/둔화
+                float speed = MoveSpeed;
+                if (_runHeld) speed *= runSpeedMultiplier; // 스태미나 없음 — 게이트 없이 상시 적용
+                if (_statusController != null) speed *= _statusController.GetMoveSpeedMultiplier(); // 감전/둔화
 
-            float targetSpeed = desired.x * speed;
-            bool grounded = IsGrounded;
-            bool accelerating = Mathf.Abs(targetSpeed) > 0.01f;
+                float targetSpeed = desired.x * speed;
+                bool accelerating = Mathf.Abs(targetSpeed) > 0.01f;
 
-            // 즉시 대입 대신 가속/감속으로 접근 — 둔함(가속 부족)과 미끄러짐(감속 부족)을 각각 조절한다.
-            float rate = grounded
-                ? (accelerating ? groundAcceleration : groundDeceleration)
-                : (accelerating ? airAcceleration : airDeceleration);
+                // 즉시 대입 대신 가속/감속으로 접근 — 둔함(가속 부족)과 미끄러짐(감속 부족)을 각각 조절한다.
+                float rate = _isGrounded
+                    ? (accelerating ? groundAcceleration : groundDeceleration)
+                    : (accelerating ? airAcceleration : airDeceleration);
 
-            Vector2 velocity = _body.linearVelocity;
-            velocity.x = Mathf.MoveTowards(velocity.x, targetSpeed, rate * dt);
-            // TODO(물리): 넉백 임펄스(Combat.KnockbackInfo)와 직접 속도 대입 간 간섭 — 넉백 중 입력 가속 보류 검토.
-            _body.linearVelocity = velocity;
+                Vector2 velocity = _body.linearVelocity;
+                velocity.x = Mathf.MoveTowards(velocity.x, targetSpeed, rate * dt);
+                // TODO(물리): 넉백 임펄스(Combat.KnockbackInfo)와 직접 속도 대입 간 간섭 — 넉백 중 입력 가속 보류 검토.
+                _body.linearVelocity = velocity;
+            }
 
             // ── 점프 (코요테 타임 + 버퍼, 중력 반전 대응) ──
-            if (_jumpBufferTimer > 0f && _coyoteTimer > 0f && CanMove)
+            if (_jumpBufferTimer > 0f && _coyoteTimer > 0f && CanControl)
             {
                 _jumpBufferTimer = 0f;
                 _coyoteTimer = 0f;      // 연속 발동 방지
@@ -303,11 +426,84 @@ namespace TSWP.Player
                 Vector2 v = _body.linearVelocity;
                 v.y = jumpSpeed * UpSign;
                 _body.linearVelocity = v;
+
+                PlayVfx(Art.VfxId.JumpDust, GroundCheckPoint()); // 발밑에서 먼지가 튄다
             }
 
             ApplyGravityFeel();
+            ApplyWallSlide();
+            ClampFallSpeed();
 
             TrackMovedDistance();
+            EndPhysicsFrame();
+        }
+
+        /// <summary>물리 프레임 마감 — 다음 프레임의 착지 판정에 쓸 상태를 기록한다.</summary>
+        private void EndPhysicsFrame()
+        {
+            _groundedLastFixed = _isGrounded;
+            float verticalSpeed = _body.linearVelocity.y * UpSign;
+            _fallSpeedLastFixed = verticalSpeed < 0f ? -verticalSpeed : 0f;
+        }
+
+        /// <summary>
+        /// 착지/이륙 전이 연출. 직전 프레임의 낙하 속도로 착지 강도를 판단한다
+        /// (착지한 프레임에는 이미 속도가 0으로 눌려 있어 현재 속도로는 판정할 수 없다).
+        /// </summary>
+        private void HandleGroundTransition()
+        {
+            if (_isGrounded == _groundedLastFixed) return;
+
+            if (_isGrounded)
+            {
+                _airDashesLeft = airDashCount; // 착지 시 공중 대쉬 회복
+                if (_fallSpeedLastFixed >= landDustMinFallSpeed)
+                    PlayVfx(Art.VfxId.LandDust, GroundCheckPoint());
+            }
+            // 이륙(접지 → 공중) 연출은 점프 발동 지점에서 이미 재생하므로 여기서는 처리하지 않는다
+            // (낙하로 발판을 벗어난 경우까지 먼지를 내면 과해진다).
+        }
+
+        /// <summary>
+        /// 낙하 속도 상한. 지나치게 빨라져 화면 밖으로 사라지거나 얇은 지형을 통과하는 것을 막는다.
+        /// 중력 반전 상태에서는 '아래'가 뒤집히므로 UpSign 기준으로 계산한다.
+        /// </summary>
+        private void ClampFallSpeed()
+        {
+            if (maxFallSpeed <= 0f) return;
+
+            float verticalSpeed = _body.linearVelocity.y * UpSign; // 음수 = 하강
+            if (verticalSpeed >= -maxFallSpeed) return;
+
+            Vector2 v = _body.linearVelocity;
+            v.y = -maxFallSpeed * UpSign;
+            _body.linearVelocity = v;
+        }
+
+        /// <summary>
+        /// 벽 슬라이드 — 공중에서 벽 방향으로 입력을 유지하면 낙하가 느려진다.
+        /// NOTE(문서 갱신 필요): 조작과 시스템.md에 없는 기능이라 enableWallSlide 기본 false.
+        /// </summary>
+        private void ApplyWallSlide()
+        {
+            _wallSliding = false;
+            if (!enableWallSlide || _isGrounded || !CanControl) return;
+
+            float verticalSpeed = _body.linearVelocity.y * UpSign;
+            if (verticalSpeed >= 0f) return; // 상승 중에는 붙지 않는다
+
+            int pressSign = Mathf.Abs(_moveAxis) > 0.01f ? (int)Mathf.Sign(_moveAxis) : 0;
+            if (pressSign == 0 || !ProbeWall(pressSign)) return;
+
+            _wallSliding = true;
+            float limit = -Mathf.Abs(wallSlideSpeed);
+            if (verticalSpeed < limit)
+            {
+                Vector2 v = _body.linearVelocity;
+                v.y = limit * UpSign;
+                _body.linearVelocity = v;
+            }
+            // TODO(연출): 벽 마찰 먼지 이펙트 — 기능 확정 후 Art와 협의.
         }
 
         /// <summary>
@@ -349,10 +545,9 @@ namespace TSWP.Player
         private void TryStartDash()
         {
             if (IsDashing || _dashCooldownTimer > 0f) return;
-            if (!CanMove) return; // 기절·빙결·속박 중 대쉬 불가
+            if (!CanControl) return; // 기절·빙결·속박·피격 경직 중 대쉬 불가
 
-            bool grounded = IsGrounded;
-            if (!grounded)
+            if (!_isGrounded)
             {
                 if (_airDashesLeft <= 0) return;
                 _airDashesLeft--;
@@ -361,6 +556,7 @@ namespace TSWP.Player
             _dashDirection = Mathf.Abs(_moveAxis) > 0.01f ? (int)Mathf.Sign(_moveAxis) : _facingSign;
             _dashTimer = dashDuration;
             _dashCooldownTimer = dashCooldown;
+            _dashTrailTimer = 0f; // 시작 즉시 첫 잔상을 남긴다
 
             // 대쉬 중 낙하 누적 속도 제거 — 수평으로 곧게 나가도록
             if (dashIgnoresGravity)
@@ -373,7 +569,107 @@ namespace TSWP.Player
             if (dashInvincibility > 0f)
                 _entity?.SetInvincibleFor(dashInvincibility);
 
-            // TODO(연출): 잔상·먼지 파티클·대쉬 효과음 — Art 담당.
+            // TODO(연출): 대쉬 효과음 — Audio 담당. 잔상은 UpdateDashTrail이 처리한다.
+        }
+
+        /// <summary>
+        /// 대쉬 잔상 — 일정 간격으로 VfxId.DashTrail을 현재 위치에 남긴다.
+        /// 이펙트 시스템이 씬에 없으면 조용히 생략된다(게임 로직 영향 없음).
+        /// </summary>
+        private void UpdateDashTrail(float dt)
+        {
+            if (dashTrailInterval <= 0f)
+            {
+                // 간격이 0 이하면 대쉬 시작 프레임에만 1회 재생한다.
+                if (_dashTrailTimer <= 0f)
+                {
+                    PlayVfx(Art.VfxId.DashTrail, transform.position);
+                    _dashTrailTimer = 1f; // 재생 완료 표시(다시 0이 되는 건 대쉬 시작 시점뿐)
+                }
+                return;
+            }
+
+            _dashTrailTimer -= dt;
+            if (_dashTrailTimer > 0f) return;
+
+            _dashTrailTimer = dashTrailInterval;
+            PlayVfx(Art.VfxId.DashTrail, transform.position);
+        }
+
+        /// <summary>
+        /// 이동 연출 재생 공통 창구. VfxSpawner가 씬에 없거나 파괴되었으면 조용히 생략한다
+        /// (감사 #8: `?.`는 Unity의 오버로드된 == 를 우회하므로 명시적 null 비교를 쓴다).
+        /// </summary>
+        private void PlayVfx(string vfxId, Vector3 position)
+        {
+            if (!playMovementVfx || string.IsNullOrEmpty(vfxId)) return;
+
+            var spawner = Art.VfxSpawner.Instance;
+            if (spawner == null) return;
+
+            spawner.Play(vfxId, position, flipX: _facingSign < 0);
+        }
+
+        // ── 피격 / 사망 / 부활 ────────────────────────────────────
+
+        /// <summary>
+        /// 피격 반응 — 아주 짧은 조작 불가(hitstun). 길면 답답하므로 인스펙터 상한이 0.1초로 묶여 있다.
+        /// 실제 피해/넉백/상태이상 처리는 Combat.DamageSystem 단일 파이프라인 소관이며 여기서는 조작만 다룬다.
+        /// </summary>
+        private void OnEntityDamaged(DamageInfo info)
+        {
+            if (hitstunDuration > 0f)
+                _hitstunTimer = Mathf.Max(_hitstunTimer, Mathf.Min(hitstunDuration, 0.1f));
+
+            // NOTE(기획 확인 필요): 피격 시 대쉬 쿨타임 초기화 — 기본 꺼짐(위 SerializeField 주석 참고).
+            if (resetDashCooldownOnHit)
+            {
+                _dashCooldownTimer = 0f;
+                if (_isGrounded) _airDashesLeft = airDashCount;
+            }
+        }
+
+        /// <summary>
+        /// 사망 — 이동을 즉시 멈추고 진행 중이던 대쉬/점프 상태를 정리한다.
+        /// 부활 판정 자체는 Core.SharedReviveSystem 단일 경로(CombatEntity)가 담당하며 여기서는 조작만 다룬다.
+        /// </summary>
+        private void OnEntityDied(CombatEntity entity)
+        {
+            _deadLatch = true;
+
+            _moveAxis = 0f;
+            _dashTimer = 0f;
+            _dashQueued = false;
+            _dashTrailTimer = 0f;
+            _jumpBufferTimer = 0f;
+            _coyoteTimer = 0f;
+            _isJumping = false;
+            _hitstunTimer = 0f;
+            _wallSliding = false;
+
+            if (_body != null)
+            {
+                _body.linearVelocity = Vector2.zero;
+                // 대쉬 중 사망 시 gravityScale이 0으로 남는 것을 막는다.
+                _body.gravityScale = _baseGravityScale * UpSign;
+            }
+            // TODO(연출): 사망 애니메이션/시체 처리 — Art.CharacterVisual 소관.
+        }
+
+        /// <summary>부활 복구 — 조작 상태를 초기화한다. (CombatEntity에 부활 이벤트가 없어 IsDead 전이로 감지)</summary>
+        private void OnRevived()
+        {
+            _deadLatch = false;
+            _hitstunTimer = 0f;
+            _dashCooldownTimer = 0f;
+            _airDashesLeft = airDashCount;
+            _dashQueued = false;
+            _jumpBufferTimer = 0f;
+            _isJumping = false;
+
+            // 부활 지점으로 순간이동했을 수 있으므로 이동 거리 누적 기준을 다시 잡는다
+            // (출혈 OnMoved에 순간이동 거리가 통째로 들어가는 것을 막는다).
+            if (_body != null) _lastBodyPosition = _body.position;
         }
 
         // ── 중력 반전 (밈 모드 규칙 훅) ──────────────────────────
@@ -414,6 +710,12 @@ namespace TSWP.Player
             if (_gravityInverted) offset.y = -offset.y;
             Gizmos.color = Color.green;
             Gizmos.DrawWireSphere((Vector2)transform.position + offset, groundCheckRadius);
+
+            // 벽 판정 시각화 (기능이 켜져 있을 때만)
+            if (!enableWallSlide) return;
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere((Vector2)transform.position + new Vector2(wallCheckOffset.x, wallCheckOffset.y), wallCheckRadius);
+            Gizmos.DrawWireSphere((Vector2)transform.position + new Vector2(-wallCheckOffset.x, wallCheckOffset.y), wallCheckRadius);
         }
 #endif
     }

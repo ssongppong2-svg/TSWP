@@ -1,6 +1,8 @@
 // 근거: 전투 시스템.md — 직업마다 공격 방식이 다르다(궁수=활, 폭탄마=폭탄). 적도 저격수 역할군을 가진다.
 //       피해 계산·아군 판정·상태이상 부여는 전부 DamageSystem 단일 경로를 탄다.
 // 근거: 적 시스템.md — 특수 적 역할군에 저격수(Sniper)가 있다.
+// 근거: 성능 감사 보고 §4 — 발당 Instantiate/Destroy 제거(ProjectilePool), 꼬리 이펙트 간격 완화.
+//   생성은 ProjectilePool.Spawn, 소멸은 ProjectilePool.Despawn 단일 경로를 탄다.
 using System.Collections.Generic;
 using UnityEngine;
 using TSWP.Core;
@@ -35,8 +37,11 @@ namespace TSWP.Combat
         [Tooltip("비행 중 남기는 꼬리 이펙트 id. 비우면 없음.")]
         [SerializeField] private string trailVfxId = Art.VfxId.ProjectileFly;
 
-        [Tooltip("꼬리 이펙트 생성 간격(초). 짧을수록 촘촘하다.")]
-        [SerializeField, Min(0.01f)] private float trailInterval = 0.05f;
+        [Tooltip("꼬리 이펙트 생성 간격(초). 짧을수록 촘촘하다. 0.05는 탄 1개당 초당 20회라 VFX 풀을 포화시킨다.")]
+        [SerializeField, Min(0.01f)] private float trailInterval = 0.1f; // TODO(밸런스): 문서 미정
+
+        [Tooltip("꼬리 이펙트 최소 이동 거리(월드 단위). 느린 탄이 제자리에서 이펙트를 쏟지 않게 한다.")]
+        [SerializeField, Min(0f)] private float trailMinDistance = 0.35f; // TODO(밸런스): 문서 미정
 
         [Tooltip("탄환 자체가 회전하는 속도(도/초). 0이면 회전 없음.")]
         [SerializeField] private float spinSpeed = 360f;
@@ -50,7 +55,12 @@ namespace TSWP.Combat
         private bool _isExplosive;
         private float _lifeTimer;
         private float _trailTimer;
+        private Vector3 _lastTrailPosition;
+        private bool _despawned;   // 같은 프레임에 착탄이 두 번 들어와도 두 번 반납되지 않게 한다
         private Rigidbody2D _body;
+
+        /// <summary>이 인스턴스가 돌아갈 풀의 원본 프리팹. ProjectilePool이 채운다 (null이면 풀 미사용).</summary>
+        public Projectile PoolPrefab { get; internal set; }
 
         private void Awake()
         {
@@ -62,6 +72,7 @@ namespace TSWP.Combat
 
         /// <summary>
         /// 투사체 발사. 피해 정보는 발사 시점에 고정된다.
+        /// 풀에서 재사용될 때의 상태 초기화도 여기서 전부 끝낸다 (재사용 진입점).
         /// </summary>
         public void Launch(CombatEntity source, Vector2 direction, float damage,
                            List<StatusEffectData> statusEffects = null,
@@ -75,6 +86,9 @@ namespace TSWP.Combat
             _knockback = knockback;
             _isExplosive = isExplosive;
             _lifeTimer = lifetime;
+            _trailTimer = 0f;
+            _lastTrailPosition = transform.position;
+            _despawned = false;
 
             if (_body != null)
             {
@@ -91,6 +105,8 @@ namespace TSWP.Combat
 
         private void Update()
         {
+            if (_despawned) return;
+
             float dt = Time.deltaTime;
 
             _lifeTimer -= dt;
@@ -110,17 +126,26 @@ namespace TSWP.Combat
                 transform.Rotate(0f, 0f, spinSpeed * dt);
 
             // 꼬리 이펙트 — 궤적이 보여야 피할 수 있다 ("피격은 공정해야 한다").
+            // 시간 + 이동거리 두 조건을 모두 만족할 때만 남긴다 (VFX 풀 포화 방지 — 성능 감사 §4).
             if (string.IsNullOrEmpty(trailVfxId)) return;
 
             _trailTimer -= dt;
             if (_trailTimer > 0f) return;
 
+            Vector3 position = transform.position;
+            if (trailMinDistance > 0f &&
+                (position - _lastTrailPosition).sqrMagnitude < trailMinDistance * trailMinDistance)
+                return;
+
             _trailTimer = trailInterval;
-            Art.VfxSpawner.Instance?.Play(trailVfxId, transform.position);
+            _lastTrailPosition = position;
+            Art.VfxSpawner.Instance?.Play(trailVfxId, position);
         }
 
         private void OnTriggerEnter2D(Collider2D other)
         {
+            if (_despawned) return;
+
             // 지형에 맞으면 그대로 소멸
             if (((1 << other.gameObject.layer) & obstacleMask) != 0)
             {
@@ -163,10 +188,20 @@ namespace TSWP.Combat
 
         private void Despawn(bool playImpact)
         {
+            if (_despawned) return;
+            _despawned = true;
+
             if (playImpact && !string.IsNullOrEmpty(impactVfxId))
                 Art.VfxSpawner.Instance?.Play(impactVfxId, transform.position);
 
-            Destroy(gameObject);
+            // 물리 잔여 속도가 다음 재사용에 새어 나가지 않게 정리한다.
+            if (_body != null) _body.linearVelocity = Vector2.zero;
+
+            // 참조를 끊어 죽은 엔티티/상태이상 목록이 풀 안에 남지 않게 한다.
+            _source = null;
+            _statusEffects = null;
+
+            ProjectilePool.Despawn(this);
         }
 
         /// <summary>발사 전 속도를 조정한다 (적 데이터에서 주입).</summary>

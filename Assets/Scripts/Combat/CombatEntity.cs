@@ -30,6 +30,13 @@ namespace TSWP.Combat
         [Tooltip("문서: '사망 시 즉시 부활'(공유 부활 1회 소모). NOTE(기획 확인 필요): E키 팀원 구조부활 안이 채택되면 이 값을 끄고 구조 상호작용이 Revive()를 호출한다.")]
         [SerializeField] private bool autoReviveOnDeath = true;
 
+        [Header("사망/부활 연출")]
+        [Tooltip("사망 시 재생할 이펙트 id (Art.VfxId). 비우면 재생하지 않는다.")]
+        [SerializeField] private string deathVfxId = Art.VfxId.Death;
+
+        [Tooltip("부활 시 재생할 이펙트 id (Art.VfxId). 비우면 재생하지 않는다.")]
+        [SerializeField] private string reviveVfxId = Art.VfxId.Spawn;
+
         private float _currentHp;
         private float _invincibleTimer; // 상시 무적 금지 — 반드시 유한 타이머로만 무적 부여
         private bool _isDead;
@@ -106,6 +113,11 @@ namespace TSWP.Combat
             float healed = _currentHp - before;
             if (healed <= 0f) return;
             NotifyHealthChanged();
+
+            // 회복량 표시(초록) — 프로토타입 밸런스 확인용. 표시 창구가 없으면 조용히 생략된다.
+            UI.DamageNumberSpawner.Instance?.ShowHeal(transform.position, healed);
+            Art.VfxSpawner.Instance?.Play(Art.VfxId.Heal, transform.position);
+
             if (healerPlayerId >= 0)
                 GameEvents.RaiseHealingDone(healerPlayerId, healed); // 결과 화면 '가장 많은 회복' 집계
         }
@@ -136,13 +148,43 @@ namespace TSWP.Combat
             float hpRatio = cfg != null ? cfg.reviveHpRatio : 1f;                    // TODO(밸런스): 문서 미정 — 부활 체력 비율
             float invDuration = cfg != null ? cfg.reviveInvincibleDuration : 1.5f;   // TODO(밸런스): 문서 미정 — 부활 직후 짧은 무적(상시 아님)
             _currentHp = Mathf.Max(1f, maxHp * hpRatio);
+
+            // 부활 직후 짧은 무적 — 되살아나자마자 같은 장판에 다시 죽는 것을 막는다.
+            // 유한 타이머 전용 API만 사용한다 (상시 무적 경로 없음 — 전투 시스템.md '무적').
             SetInvincibleFor(invDuration);
             NotifyHealthChanged();
 
+            // 부활 연출 — VfxSpawner가 없으면 조용히 생략된다.
+            if (!string.IsNullOrEmpty(reviveVfxId))
+                Art.VfxSpawner.Instance?.Play(reviveVfxId, transform.position);
+
             if (ownerPlayerId >= 0)
                 GameEvents.RaisePlayerRevived(ownerPlayerId);
-            // TODO(연출): 부활 이펙트/깜빡임 — Art.CharacterVisual 연동.
+            // TODO(연출): 무적 동안 깜빡임 — Art.CharacterVisual 연동.
         }
+
+        /// <summary>
+        /// 공유 부활 1회를 소모해 부활을 시도한다. 부활/게임오버 판정은 Core.SharedReviveSystem
+        /// 한 곳을 거친다 (ARCHITECTURE.md §5) — 즉시부활도 E키 구조부활도 이 메서드를 공용 진입점으로 쓴다.
+        /// </summary>
+        /// <param name="rescuerPlayerId">구조한 플레이어 id (결과 화면 '가장 많은 구조' 집계용). 즉시부활이면 -1.</param>
+        /// <returns>부활에 성공했으면 true. 부활 횟수 소진이면 false(죽은 상태 유지).</returns>
+        public bool TryReviveShared(int rescuerPlayerId = -1)
+        {
+            if (!_isDead) return false;
+
+            var revive = RunManager.Instance != null ? RunManager.Instance.ReviveSystem : null;
+            if (revive == null || !revive.TryConsume()) return false;
+
+            Revive();
+
+            if (rescuerPlayerId >= 0)
+                GameEvents.RaiseStatCounter("rescue.count", 1); // 결과 화면 '가장 많은 구조'
+            return true;
+        }
+
+        /// <summary>즉시부활/구조부활 정책 전환용 (NOTE(기획 확인 필요) 항목 — 통합 단계에서 주입).</summary>
+        public void SetAutoReviveOnDeath(bool value) => autoReviveOnDeath = value;
 
         // ── 내부 파이프라인 훅 (DamageSystem 전용) ────────────────
         /// <summary>최종 피해를 즉시 HP에서 차감한다 (피해 적용 지연 없음 — 전투 시스템.md '피격').</summary>
@@ -177,6 +219,12 @@ namespace TSWP.Combat
         {
             if (_isDead) return;
             _isDead = true;
+
+            // 사망 연출 — 진영 무관하게 재생한다. VfxSpawner가 없으면 조용히 생략된다.
+            // Died 구독자가 오브젝트를 즉시 정리할 수 있으므로 통지보다 먼저 재생한다.
+            if (!string.IsNullOrEmpty(deathVfxId))
+                Art.VfxSpawner.Instance?.Play(deathVfxId, transform.position);
+
             Died?.Invoke(this); // 적: EnemyController가 구독해 처치 보상(KillReward)·오브젝트 정리 수행
 
             if (ownerPlayerId < 0)
@@ -186,13 +234,10 @@ namespace TSWP.Combat
 
             // 문서: 사망 시 즉시 부활, 공유 부활 횟수 1회 소모. 소진 시 추가 부활 불가.
             // 부활/게임오버 판정은 Core.SharedReviveSystem 한 곳 — 여기서는 호출만 (ARCHITECTURE.md §5).
-            var revive = RunManager.Instance != null ? RunManager.Instance.ReviveSystem : null;
-            if (autoReviveOnDeath && revive != null && revive.TryConsume())
-            {
-                Revive();
-            }
+            if (autoReviveOnDeath)
+                TryReviveShared();
             // NOTE(기획 확인 필요): 즉시부활 vs E키 팀원 구조부활 — 구조부활 채택 시 autoReviveOnDeath=false로 두고
-            //   PlayerInteraction(E키) 흐름이 SharedReviveSystem.TryConsume 성공 후 Revive()를 호출한다.
+            //   PlayerInteraction(E키) 흐름이 TryReviveShared(구조자id)를 호출한다 (같은 진입점).
             // 부활 실패(소진) 시 게임오버(부활 소진 + 전원 사망) 판정은 Core 흐름이 PlayerDied 이벤트 집계로 수행.
         }
 

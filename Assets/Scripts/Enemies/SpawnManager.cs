@@ -25,9 +25,20 @@ namespace TSWP.Enemies
         [Tooltip("씬에 배치된 생성 지점. 비어 있으면 자식 SpawnPoint를 자동 수집한다.")]
         [SerializeField] private List<SpawnPoint> spawnPoints = new List<SpawnPoint>();
 
+        [Header("연동")]
+        [Tooltip("스폰한 적을 RoomManager의 전멸형 클리어 카운트에 등록한다. 끄면 전투 방이 클리어되지 않는다.")]
+        [SerializeField] private bool registerToRoomManager = true;
+
+        [Tooltip("RegisterPlayer가 한 번도 호출되지 않았을 때 씬에서 플레이어를 자동 탐색한다(최소 거리 규칙 보호).")]
+        [SerializeField] private bool autoDiscoverPlayers = true;
+
+        [Tooltip("자동 탐색 재시도 간격(초). 매 스폰마다 씬을 훑지 않도록 캐시한다.")]
+        [SerializeField, Min(0.1f)] private float playerDiscoveryInterval = 2f;
+
         private System.Random _rng;
         private readonly List<CombatEntity> _players = new List<CombatEntity>();
         private readonly List<SpawnPoint> _candidates = new List<SpawnPoint>();
+        private float _nextPlayerDiscoveryAt;
 
         private void Awake()
         {
@@ -42,8 +53,37 @@ namespace TSWP.Enemies
                 GetComponentsInChildren(true, spawnPoints);
         }
 
+        private void OnDestroy()
+        {
+            // 파괴된 싱글턴을 Instance에 남기면 `Instance?.` 호출이 C# null 검사를 통과해
+            // MissingReferenceException을 던진다 (Unity의 == 오버로드를 ?. 가 우회하기 때문).
+            if (Instance == this) Instance = null;
+        }
+
         /// <summary>RunManager 시드에서 파생한 난수를 주입한다 (멀티 동기화).</summary>
         public void InitializeRng(int seed) => _rng = new System.Random(seed);
+
+        /// <summary>
+        /// 시드 난수 확보. 주입되지 않았으면 RunManager 시드에서 파생한다 —
+        /// 전 클라이언트가 같은 시드를 공유하므로 스폰 위치 추첨 결과가 일치한다.
+        /// RunManager조차 없으면(단독 테스트) 시간 기반 난수로 폴백한다.
+        /// </summary>
+        private System.Random GetRng()
+        {
+            if (_rng != null) return _rng;
+
+            var run = RunManager.Instance;
+            if (run != null)
+            {
+                // 드롭 추첨 등 다른 소비자와 수열이 겹치지 않도록 고정 상수로 파생시킨다.
+                _rng = new System.Random(run.Seed ^ 0x5A317);
+                return _rng;
+            }
+
+            // SYNC: 시드 미주입 상태 — 멀티에서는 결정성이 깨진다. 런 시작 시 InitializeRng를 호출할 것.
+            _rng = new System.Random();
+            return _rng;
+        }
 
         /// <summary>거리 판정을 위해 플레이어를 등록한다.</summary>
         public void RegisterPlayer(CombatEntity player)
@@ -71,6 +111,12 @@ namespace TSWP.Enemies
                 for (int n = 0; n < entry.count; n++)
                     Spawn(entry.enemy, difficulty);
             }
+
+            // 등록 종료 통지 — 이게 없으면 RoomClearCondition.SpawnFinished가 영영 false로 남아
+            // 전멸형 방이 클리어되지 않고 출구가 봉쇄된 채 소프트락이 된다 (감사 §3).
+            if (!registerToRoomManager) return;
+            var room = Map.RoomManager.Instance;
+            if (room != null) room.FinishEnemyRegistration();
         }
 
         /// <summary>적 1기 스폰. 유효한 지점이 없으면 스폰하지 않는다(규칙 위반 방지).</summary>
@@ -97,7 +143,16 @@ namespace TSWP.Enemies
                 return null;
             }
 
-            controller.Initialize(data, difficulty, _rng ?? new System.Random());
+            controller.Initialize(data, difficulty, GetRng());
+
+            // 전멸형 방 클리어 카운트에 등록 (RoomManager가 CombatEntity.Died를 구독해 집계).
+            // 소환사(SummonerAbility)가 단발 Spawn을 호출해도 카운트에 포함되어야 방이 조기 클리어되지 않는다.
+            if (registerToRoomManager && controller.Combat != null)
+            {
+                var room = Map.RoomManager.Instance;
+                if (room != null) room.RegisterEnemy(controller.Combat);
+            }
+
             return controller;
         }
 
@@ -105,6 +160,8 @@ namespace TSWP.Enemies
         private bool TryPickSpawnPosition(out Vector2 position)
         {
             position = default;
+
+            EnsurePlayersKnown();
 
             _candidates.Clear();
             for (int i = 0; i < spawnPoints.Count; i++)
@@ -125,9 +182,34 @@ namespace TSWP.Enemies
 
             if (_candidates.Count == 0) return false;
 
-            var rng = _rng ?? new System.Random();
+            var rng = GetRng();
             position = _candidates[rng.Next(_candidates.Count)].transform.position;
             return true;
+        }
+
+        /// <summary>
+        /// 플레이어 목록 보증. RegisterPlayer가 호출되지 않은 씬에서는 목록이 비어
+        /// "플레이어 근처 갑툭튀 금지" 규칙이 통째로 무효화된다 (감사 §12).
+        /// 정식 배선은 플레이어 스폰 파이프라인이 RegisterPlayer를 부르는 것이고, 이 탐색은 안전망이다.
+        /// </summary>
+        private void EnsurePlayersKnown()
+        {
+            // 파괴된 항목 정리 (씬 전환/사망 파괴)
+            for (int i = _players.Count - 1; i >= 0; i--)
+                if (_players[i] == null) _players.RemoveAt(i);
+
+            if (_players.Count > 0 || !autoDiscoverPlayers) return;
+            if (Time.time < _nextPlayerDiscoveryAt) return;
+            _nextPlayerDiscoveryAt = Time.time + playerDiscoveryInterval;
+
+            // Unity 6: FindObjectOfType는 제거됨 — FindObjectsByType 사용.
+            var entities = FindObjectsByType<CombatEntity>(FindObjectsSortMode.None);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var entity = entities[i];
+                if (entity == null || entity.Team != TeamType.Players) continue;
+                if (!_players.Contains(entity)) _players.Add(entity);
+            }
         }
 
         private bool IsTooCloseToAnyPlayer(Vector2 candidate)

@@ -29,6 +29,12 @@ namespace TSWP.Art
         [Tooltip("매번 무작위 회전 — 반복 타격이 똑같아 보이지 않게 한다.")]
         public bool randomRotation;
 
+        [Tooltip("위치 무작위 흔들림 반경(유닛). 같은 자리를 반복해서 때려도 이펙트가 매번 달라 보인다. 0이면 사용 안 함.")]
+        [Min(0f)] public float positionJitter; // TODO(밸런스): 문서 미정 — 0.05~0.15 정도가 자연스럽다
+
+        [Tooltip("크기 무작위 편차(±비율). 0.1이면 0.9~1.1배. 0이면 사용 안 함.")]
+        [Range(0f, 0.9f)] public float scaleJitter; // TODO(밸런스): 문서 미정
+
         [Tooltip("색조. 흰색이면 원본 색 유지.")]
         public Color tint = Color.white;
 
@@ -74,6 +80,84 @@ namespace TSWP.Art
             }
 
             return _lookup.TryGetValue(id, out var entry) ? entry : null;
+        }
+
+        // ── 프리워밍 ──────────────────────────────────────────────
+        // VfxDefinition.GetFrames()의 최초 호출은 Sprite.Create N회 + 시트 텍스처의
+        // 동기 로드/GPU 업로드를 동반한다. 이걸 전투 중 첫 타격에 맞으면 눈에 띄게 끊긴다.
+        // 로딩 시점에 미리 돌려 두면 실제 전투에서는 캐시 히트만 남는다.
+        // 같은 (시트, 행) 정의는 여러 항목이 공유하므로 HasCachedFrames로 중복을 건너뛴다.
+
+        /// <summary>
+        /// 등록된 모든 정의의 프레임을 한 번에 만들어 둔다. 만든 정의 수를 반환한다.
+        /// 이 호출 자체가 한 프레임을 잡아먹으므로 전투 중이 아닌 로딩 시점에 부른다.
+        /// </summary>
+        public int Prewarm()
+        {
+            int warmed = 0;
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                if (entry == null || entry.layers == null) continue;
+
+                for (int j = 0; j < entry.layers.Count; j++)
+                    if (WarmLayer(entry.layers[j])) warmed++;
+            }
+
+            return warmed;
+        }
+
+        /// <summary>
+        /// 프리워밍을 여러 프레임에 나눠 처리한다. 정의가 많아 한 프레임에 다 하면 그 프레임이 튀는 경우에 쓴다.
+        /// (VfxSpawner가 Awake에서 코루틴으로 돌린다.)
+        /// </summary>
+        public System.Collections.IEnumerator PrewarmRoutine(int definitionsPerFrame = 2)
+        {
+            int budget = Mathf.Max(1, definitionsPerFrame);
+            int done = 0;
+
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                if (entry == null || entry.layers == null) continue;
+
+                for (int j = 0; j < entry.layers.Count; j++)
+                {
+                    if (!WarmLayer(entry.layers[j])) continue;
+
+                    if (++done < budget) continue;
+
+                    done = 0;
+                    yield return null;
+                }
+            }
+        }
+
+        /// <summary>이 레이어의 정의를 실제로 새로 만들었으면 true (이미 캐시돼 있었으면 false).</summary>
+        private static bool WarmLayer(VfxLayer layer)
+        {
+            var definition = layer != null ? layer.definition : null;
+            if (definition == null || definition.HasCachedFrames) return false;
+
+            definition.GetFrames();
+            return true;
+        }
+
+        /// <summary>모든 정의의 프레임 캐시를 비운다. 씬 언로드/에셋 교체 시 사용.</summary>
+        public void ClearPrewarm()
+        {
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var entry = entries[i];
+                if (entry == null || entry.layers == null) continue;
+
+                for (int j = 0; j < entry.layers.Count; j++)
+                {
+                    var layer = entry.layers[j];
+                    if (layer != null && layer.definition != null) layer.definition.ClearCache();
+                }
+            }
         }
 
 #if UNITY_EDITOR

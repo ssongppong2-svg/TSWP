@@ -26,6 +26,7 @@ namespace TSWP.Art
         [SerializeField] private Vector3 labelWorldOffset = new Vector3(0f, 1.1f, 0f);
 
         private StatusEffectController _controller;
+        private Camera _camera;
 
         /// <summary>상태이상 종류별로 붙어 있는 이펙트 인스턴스.</summary>
         private readonly Dictionary<StatusEffectType, VfxPlayer> _attached = new();
@@ -33,7 +34,11 @@ namespace TSWP.Art
         /// <summary>표시할 상태 목록 (이름표용).</summary>
         private readonly List<StatusEffectType> _activeTypes = new();
 
-        private GUIStyle _labelStyle;
+        // OnGUI는 프레임당 1회가 아니라 Layout/Repaint + 입력 이벤트마다 호출된다.
+        // 스타일·라벨 문자열을 호출마다 만들면 상태이상 보유 엔티티 수 × 이벤트 수만큼 쓰레기가 쌓인다.
+        // → 컴포넌트가 아니라 타입 전체에서 하나만 만들어 공유한다.
+        private static GUIStyle _labelStyle;
+        private static GUIContent[] _labelContents;
 
         private void Awake()
         {
@@ -99,26 +104,35 @@ namespace TSWP.Art
         {
             if (!showLabels || _activeTypes.Count == 0) return;
 
-            var cam = Camera.main;
-            if (cam == null) return;
+            // 그리는 이벤트에서만 처리한다 — Layout/입력 이벤트에서 중복 실행할 이유가 없다.
+            if (Event.current.type != EventType.Repaint) return;
 
-            Vector3 screen = cam.WorldToScreenPoint(transform.position + labelWorldOffset);
+            if (_camera == null) _camera = Camera.main; // 씬 전환으로 무효화되면 다시 잡는다
+            if (_camera == null) return;
+
+            Vector3 screen = _camera.WorldToScreenPoint(transform.position + labelWorldOffset);
             if (screen.z < 0f) return;
 
             EnsureStyle();
 
+            // 스타일의 textColor를 직접 갈아치우면 공유 스타일 상태가 흔들린다.
+            // GUI.contentColor로 곱해 칠하고 원래 값으로 되돌린다.
+            Color previous = GUI.contentColor;
             float y = Screen.height - screen.y;
+
             for (int i = 0; i < _activeTypes.Count; i++)
             {
                 var type = _activeTypes[i];
-                _labelStyle.normal.textColor = GetStatusColor(type);
+                GUI.contentColor = GetStatusColor(type);
 
                 GUI.Label(new Rect(screen.x - 60f, y - i * 16f, 120f, 16f),
-                          GetStatusName(type), _labelStyle);
+                          GetLabelContent(type), _labelStyle);
             }
+
+            GUI.contentColor = previous;
         }
 
-        private void EnsureStyle()
+        private static void EnsureStyle()
         {
             if (_labelStyle != null) return;
 
@@ -128,6 +142,28 @@ namespace TSWP.Art
                 fontSize = 13,
                 fontStyle = FontStyle.Bold,
             };
+        }
+
+        /// <summary>
+        /// 상태 이름표는 종류마다 고정 문자열이다. GUIContent를 미리 만들어 두면
+        /// GUI.Label(Rect, string) 오버로드가 호출마다 만드는 임시 GUIContent가 사라진다.
+        /// </summary>
+        private static GUIContent GetLabelContent(StatusEffectType type)
+        {
+            int index = (int)type;
+
+            if (_labelContents == null)
+            {
+                // 16종 고정(ARCHITECTURE §4)이지만 enum 값 범위를 기준으로 잡아 안전하게 둔다.
+                int max = 0;
+                foreach (StatusEffectType v in System.Enum.GetValues(typeof(StatusEffectType)))
+                    max = Mathf.Max(max, (int)v);
+                _labelContents = new GUIContent[max + 1];
+            }
+
+            if (index < 0 || index >= _labelContents.Length) return GUIContent.none;
+
+            return _labelContents[index] ??= new GUIContent(GetStatusName(type));
         }
 
         /// <summary>상태이상별 색 — 팔레트 시스템.md의 색상 의미를 따른다.</summary>

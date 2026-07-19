@@ -47,6 +47,20 @@ namespace TSWP.Enemies
 
         [Tooltip("공격 시 재생할 이펙트 id (Art.VfxId). 비우면 없음.")]
         public string attackVfxId;
+
+        // ── 예비 동작 (telegraph) ─────────────────────────────────
+        // 근거: 전투 시스템.md — "공격은 명확해야 한다 / 피격이 공정해야 한다".
+        //   예고 없는 공격은 반응할 수 없어 불공정하다. 예비 동작 동안 적은 이동을 멈추고
+        //   색/이펙트로 공격을 예고하며, 시간이 지나면 반드시 발동한다(회피 가능한 확정 공격).
+        [Header("예비 동작 (공격 예고)")]
+        [Tooltip("공격 발동 전 예고 시간(초). 0이면 예고 없이 즉시 발동한다. 난이도 패턴 속도 배율로 나뉘어 짧아진다.")]
+        [Min(0f)] public float telegraphDuration = 0.35f; // TODO(밸런스): 문서 미정
+
+        [Tooltip("예비 동작 중 본체 스프라이트 색. 흰색이면 색을 바꾸지 않는다.")]
+        public Color telegraphColor = new Color(1f, 0.55f, 0.2f); // 주황 — 위험 예고 (팔레트 시스템.md 의미 색상)
+
+        [Tooltip("예비 동작 시작 시 재생할 이펙트 id (Art.VfxId). 비우면 없음.")]
+        public string telegraphVfxId;
     }
 
     /// <summary>공격 조합 패턴 — 엘리트 이상만 사용한다 ("엘리트 이상은 패턴을 조합하여 사용한다").</summary>
@@ -102,6 +116,29 @@ namespace TSWP.Enemies
 
         [Tooltip("고유 능력 (특수 적: 힐러/자폭/저격수/소환사/버퍼/디버퍼). 없으면 비움.")]
         public SpecialAbility specialAbility;
+
+        [Header("이동/지형")]
+        // 근거: 적 시스템.md — 적도 환경(낙사)의 영향을 받는다. 다만 '스스로 걸어서' 떨어지면
+        //   전투가 성립하지 않는다. 플레이어가 유도해 떨어뜨리는 것은 여전히 가능해야 하므로
+        //   이 옵션은 '자발적 이동'만 막고 넉백/밀림에는 관여하지 않는다.
+        [Tooltip("발밑에 땅이 없으면 그 방향으로 스스로 걸어가지 않는다. 넉백으로 밀려 떨어지는 것은 막지 않는다.")]
+        public bool avoidLedges = true;
+
+        [Tooltip("낭떠러지 회피를 무시하고 추격하는 적 (비행/도약형). avoidLedges보다 우선한다.")]
+        public bool canTraverseGaps = false;
+
+        [Header("연출")]
+        [Tooltip("사망 시 재생할 이펙트 id. 비우면 Art.VfxId.Death를 사용한다.")]
+        public string deathVfxId = "";
+
+        [Tooltip("사망 후 오브젝트가 제거되기까지의 연출 시간(초). 0이면 즉시 제거.")]
+        [Min(0f)] public float deathLingerDuration = 0.4f; // TODO(밸런스): 문서 미정
+
+        [Tooltip("사망 연출 동안 스프라이트를 서서히 투명하게 만든다.")]
+        public bool fadeOutOnDeath = true;
+
+        [Tooltip("머리 위 체력바 표시 (EnemyHealthBar). 프리팹에 이미 있으면 그것을 사용한다.")]
+        public bool showHealthBar = true;
 
         [Header("상태이상/환경")]
         [Tooltip("면역 상태이상 목록 — 일부 적/엘리트. 스폰 시 StatusEffectController에 주입된다.")]

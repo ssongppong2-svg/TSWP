@@ -20,6 +20,11 @@ namespace TSWP.Player
         private CombatEntity _entity;
         private IInteractable _currentTarget;
 
+        // 매 프레임 탐색이라 할당이 없어야 한다 (감사 #34: OverlapCircleAll의 프레임당 배열 할당).
+        // Unity 6에서 제거된 OverlapCircleNonAlloc 대신 ContactFilter2D 오버로드 + 재사용 버퍼를 쓴다.
+        private readonly Collider2D[] _hitBuffer = new Collider2D[16];
+        private ContactFilter2D _filter;
+
         /// <summary>대상 변경 통지 — UI.InteractionPrompt("E: ...")가 구독한다. null = 대상 없음.</summary>
         public event Action<IInteractable> TargetChanged;
 
@@ -70,20 +75,28 @@ namespace TSWP.Player
         /// <summary>반경 내 상호작용 가능한 최근접 대상 탐색. 조건 불충족(CanInteract=false) 대상은 프롬프트에서 제외.</summary>
         private IInteractable FindNearestInteractable()
         {
-            Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, interactRadius, interactMask);
+            _filter.SetLayerMask(interactMask);
+            _filter.useLayerMask = true;
+            _filter.useTriggers = true; // 상호작용 대상은 대부분 트리거 콜라이더다
+
+            int count = Physics2D.OverlapCircle(transform.position, interactRadius, _filter, _hitBuffer);
+
             IInteractable nearest = null;
             float nearestSqr = float.MaxValue;
 
-            for (int i = 0; i < hits.Length; i++)
+            for (int i = 0; i < count; i++)
             {
-                if (hits[i].gameObject == gameObject) continue; // 자기 자신 제외 (자기 부활 금지 등)
+                var hit = _hitBuffer[i];
+                if (hit == null) continue;
+                if (hit.gameObject == gameObject) continue;          // 자기 자신 제외 (자기 부활 금지 등)
+                if (hit.transform.IsChildOf(transform)) continue;    // 자기 자식 콜라이더도 제외
 
                 // 콜라이더가 자식 오브젝트에 있는 구성 대응 — 부모 방향 탐색.
-                IInteractable candidate = hits[i].GetComponentInParent<IInteractable>();
+                IInteractable candidate = hit.GetComponentInParent<IInteractable>();
                 if (candidate == null) continue;
                 if (!candidate.CanInteract(_controller)) continue;
 
-                float sqr = ((Vector2)hits[i].transform.position - (Vector2)transform.position).sqrMagnitude;
+                float sqr = ((Vector2)hit.transform.position - (Vector2)transform.position).sqrMagnitude;
                 if (sqr < nearestSqr)
                 {
                     nearestSqr = sqr;
