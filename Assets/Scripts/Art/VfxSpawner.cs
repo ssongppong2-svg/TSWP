@@ -1,5 +1,7 @@
 // 8인 협동 + 다수의 적이 동시에 싸우므로 이펙트 생성이 잦다.
-// GameObject를 매번 생성/파괴하면 GC가 튀므로 풀링한다 (개발 우선순위 7 '최적화'보다 앞서는 안정성 문제).
+// GameObject를 매번 생성/파괴하면 GC가 튀므로 풀링한다.
+// 하나의 연출은 여러 레이어를 지연·오프셋·회전을 달리해 겹쳐 만든다 (타격감의 핵심).
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -17,11 +19,8 @@ namespace TSWP.Art
         [SerializeField] private VfxLibrary library;
 
         [Header("풀")]
-        [Tooltip("시작 시 미리 만들어 둘 인스턴스 수.")]
-        [SerializeField, Min(0)] private int prewarmCount = 16;
-
-        [Tooltip("동시에 존재할 수 있는 최대 이펙트 수. 초과 요청은 무시된다.")]
-        [SerializeField, Min(1)] private int maxActive = 128;
+        [SerializeField, Min(0)] private int prewarmCount = 24;
+        [SerializeField, Min(1)] private int maxActive = 160;
 
         private readonly Stack<VfxPlayer> _pool = new Stack<VfxPlayer>();
         private int _activeCount;
@@ -44,32 +43,78 @@ namespace TSWP.Art
             if (Instance == this) Instance = null;
         }
 
-        /// <summary>이펙트를 특정 위치에 재생한다.</summary>
-        /// <param name="vfxId">VfxId 상수</param>
-        /// <param name="position">월드 위치</param>
-        /// <param name="flipX">좌우 반전</param>
-        /// <param name="tint">추가 색조 (null이면 원본 색)</param>
-        public VfxPlayer Play(string vfxId, Vector3 position, bool flipX = false, Color? tint = null)
+        /// <summary>
+        /// 합성 이펙트를 재생한다. 등록된 레이어를 전부 겹쳐 재생하며, 지연이 있는 레이어는 나중에 나온다.
+        /// </summary>
+        public void Play(string vfxId, Vector3 position, bool flipX = false, Color? tint = null,
+                         float rotation = 0f, Transform follow = null)
         {
-            if (library == null) return null;
+            if (library == null) return;
 
-            var definition = library.Find(vfxId);
-            if (definition == null) return null;
+            var entry = library.Find(vfxId);
+            if (entry == null || entry.layers == null) return;
 
-            return Play(definition, position, flipX, tint);
+            for (int i = 0; i < entry.layers.Count; i++)
+            {
+                var layer = entry.layers[i];
+                if (layer == null || layer.definition == null) continue;
+
+                if (layer.delay > 0f)
+                    StartCoroutine(PlayDelayed(layer, position, flipX, tint, rotation, follow));
+                else
+                    PlayLayer(layer, position, flipX, tint, rotation, follow);
+            }
         }
 
-        public VfxPlayer Play(VfxDefinition definition, Vector3 position, bool flipX = false, Color? tint = null)
+        private IEnumerator PlayDelayed(VfxLayer layer, Vector3 position, bool flipX, Color? tint,
+                                        float rotation, Transform follow)
         {
-            if (definition == null) return null;
-            if (_activeCount >= maxActive) return null; // 과부하 방지
+            yield return new WaitForSecondsRealtime(layer.delay);
+            PlayLayer(layer, position, flipX, tint, rotation, follow);
+        }
+
+        private VfxPlayer PlayLayer(VfxLayer layer, Vector3 position, bool flipX, Color? tint,
+                                    float rotation, Transform follow)
+        {
+            if (_activeCount >= maxActive) return null;
 
             VfxPlayer player = _pool.Count > 0 ? _pool.Pop() : CreateInstance();
             if (player == null) return null;
 
-            player.transform.SetPositionAndRotation(position, Quaternion.identity);
-            player.Play(definition, flipX, tint);
+            // 좌우 반전 시 오프셋도 뒤집어야 방향이 맞는다.
+            Vector3 offset = layer.offset;
+            if (flipX) offset.x = -offset.x;
+
+            float finalRotation = rotation + layer.rotation;
+            if (layer.randomRotation) finalRotation += Random.Range(0f, 360f);
+
+            Color finalTint = tint ?? layer.tint;
+
+            player.transform.position = position + offset;
+            player.Play(layer.definition, flipX, finalTint, layer.scaleMultiplier, finalRotation, layer.speedMultiplier);
+
+            if (follow != null) player.SetFollow(follow, offset);
+
             _activeCount++;
+            return player;
+        }
+
+        /// <summary>
+        /// 캐릭터에 붙어 반복 재생되는 이펙트(상태이상 등)를 시작한다.
+        /// 반환된 VfxPlayer를 보관했다가 Stop()으로 끄면 된다.
+        /// </summary>
+        public VfxPlayer PlayAttached(string vfxId, Transform target, Vector3 offset, Color? tint = null)
+        {
+            if (library == null || target == null) return null;
+
+            var entry = library.Find(vfxId);
+            if (entry == null || entry.layers == null || entry.layers.Count == 0) return null;
+
+            // 부착형은 첫 레이어만 사용한다 (여러 장이 계속 겹치면 화면이 지저분해진다).
+            var layer = entry.layers[0];
+            if (layer == null || layer.definition == null) return null;
+
+            var player = PlayLayer(layer, target.position + offset, false, tint, 0f, target);
             return player;
         }
 
@@ -94,7 +139,6 @@ namespace TSWP.Art
         }
 
 #if UNITY_EDITOR
-        /// <summary>테스트 씬 빌더가 카탈로그를 주입할 때 사용.</summary>
         public void SetLibrary(VfxLibrary value) => library = value;
 #endif
     }

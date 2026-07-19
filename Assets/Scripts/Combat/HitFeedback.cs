@@ -16,7 +16,7 @@ namespace TSWP.Combat
 
         [Header("히트스톱")]
         [Tooltip("타격 순간 시간을 멈춰 무게감을 준다. 0이면 사용 안 함.")]
-        [SerializeField, Min(0f)] private float hitStopDuration = 0.045f; // TODO(밸런스): 문서 미정
+        [SerializeField, Min(0f)] private float hitStopDuration = 0.07f; // TODO(밸런스): 문서 미정
 
         [Tooltip("히트스톱 중 시간 배율. 0이면 완전 정지.")]
         [Range(0f, 1f)][SerializeField] private float hitStopTimeScale = 0f;
@@ -25,16 +25,16 @@ namespace TSWP.Combat
         [SerializeField, Min(1f)] private float criticalHitStopMultiplier = 2f;
 
         [Header("화면 흔들림")]
-        [SerializeField, Min(0f)] private float shakeDuration = 0.12f;   // TODO(밸런스): 문서 미정
-        [SerializeField, Min(0f)] private float shakeMagnitude = 0.12f;
+        [SerializeField, Min(0f)] private float shakeDuration = 0.18f;   // TODO(밸런스): 문서 미정
+        [SerializeField, Min(0f)] private float shakeMagnitude = 0.22f;
 
         [Tooltip("피해량이 이 값일 때 흔들림이 최대가 된다 (피해에 비례해 강해진다).")]
-        [SerializeField, Min(1f)] private float shakeReferenceDamage = 40f;
+        [SerializeField, Min(1f)] private float shakeReferenceDamage = 25f;
 
         [Header("피격 플래시")]
         [Tooltip("피격 시 스프라이트가 이 색으로 번쩍인다.")]
         [SerializeField] private Color flashColor = Color.white;
-        [SerializeField, Min(0f)] private float flashDuration = 0.08f;
+        [SerializeField, Min(0f)] private float flashDuration = 0.11f;
 
         [Header("타격 이펙트")]
         [Tooltip("일반 타격에 재생할 이펙트 id (Art.VfxId).")]

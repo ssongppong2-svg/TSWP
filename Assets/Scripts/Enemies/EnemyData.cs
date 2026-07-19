@@ -31,6 +31,22 @@ namespace TSWP.Enemies
 
         [Tooltip("피격 시 부여할 상태이상 (CC/디버프 역할군의 수단).")]
         public List<StatusEffectData> statusEffects = new List<StatusEffectData>();
+
+        [Header("원거리")]
+        [Tooltip("투사체를 발사하는 공격인가 (저격수 역할군).")]
+        public bool isRanged;
+
+        [Tooltip("발사할 투사체 프리팹. isRanged일 때만 사용한다.")]
+        public Projectile projectilePrefab;
+
+        [Tooltip("투사체 속도.")]
+        [Min(0.1f)] public float projectileSpeed = 8f; // TODO(밸런스): 문서 미정
+
+        [Tooltip("총구 오프셋 — 자기 콜라이더 안에서 생성되지 않도록 앞으로 띄운다.")]
+        public float muzzleForward = 0.7f;
+
+        [Tooltip("공격 시 재생할 이펙트 id (Art.VfxId). 비우면 없음.")]
+        public string attackVfxId;
     }
 
     /// <summary>공격 조합 패턴 — 엘리트 이상만 사용한다 ("엘리트 이상은 패턴을 조합하여 사용한다").</summary>

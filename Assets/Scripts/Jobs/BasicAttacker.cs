@@ -181,6 +181,22 @@ namespace TSWP.Jobs
                 if (hits[i].TryGetComponent(out IDamageable target))
                 {
                     DamageInfo info = BuildDamageInfo();
+
+                    // 넉백 — 맞은 대상을 공격 방향으로 밀고 살짝 띄운다.
+                    // 대상마다 방향이 달라야 자연스러우므로 여기서 계산한다.
+                    if (profile.KnockbackForce > 0f)
+                    {
+                        Vector2 toTarget = (Vector2)hits[i].transform.position - (Vector2)transform.position;
+                        Vector2 kbDir = toTarget.sqrMagnitude > 0.0001f ? toTarget.normalized : direction;
+                        kbDir.y += profile.KnockbackUpward;
+
+                        info.Knockback = new KnockbackInfo
+                        {
+                            Direction = kbDir.normalized,
+                            Force = profile.KnockbackForce,
+                        };
+                    }
+
                     target.TakeDamage(in info);
                 }
             }

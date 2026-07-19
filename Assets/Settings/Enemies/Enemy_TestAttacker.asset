@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32ce2d684b6754f4d97c74f0597dc6f2, type: 3}
+  m_Name: Enemy_TestAttacker
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Enemies.EnemyData
+  enemyId: test.attacker
+  displayName: "\uD14C\uC2A4\uD2B8 \uCD94\uC801\uC790"
+  grade: 0
+  roles: 1
+  enemyPrefab: {fileID: 0}
+  maxHp: 80
+  moveSpeed: 2.2
+  basicAttack:
+    attackName: "\uAE30\uBCF8 \uACF5\uACA9"
+    damage: 8
+    range: 1.4
+    cooldown: 1.2
+    isExplosive: 0
+    applyKnockback: 1
+    knockback:
+      Direction: {x: 0, y: 0}
+      Force: 6
+      StunDuration: 0
+    statusEffects: []
+  specialAttacks: []
+  patterns: []
+  specialAbility: {fileID: 0}
+  statusImmunities: 
+  affectedByEnvironment: 1
+  dropTable: {fileID: 0}
+  rareDropMultiplier: 1
+  killReward:
+    Exp: 0
+    Gold: 0
+    ItemCodes: []
+  superCowardScaling:
+    hpMultiplier: 1
+    attackMultiplier: 1
+    patternSpeedMultiplier: 1
+  humanScaling:
+    hpMultiplier: 1
+    attackMultiplier: 1
+    patternSpeedMultiplier: 1
+  godScaling:
+    hpMultiplier: 1
+    attackMultiplier: 1
+    patternSpeedMultiplier: 1
+  memeScaling:
+    hpMultiplier: 1
+    attackMultiplier: 1
+    patternSpeedMultiplier: 1

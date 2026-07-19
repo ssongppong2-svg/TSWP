@@ -35,11 +35,20 @@ namespace TSWP.Jobs
         [Tooltip("이펙트를 캐릭터로부터 얼마나 앞에 띄울지 (사거리 비율).")]
         [SerializeField, Range(0f, 1f)] private float vfxForwardRatio = 0.6f;
 
+        [Header("타격감")]
+        [Tooltip("맞은 대상을 밀어내는 힘. 0이면 넉백 없음 — 타격감이 크게 달라진다.")]
+        [SerializeField, Min(0f)] private float knockbackForce = 5f; // TODO(밸런스): 문서 미정
+
+        [Tooltip("넉백에 실리는 위쪽 성분 — 살짝 띄우면 맞는 맛이 산다.")]
+        [SerializeField, Range(0f, 1f)] private float knockbackUpward = 0.35f;
+
         public BasicAttackType AttackType => attackType;
         public float Range => range;
         public float AttackSpeed => attackSpeed;
         public float Damage => damage;
         public string AttackVfxId => attackVfxId;
         public float VfxForwardRatio => vfxForwardRatio;
+        public float KnockbackForce => knockbackForce;
+        public float KnockbackUpward => knockbackUpward;
     }
 }

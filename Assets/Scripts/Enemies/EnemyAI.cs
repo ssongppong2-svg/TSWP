@@ -224,29 +224,62 @@ namespace TSWP.Enemies
             if (data == null || target == null) return;
 
             EnemyAttack attack = data.basicAttack;
+            Vector2 direction = ((Vector2)target.transform.position - (Vector2)transform.position).normalized;
 
-            var info = new DamageInfo
+            // 공격 이펙트
+            if (!string.IsNullOrEmpty(attack.attackVfxId))
             {
-                BaseDamage = attack.damage * _controller.AttackMultiplier,
-                IsExplosive = attack.isExplosive,
-                Source = _combat,
-                StatusEffects = attack.statusEffects != null && attack.statusEffects.Count > 0
-                    ? new List<StatusEffects.StatusEffectData>(attack.statusEffects)
-                    : null,
-            };
+                Vector3 origin = transform.position + (Vector3)(direction * attack.muzzleForward);
+                Art.VfxSpawner.Instance?.Play(attack.attackVfxId, origin, flipX: direction.x < 0f);
+            }
 
+            var statusEffects = attack.statusEffects != null && attack.statusEffects.Count > 0
+                ? new List<StatusEffects.StatusEffectData>(attack.statusEffects)
+                : null;
+
+            KnockbackInfo? knockback = null;
             if (attack.applyKnockback)
             {
                 KnockbackInfo kb = attack.knockback;
-                kb.Direction = ((Vector2)target.transform.position - (Vector2)transform.position).normalized;
-                info.Knockback = kb;
+                kb.Direction = direction;
+                knockback = kb;
             }
 
-            DamageSystem.Apply(target, in info);
+            float damage = attack.damage * _controller.AttackMultiplier;
+
+            if (attack.isRanged && attack.projectilePrefab != null)
+            {
+                FireProjectile(attack, direction, damage, statusEffects, knockback);
+            }
+            else
+            {
+                var info = new DamageInfo
+                {
+                    BaseDamage = damage,
+                    IsExplosive = attack.isExplosive,
+                    Source = _combat,
+                    StatusEffects = statusEffects,
+                    Knockback = knockback,
+                };
+                DamageSystem.Apply(target, in info);
+            }
 
             // 패턴 속도 배율이 높을수록 쿨타임이 짧아진다 (난이도 3종 배율 중 하나)
             float speed = Mathf.Max(0.1f, _controller.PatternSpeedMultiplier);
             _attackCooldown = attack.cooldown / speed;
+        }
+
+        /// <summary>투사체 발사 — 총구는 자기 콜라이더 밖에서 생성한다.</summary>
+        private void FireProjectile(EnemyAttack attack, Vector2 direction, float damage,
+                                    List<StatusEffects.StatusEffectData> statusEffects,
+                                    KnockbackInfo? knockback)
+        {
+            Vector3 muzzle = transform.position + (Vector3)(direction * attack.muzzleForward);
+
+            var projectile = Instantiate(attack.projectilePrefab, muzzle, Quaternion.identity);
+            projectile.SetSpeed(attack.projectileSpeed);
+            projectile.SetObstacleMask(obstacleMask);
+            projectile.Launch(_combat, direction, damage, statusEffects, knockback, attack.isExplosive);
         }
 
         private void MoveToward(Vector2 destination)

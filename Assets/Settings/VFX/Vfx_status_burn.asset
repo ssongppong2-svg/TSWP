@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 038e350314e31344bbcbaef20cefe27f, type: 3}
+  m_Name: Vfx_status_burn
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Art.VfxDefinition
+  vfxId: status.burn
+  sheet: {fileID: 2800000, guid: aac60e2753e921447a7eac931b3fdc54, type: 3}
+  row: 0
+  startFrame: 0
+  frameCount: 0
+  fps: 14
+  loop: 0
+  pixelsPerUnit: 48
+  scale: 1
+  sortingOrder: 20
+  canFlip: 1

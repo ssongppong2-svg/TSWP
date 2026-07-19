@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a3cc6bca93bafaa428be968d4ba7ee2d, type: 3}
+  m_Name: VfxLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Art.VfxLibrary
+  entries:
+  - id: hit.neutral
+    definition: {fileID: 11400000, guid: ed32a9179034c2b4c96dae08b8789844, type: 2}
+  - id: hit.critical
+    definition: {fileID: 11400000, guid: b8b312da5193b834aadd2bddb024a7fb, type: 2}
+  - id: hit.blood
+    definition: {fileID: 11400000, guid: 56e80ae4c171f094c9359131d62ee533, type: 2}
+  - id: slash
+    definition: {fileID: 11400000, guid: 71dc386f7e0051341b26fce664e2d0e9, type: 2}
+  - id: explosion
+    definition: {fileID: 11400000, guid: d4d9944185d4a4f4c9901594ab62b865, type: 2}
+  - id: dash.trail
+    definition: {fileID: 11400000, guid: 00a186506d76f2340bca34866bb901ab, type: 2}
+  - id: land.dust
+    definition: {fileID: 11400000, guid: d7e86e1fdb83693479ff6974a38c224b, type: 2}
+  - id: jump.dust
+    definition: {fileID: 11400000, guid: 855c9a76a59d0a84892de470420c1182, type: 2}
+  - id: status.burn
+    definition: {fileID: 11400000, guid: 97c17482ac736bf4d8162a594d431976, type: 2}
+  - id: status.poison
+    definition: {fileID: 11400000, guid: 284025e9a1ff6b6448f0c6b58cecf5aa, type: 2}
+  - id: status.freeze
+    definition: {fileID: 11400000, guid: 65a7b0712a8795247bb443131a255d93, type: 2}
+  - id: status.curse
+    definition: {fileID: 11400000, guid: 3d16d11edc68e864ea121514094aaf9e, type: 2}
+  - id: heal
+    definition: {fileID: 11400000, guid: 6d95e6b97783e0541ad9d76b22101c2a, type: 2}
+  - id: death
+    definition: {fileID: 11400000, guid: cfe51c25e9ad8ae48889006d72c95b5e, type: 2}

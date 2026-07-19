@@ -48,6 +48,7 @@ namespace TSWP.EditorTools
             CreatePostFx(player);
             CreateVfx(player);
             CreateAttackerEnemy(square);
+            CreateRangedEnemy(square);
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -95,6 +96,7 @@ namespace TSWP.EditorTools
             SetPrivateField(entity, "maxHp", 100f);
 
             go.AddComponent<StatusEffectController>();
+            go.AddComponent<StatusEffectVisual>(); // 상태이상 부착 이펙트 + 머리 위 표시
             go.AddComponent<PlayerStats>();
             go.AddComponent<BasicAttacker>();
 
@@ -194,6 +196,7 @@ namespace TSWP.EditorTools
             SetPrivateField(entity, "autoReviveOnDeath", false);
 
             go.AddComponent<StatusEffectController>();
+            go.AddComponent<StatusEffectVisual>();
             go.AddComponent<TestDummy>();
         }
 
@@ -306,39 +309,119 @@ namespace TSWP.EditorTools
                 AssetDatabase.CreateAsset(library, libPath);
             }
 
-            // (id, 시트 경로, 색상 행, PPU, 크기 배율, 정렬)
-            var specs = new (string id, string sheet, VfxRow row, float ppu, float scale)[]
+            // 하나의 연출을 여러 시트로 겹쳐 만든다 — 층이 생기면 타격감이 크게 살아난다.
+            // (시트, 색상 행, PPU, 크기, FPS, 반복) → 정의 에셋
+            var entries = new List<VfxLibrary.Entry>
             {
-                // 일반 타격 — 작고 짧은 스파크(28x28, 9프레임)
-                (VfxId.HitNeutral,  "Part7/335.png",   VfxRow.Neutral, 48f, 1.0f),
-                // 치명타 — 더 크고 화려한 폭발(34x34, 12프레임)
-                (VfxId.HitCritical, "Part2/79.png",    VfxRow.Fire,    40f, 1.2f),
-                // 출혈 — 진홍 행
-                (VfxId.HitBlood,    "Part11/528.png",  VfxRow.Blood,   48f, 1.0f),
-                // 검 베기 — 가로로 긴 파동(46x22, 15프레임)
-                (VfxId.Slash,       "Part1/06.png",    VfxRow.Neutral, 40f, 1.1f),
-                // 폭발 — 가장 큰 폭발(52x52, 13프레임)
-                (VfxId.Explosion,   "Part1/03.png",    VfxRow.Fire,    32f, 1.3f),
-                // 대쉬 잔상 — 가로로 납작(18x6, 14프레임)
-                (VfxId.DashTrail,   "Part1/05.png",    VfxRow.Neutral, 48f, 1.0f),
-                // 착지 먼지 — 납작한 가로 파동(50x10, 8프레임)
-                (VfxId.LandDust,    "Part8/375.png",   VfxRow.Earth,   40f, 1.0f),
-                (VfxId.JumpDust,    "Part8/375.png",   VfxRow.Earth,   48f, 0.8f),
-                // 상태이상
-                (VfxId.StatusBurn,  "Part5/241.png",   VfxRow.Fire,    48f, 1.0f),
-                (VfxId.StatusPoison,"Part2/79.png",    VfxRow.Poison,  48f, 0.9f),
-                (VfxId.StatusFreeze,"Part2/79.png",    VfxRow.Ice,     48f, 0.9f),
-                (VfxId.StatusCurse, "Part2/79.png",    VfxRow.Arcane,  48f, 0.9f),
-                // 회복 — 하늘색(팔레트: 파랑 = 회복/보호)
-                (VfxId.Heal,        "Part11/529.png",  VfxRow.Ice,     48f, 1.0f),
-                // 사망 — 큰 폭발
-                (VfxId.Death,       "Part10/484.png",  VfxRow.Dusk,    36f, 1.1f),
+                // ── 검 베기 ── 궤적 + 앞쪽 스파크 + 뒤따르는 사선 파동
+                Composite(folder, VfxId.Slash,
+                    Layer("Part2/70.png",  VfxRow.Neutral, 36f, 1.35f, 16f, rotation: -18f),
+                    Layer("Part8/397.png", VfxRow.Neutral, 44f, 1.0f,  18f, delay: 0.02f, offset: new Vector2(0.35f, 0f), randomRot: true),
+                    Layer("Part6/276.png", VfxRow.Neutral, 40f, 1.15f, 18f, delay: 0.05f, rotation: 14f, speed: 1.3f)),
+
+                // ── 일반 타격 ── 코어 + 튀는 스파크 2겹
+                Composite(folder, VfxId.HitNeutral,
+                    Layer("Part7/335.png",  VfxRow.Neutral, 44f, 1.1f, 18f, randomRot: true),
+                    Layer("Part11/518.png", VfxRow.Neutral, 40f, 1.2f, 20f, delay: 0.02f, randomRot: true),
+                    Layer("Part6/284.png",  VfxRow.Fire,    48f, 0.9f, 20f, delay: 0.05f, offset: new Vector2(0.2f, 0.15f), randomRot: true)),
+
+                // ── 치명타 ── 큰 폭발 + 충격파 + 스파크
+                Composite(folder, VfxId.HitCritical,
+                    Layer("Part2/79.png",   VfxRow.Fire, 34f, 1.3f, 18f),
+                    Layer("Part1/03.png",   VfxRow.Fire, 30f, 1.0f, 16f, delay: 0.03f),
+                    Layer("Part11/517.png", VfxRow.Fire, 36f, 1.3f, 20f, delay: 0.06f, randomRot: true)),
+
+                // ── 출혈 ──
+                Composite(folder, VfxId.HitBlood,
+                    Layer("Part11/528.png", VfxRow.Blood, 44f, 1.0f, 16f, randomRot: true)),
+
+                // ── 폭발 ──
+                Composite(folder, VfxId.Explosion,
+                    Layer("Part1/03.png",  VfxRow.Fire, 28f, 1.3f, 15f),
+                    Layer("Part2/70.png",  VfxRow.Fire, 30f, 1.4f, 16f, delay: 0.04f),
+                    Layer("Part8/397.png", VfxRow.Fire, 36f, 1.2f, 18f, delay: 0.07f, randomRot: true)),
+
+                // ── 투사체 착탄 ──
+                Composite(folder, VfxId.ProjectileImpact,
+                    Layer("Part7/335.png",  VfxRow.Arcane, 44f, 1.0f, 18f, randomRot: true),
+                    Layer("Part11/518.png", VfxRow.Arcane, 42f, 1.1f, 20f, delay: 0.02f, randomRot: true)),
+
+                // ── 이동 ──
+                Composite(folder, VfxId.DashTrail,
+                    Layer("Part1/05.png", VfxRow.Neutral, 44f, 1.2f, 18f)),
+                Composite(folder, VfxId.LandDust,
+                    Layer("Part8/375.png", VfxRow.Earth, 40f, 1.1f, 16f)),
+                Composite(folder, VfxId.JumpDust,
+                    Layer("Part8/375.png", VfxRow.Earth, 48f, 0.8f, 18f)),
+
+                // ── 상태이상 (캐릭터에 붙어 반복 재생) ──
+                Composite(folder, VfxId.StatusBurn,
+                    Layer("Part5/241.png", VfxRow.Fire, 44f, 1.0f, 12f, loop: true)),
+                Composite(folder, VfxId.StatusPoison,
+                    Layer("Part5/241.png", VfxRow.Poison, 44f, 1.0f, 10f, loop: true)),
+                Composite(folder, VfxId.StatusFreeze,
+                    Layer("Part2/79.png", VfxRow.Ice, 40f, 1.0f, 10f, loop: true)),
+                Composite(folder, VfxId.StatusShock,
+                    Layer("Part8/397.png", VfxRow.Fire, 38f, 1.1f, 20f, loop: true)),
+                Composite(folder, VfxId.StatusCurse,
+                    Layer("Part2/79.png", VfxRow.Arcane, 40f, 1.0f, 12f, loop: true)),
+                Composite(folder, VfxId.StatusConfusion,
+                    Layer("Part2/79.png", VfxRow.Arcane, 40f, 1.05f, 14f, loop: true)),
+                Composite(folder, VfxId.StatusFear,
+                    Layer("Part11/529.png", VfxRow.Void, 44f, 1.0f, 10f, loop: true)),
+
+                // ── 회복 / 사망 ──
+                Composite(folder, VfxId.Heal,
+                    Layer("Part11/529.png", VfxRow.Ice, 44f, 1.0f, 14f)),
+                Composite(folder, VfxId.Death,
+                    Layer("Part10/484.png", VfxRow.Dusk, 32f, 1.1f, 14f),
+                    Layer("Part2/70.png",   VfxRow.Dusk, 34f, 1.2f, 16f, delay: 0.05f)),
             };
 
-            var entries = new List<VfxLibrary.Entry>();
+            entries.RemoveAll(e => e == null || e.layers.Count == 0);
+            library.SetEntries(entries);
+            EditorUtility.SetDirty(library);
+            AssetDatabase.SaveAssets();
 
-            foreach (var spec in specs)
+            Debug.Log($"[TSWP] 이펙트 {entries.Count}종을 카탈로그에 등록했습니다.");
+            return library;
+        }
+
+        /// <summary>레이어 1장의 사양. 실제 VfxDefinition 에셋은 Composite에서 만든다.</summary>
+        private class LayerSpec
+        {
+            public string sheet;
+            public VfxRow row;
+            public float ppu;
+            public float scale;
+            public float fps;
+            public bool loop;
+            public float delay;
+            public Vector2 offset;
+            public float rotation;
+            public bool randomRot;
+            public float speed = 1f;
+        }
+
+        private static LayerSpec Layer(string sheet, VfxRow row, float ppu, float scale, float fps,
+                                       bool loop = false, float delay = 0f, Vector2 offset = default,
+                                       float rotation = 0f, bool randomRot = false, float speed = 1f)
+        {
+            return new LayerSpec
             {
+                sheet = sheet, row = row, ppu = ppu, scale = scale, fps = fps, loop = loop,
+                delay = delay, offset = offset, rotation = rotation, randomRot = randomRot, speed = speed,
+            };
+        }
+
+        /// <summary>레이어 사양들로 VfxDefinition 에셋을 만들고 카탈로그 항목을 구성한다.</summary>
+        private static VfxLibrary.Entry Composite(string folder, string id, params LayerSpec[] specs)
+        {
+            var entry = new VfxLibrary.Entry { id = id, layers = new List<VfxLayer>() };
+
+            for (int i = 0; i < specs.Length; i++)
+            {
+                var spec = specs[i];
                 string sheetPath = "Assets/Sprites/VFX/" + spec.sheet;
                 var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(sheetPath);
                 if (texture == null)
@@ -347,7 +430,10 @@ namespace TSWP.EditorTools
                     continue;
                 }
 
-                string defPath = $"{folder}/Vfx_{spec.id.Replace('.', '_')}.asset";
+                // 같은 (시트, 행) 조합은 정의 에셋을 재사용한다.
+                string defName = $"Vfx_{System.IO.Path.GetFileNameWithoutExtension(spec.sheet)}_{spec.row}";
+                string defPath = $"{folder}/{defName}.asset";
+
                 var def = AssetDatabase.LoadAssetAtPath<VfxDefinition>(defPath);
                 if (def == null)
                 {
@@ -355,27 +441,32 @@ namespace TSWP.EditorTools
                     AssetDatabase.CreateAsset(def, defPath);
                 }
 
-                def.vfxId = spec.id;
+                def.vfxId = defName;
                 def.sheet = texture;
                 def.row = spec.row;
                 def.startFrame = 0;
-                def.frameCount = 0;   // 시트 끝까지
-                def.fps = 14f;        // 12FPS 기준보다 살짝 빠르게 — 타격이 경쾌하다
-                def.loop = false;
+                def.frameCount = 0;
+                def.fps = spec.fps;
+                def.loop = spec.loop;
                 def.pixelsPerUnit = spec.ppu;
-                def.scale = spec.scale;
+                def.scale = 1f;              // 크기는 레이어에서 배율로 조절
                 def.sortingOrder = 20;
                 EditorUtility.SetDirty(def);
 
-                entries.Add(new VfxLibrary.Entry { id = spec.id, definition = def });
+                entry.layers.Add(new VfxLayer
+                {
+                    definition = def,
+                    offset = spec.offset,
+                    delay = spec.delay,
+                    scaleMultiplier = spec.scale,
+                    rotation = spec.rotation,
+                    randomRotation = spec.randomRot,
+                    tint = Color.white,
+                    speedMultiplier = spec.speed,
+                });
             }
 
-            library.SetEntries(entries);
-            EditorUtility.SetDirty(library);
-            AssetDatabase.SaveAssets();
-
-            Debug.Log($"[TSWP] 이펙트 {entries.Count}종을 카탈로그에 등록했습니다.");
-            return library;
+            return entry;
         }
 
         // ── 공격하는 적 ───────────────────────────────────────────
@@ -412,6 +503,7 @@ namespace TSWP.EditorTools
             SetPrivateField(entity, "autoReviveOnDeath", false);
 
             go.AddComponent<StatusEffectController>();
+            go.AddComponent<StatusEffectVisual>();
 
             var controller = go.AddComponent<EnemyController>();
             SetPrivateFieldObject(controller, "data", data);
@@ -421,6 +513,152 @@ namespace TSWP.EditorTools
             var mask = aiSo.FindProperty("obstacleMask");
             if (mask != null) mask.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
             aiSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// 원거리 공격 적 — 멀리서 투사체를 쏜다. 피격과 투사체 회피를 테스트할 수 있다.
+        /// </summary>
+        private static void CreateRangedEnemy(Sprite sprite)
+        {
+            var projectilePrefab = EnsureProjectilePrefab(sprite);
+            var data = EnsureRangedEnemyData(projectilePrefab);
+
+            var go = new GameObject("Enemy_Ranged");
+            go.transform.position = new Vector2(13f, 0f);
+            go.transform.localScale = new Vector3(0.9f, 1.1f, 1f);
+
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = new Color(0.55f, 0.35f, 0.8f); // 원거리 = 보라 (마법사 계열)
+            renderer.sortingOrder = 6;
+
+            var body = go.AddComponent<Rigidbody2D>();
+            body.gravityScale = 3f;
+            body.freezeRotation = true;
+
+            var collider = go.AddComponent<BoxCollider2D>();
+            collider.size = new Vector2(1f, 1f);
+            collider.sharedMaterial = EnsureZeroFrictionMaterial();
+
+            var entity = go.AddComponent<CombatEntity>();
+            SetPrivateField(entity, "team", (int)TeamType.Enemies, isEnum: true);
+            SetPrivateField(entity, "ownerPlayerId", -1);
+            SetPrivateField(entity, "maxHp", 60f);
+            SetPrivateField(entity, "autoReviveOnDeath", false);
+
+            go.AddComponent<StatusEffectController>();
+            go.AddComponent<StatusEffectVisual>(); // 상태이상이 적에게도 보이도록
+
+            var controller = go.AddComponent<EnemyController>();
+            SetPrivateFieldObject(controller, "data", data);
+
+            var ai = go.AddComponent<EnemyAI>();
+            var aiSo = new SerializedObject(ai);
+            var mask = aiSo.FindProperty("obstacleMask");
+            if (mask != null) mask.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
+
+            // 원거리이므로 멀리서도 플레이어를 인지해야 한다
+            var detection = aiSo.FindProperty("detectionRange");
+            if (detection != null) detection.floatValue = 16f;
+            aiSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>투사체 프리팹을 만든다 (없으면 생성, 있으면 재사용).</summary>
+        private static Projectile EnsureProjectilePrefab(Sprite sprite)
+        {
+            const string folder = "Assets/Settings/Prefabs";
+            const string path = folder + "/Projectile_Test.prefab";
+            Directory.CreateDirectory(folder);
+
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (existing != null)
+            {
+                var comp = existing.GetComponent<Projectile>();
+                if (comp != null) return comp;
+            }
+
+            var go = new GameObject("Projectile");
+            go.transform.localScale = new Vector3(0.3f, 0.3f, 1f);
+
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = new Color(0.8f, 0.5f, 1f); // 보라 마법탄
+            renderer.sortingOrder = 15;
+
+            var body = go.AddComponent<Rigidbody2D>();
+            body.gravityScale = 0f;
+            body.freezeRotation = true;
+
+            var collider = go.AddComponent<BoxCollider2D>();
+            collider.isTrigger = true;
+            collider.size = new Vector2(1f, 1f);
+
+            var projectile = go.AddComponent<Projectile>();
+            var so = new SerializedObject(projectile);
+            var mask = so.FindProperty("obstacleMask");
+            if (mask != null) mask.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            var saved = PrefabUtility.SaveAsPrefabAsset(go, path);
+            Object.DestroyImmediate(go);
+
+            return saved != null ? saved.GetComponent<Projectile>() : null;
+        }
+
+        /// <summary>원거리 적 데이터 — 멀리서 투사체를 쏜다.</summary>
+        private static EnemyData EnsureRangedEnemyData(Projectile projectilePrefab)
+        {
+            const string folder = "Assets/Settings/Enemies";
+            const string path = folder + "/Enemy_TestRanged.asset";
+            Directory.CreateDirectory(folder);
+
+            var data = AssetDatabase.LoadAssetAtPath<EnemyData>(path);
+            if (data == null)
+            {
+                data = ScriptableObject.CreateInstance<EnemyData>();
+                AssetDatabase.CreateAsset(data, path);
+            }
+
+            var so = new SerializedObject(data);
+            SetProp(so, "enemyId", "test.ranged");
+            SetProp(so, "displayName", "테스트 저격수");
+            SetProp(so, "maxHp", 60f);
+            SetProp(so, "moveSpeed", 1.4f);   // 느리게 — 거리를 유지하는 편
+            SetProp(so, "grade", (int)EnemyGrade.Special, isEnum: true);
+
+            var attack = so.FindProperty("basicAttack");
+            if (attack != null)
+            {
+                SetRelative(attack, "damage", 6f);
+                SetRelative(attack, "range", 11f);     // 원거리 사거리
+                SetRelative(attack, "cooldown", 1.6f);
+                SetRelative(attack, "isRanged", true);
+                SetRelative(attack, "projectileSpeed", 7f);
+                SetRelative(attack, "muzzleForward", 0.8f);
+                SetRelative(attack, "attackVfxId", VfxId.ProjectileImpact);
+
+                var prefabProp = attack.FindPropertyRelative("projectilePrefab");
+                if (prefabProp != null) prefabProp.objectReferenceValue = projectilePrefab;
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(data);
+            AssetDatabase.SaveAssets();
+            return data;
+        }
+
+        private static void SetRelative(SerializedProperty parent, string name, object value)
+        {
+            var p = parent.FindPropertyRelative(name);
+            if (p == null) return;
+
+            switch (value)
+            {
+                case float f: p.floatValue = f; break;
+                case int i: p.intValue = i; break;
+                case bool b: p.boolValue = b; break;
+                case string s: p.stringValue = s; break;
+            }
         }
 
         /// <summary>테스트용 적 데이터. 플레이어를 쫓아와 근접 공격한다.</summary>
