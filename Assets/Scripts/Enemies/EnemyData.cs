@@ -117,6 +117,12 @@ namespace TSWP.Enemies
         [Tooltip("고유 능력 (특수 적: 힐러/자폭/저격수/소환사/버퍼/디버퍼). 없으면 비움.")]
         public SpecialAbility specialAbility;
 
+        [Header("AI 성격 (감지/판단/거리 유지)")]
+        // 근거: 적 시스템.md — 난이도는 체력이 아니라 '행동'으로 만든다. 행동 성향은 적의 정체성이므로
+        //   프리팹이 아니라 이 에셋이 소유한다. → 프리팹 1개 + EnemyData N개 = 적 N종.
+        [Tooltip("EnemyAI가 사용하는 감지 거리·후퇴 임계치·사거리 유지 등. 비워 둘 수 없다(항상 인스턴스 보유).")]
+        public EnemyAIProfile aiProfile = new EnemyAIProfile();
+
         [Header("이동/지형")]
         // 근거: 적 시스템.md — 적도 환경(낙사)의 영향을 받는다. 다만 '스스로 걸어서' 떨어지면
         //   전투가 성립하지 않는다. 플레이어가 유도해 떨어뜨리는 것은 여전히 가능해야 하므로
@@ -163,6 +169,15 @@ namespace TSWP.Enemies
         public EnemyDifficultyScaling godScaling = new EnemyDifficultyScaling();         // TODO(밸런스): 1보다 높게
         public EnemyDifficultyScaling memeScaling = new EnemyDifficultyScaling();        // 밈 특수 규칙은 별도 시스템 소관
 
+        /// <summary>
+        /// AI 성격 조회. 직렬화 누락(구버전 에셋)으로 null이어도 공용 기본값을 돌려주어
+        /// AI가 NullReference로 멈추지 않는다 — 데이터 결함이 게임 로직을 깨뜨리지 않게 한다.
+        /// </summary>
+        public EnemyAIProfile ResolveAIProfile() => aiProfile ?? DefaultAIProfile;
+
+        /// <summary>모든 적이 공유하는 읽기 전용 폴백 프로파일 (에셋마다 새로 만들지 않는다).</summary>
+        private static readonly EnemyAIProfile DefaultAIProfile = new EnemyAIProfile();
+
         /// <summary>난이도별 배율 조회 — SpawnManager가 EnemyController.Initialize에 전달한다.</summary>
         public EnemyDifficultyScaling GetScaling(Difficulty difficulty)
         {
@@ -204,6 +219,18 @@ namespace TSWP.Enemies
             if (dropTable != null && killReward != null && killReward.Gold > 0)
                 Debug.LogWarning($"[EnemyData] '{name}': DropTable 골드 범위와 KillReward.Gold가 동시에 설정됨 — 이중 지급 주의. " +
                                  "// NOTE(기획 확인 필요): 골드 지급 경로 단일화", this);
+
+            // 스폰 불가 조기 경고 — 프리팹이 없으면 SpawnManager가 런타임에 스폰을 통째로 생략한다.
+            if (enemyPrefab == null)
+                Debug.LogWarning($"[EnemyData] '{name}': enemyPrefab이 비어 있어 SpawnManager가 스폰하지 못합니다.", this);
+
+            // 원거리 공격인데 투사체가 없으면 EnemyAI가 근접 판정으로 폴백해 사거리 밖에서 헛치게 된다.
+            if (basicAttack != null && basicAttack.isRanged && basicAttack.projectilePrefab == null)
+                Debug.LogWarning($"[EnemyData] '{name}': isRanged인데 projectilePrefab이 없습니다 — 원거리 공격이 근접 판정으로 폴백합니다.", this);
+
+            // 원거리 적이 사거리를 유지하지 않으면 플레이어에게 붙어 버려 원거리 정체성이 사라진다.
+            if (basicAttack != null && basicAttack.isRanged && aiProfile != null && !aiProfile.KeepsDistance)
+                Debug.LogWarning($"[EnemyData] '{name}': 원거리 적은 aiProfile.holdDistanceRatio > 0 권장 (사거리 유지).", this);
 
             // 보스 등급은 Bosses 시스템 소관
             if (grade == EnemyGrade.Boss)
