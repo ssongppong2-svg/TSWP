@@ -7,13 +7,6 @@ using TSWP.Core;
 
 namespace TSWP.Enemies
 {
-    /// <summary>월드에 배치하는 적 생성 지점.</summary>
-    public class SpawnPoint : MonoBehaviour
-    {
-        [Tooltip("화면 밖에서만 사용하는 지점인지 여부.")]
-        public bool offscreenOnly;
-    }
-
     /// <summary>
     /// 적 스폰 매니저. 지정 지점/화면 밖 규칙과 "플레이어 근처 갑툭튀 금지" 최소 거리 검사를 강제한다.
     /// </summary>
