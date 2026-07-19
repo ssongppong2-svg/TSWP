@@ -18,6 +18,7 @@ using TSWP.Combat;
 using TSWP.Core;
 using TSWP.Enemies;
 using TSWP.Jobs;
+using TSWP.Map;
 using TSWP.Player;
 using TSWP.Sandbox;
 using TSWP.StatusEffects;
@@ -49,6 +50,7 @@ namespace TSWP.EditorTools
             CreateVfx(player);
             CreateAttackerEnemy(square);
             CreateRangedEnemy(square);
+            CreateMapIntro();
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -223,6 +225,9 @@ namespace TSWP.EditorTools
             var urpData = go.AddComponent<UniversalAdditionalCameraData>();
             urpData.renderPostProcessing = true;
 
+            // 화면 흔들림 — 오프셋만 제공하고 추적 로직이 더한다(직접 위치를 만지면 추적과 충돌).
+            go.AddComponent<CameraShake>();
+
             var follow = go.AddComponent<SandboxCamera>();
             follow.SetTarget(player.transform);
         }
@@ -243,6 +248,72 @@ namespace TSWP.EditorTools
 
             // 타격 연출 — DamageSystem이 피해 적용 직후 자동 호출한다.
             go.AddComponent<TSWP.Combat.HitFeedback>();
+
+            // 데미지 숫자 — 밸런스를 눈으로 확인하는 프로토타입 핵심 도구.
+            go.AddComponent<TSWP.UI.DamageNumberSpawner>();
+
+            // 투사체 풀 — Instantiate/Destroy 반복 제거.
+            go.AddComponent<TSWP.Combat.ProjectilePool>();
+        }
+
+        // ── 맵 인트로 ─────────────────────────────────────────────
+
+        /// <summary>맵 진입 시네마틱. 맵마다 MapIntroData 에셋만 만들면 재사용된다.</summary>
+        private static void CreateMapIntro()
+        {
+            var data = EnsureForestIntroData();
+
+            var go = new GameObject("MapIntroManager");
+            var manager = go.AddComponent<MapIntroManager>();
+            manager.SetIntro(data);
+        }
+
+        /// <summary>Map 01 — THE FOREST 인트로 데이터.</summary>
+        private static MapIntroData EnsureForestIntroData()
+        {
+            const string folder = "Assets/Settings/MapIntro";
+            const string path = folder + "/MapIntro_Forest.asset";
+            Directory.CreateDirectory(folder);
+
+            var data = AssetDatabase.LoadAssetAtPath<MapIntroData>(path);
+            if (data == null)
+            {
+                data = ScriptableObject.CreateInstance<MapIntroData>();
+                AssetDatabase.CreateAsset(data, path);
+            }
+
+            data.mapId = "forest";
+            data.title = "THE FOREST";
+            data.subtitle = "Map 01";
+
+            // 암전 → 밝아짐 → 제목(3.5초 유지) → 사라짐 → 조작
+            data.blackHold = 1.2f;
+            data.fadeInDuration = 1.6f;
+            data.titleDelay = 0.8f;
+            data.titleFadeIn = 1.0f;
+            data.titleHold = 3.5f;   // 문서 요구: 3~4초
+            data.titleFadeOut = 1.2f;
+            data.tailDuration = 0.4f;
+
+            // 카메라가 오른쪽으로 천천히 이동하며 숲을 훑는다
+            data.cameraMove = MapIntroCameraMove.PanRight;
+            data.cameraStartOffset = new Vector2(-6f, 2f);
+            data.cameraDistance = 10f;
+
+            // 팔레트 시스템.md — 암전은 순수 검정 대신 짙은 남색
+            data.fadeColor = new Color(0.04f, 0.05f, 0.08f, 1f);
+            data.titleColor = Color.white;
+            data.subtitleColor = new Color(0.78f, 0.82f, 0.78f, 1f); // 숲 = 옅은 초록빛
+
+            data.playOnlyOnce = true;
+            data.skippable = true;
+
+            // TODO(사운드): ambientSound(새소리·바람)와 bgm 에셋이 준비되면 여기에 연결한다.
+            //   현재 오디오 에셋이 없어 비워 둔다 — 없어도 연출은 정상 동작한다.
+
+            EditorUtility.SetDirty(data);
+            AssetDatabase.SaveAssets();
+            return data;
         }
 
         /// <summary>상태이상 화면 효과(색수차 등)용 전역 Volume과 디버그 키를 구성한다.</summary>
@@ -511,6 +582,7 @@ namespace TSWP.EditorTools
 
             go.AddComponent<StatusEffectController>();
             go.AddComponent<StatusEffectVisual>();
+            go.AddComponent<EnemyHealthBar>(); // 머리 위 체력바
 
             var controller = go.AddComponent<EnemyController>();
             SetPrivateFieldObject(controller, "data", data);
@@ -555,6 +627,7 @@ namespace TSWP.EditorTools
 
             go.AddComponent<StatusEffectController>();
             go.AddComponent<StatusEffectVisual>(); // 상태이상이 적에게도 보이도록
+            go.AddComponent<EnemyHealthBar>();
 
             var controller = go.AddComponent<EnemyController>();
             SetPrivateFieldObject(controller, "data", data);

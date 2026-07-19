@@ -304,6 +304,17 @@ namespace TSWP.Player
 
             if (_input == null) return;
 
+            // 맵 인트로(시네마틱) 중에는 조작을 받지 않는다.
+            // 스킵도 아무 키나 누르는 방식이라, 그 입력이 이동·공격으로 새어 나가면 안 된다.
+            if (TSWP.Map.MapIntroManager.Instance != null && TSWP.Map.MapIntroManager.Instance.IsPlaying)
+            {
+                _moveAxis = 0f;
+                _runHeld = false;
+                _jumpHeld = false;
+                _jumpBufferTimer = 0f;
+                return;
+            }
+
             // ── 이동 입력 수집 (물리 적용은 FixedUpdate) ──
             _moveAxis = Mathf.Clamp(_input.MoveAxis, -1f, 1f);
             _runHeld = _input.RunHeld;
