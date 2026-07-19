@@ -42,6 +42,8 @@ namespace TSWP.Sandbox
             GUILayout.Space(3f);
             GUILayout.Label("1 혼란 · 2 공포 · 3 감전 · 4 중독", _labelStyle);
             GUILayout.Label("0 : 상태이상 해제", _labelStyle);
+            GUILayout.Space(3f);
+            GUILayout.Label("왼쪽 끝에 추적하는 적이 있습니다", _labelStyle);
 
             GUILayout.Space(6f);
 

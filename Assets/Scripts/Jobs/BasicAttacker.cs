@@ -46,6 +46,21 @@ namespace TSWP.Jobs
         }
 
         /// <summary>직업 조립 시 프로파일 주입.</summary>
+        /// <summary>
+        /// 공격 이펙트를 조준 방향 앞쪽에 재생한다.
+        /// VfxSpawner가 씬에 없으면 조용히 생략된다 (연출 부재로 공격이 실패하지 않는다).
+        /// </summary>
+        private void PlayAttackVfx(Vector2 direction)
+        {
+            if (profile == null || string.IsNullOrEmpty(profile.AttackVfxId)) return;
+
+            var spawner = TSWP.Art.VfxSpawner.Instance;
+            if (spawner == null) return;
+
+            Vector3 origin = transform.position + (Vector3)(direction * (profile.Range * profile.VfxForwardRatio));
+            spawner.Play(profile.AttackVfxId, origin, flipX: direction.x < 0f);
+        }
+
         public void SetProfile(BasicAttackProfile newProfile)
         {
             profile = newProfile;
@@ -80,7 +95,10 @@ namespace TSWP.Jobs
             }
 
             _attackIntervalRemaining = GetAttackInterval();
-            PerformAttack(aimDirection.sqrMagnitude > 0f ? aimDirection.normalized : Vector2.right);
+            Vector2 direction = aimDirection.sqrMagnitude > 0f ? aimDirection.normalized : Vector2.right;
+
+            PlayAttackVfx(direction);
+            PerformAttack(direction);
             return true;
         }
 

@@ -16,6 +16,7 @@ using UnityEngine.Rendering.Universal;
 using TSWP.Art;
 using TSWP.Combat;
 using TSWP.Core;
+using TSWP.Enemies;
 using TSWP.Jobs;
 using TSWP.Player;
 using TSWP.Sandbox;
@@ -45,6 +46,8 @@ namespace TSWP.EditorTools
             CreateHud(player);
             CreateManagers();
             CreatePostFx(player);
+            CreateVfx(player);
+            CreateAttackerEnemy(square);
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -251,6 +254,235 @@ namespace TSWP.EditorTools
             var debugKeys = go.AddComponent<SandboxDebugKeys>();
             debugKeys.SetTarget(player.GetComponent<StatusEffectController>());
             debugKeys.SetEffects(EnsureTestStatusEffects());
+        }
+
+        // ── 이펙트 ────────────────────────────────────────────────
+
+        /// <summary>
+        /// 이펙트 카탈로그를 만들고 스포너를 배치한다.
+        /// 어떤 시트를 쓸지는 180장의 실제 픽셀을 분석해(모양/크기/프레임 수) 용도별로 골랐다.
+        /// </summary>
+        private static void CreateVfx(GameObject player)
+        {
+            var library = EnsureVfxLibrary();
+
+            var go = new GameObject("VfxSpawner");
+            var spawner = go.AddComponent<VfxSpawner>();
+            spawner.SetLibrary(library);
+
+            // 플레이어 기본 공격에 베기 이펙트 연결
+            var attacker = player.GetComponent<BasicAttacker>();
+            if (attacker != null)
+            {
+                var so = new SerializedObject(attacker);
+                var profile = so.FindProperty("profile");
+                if (profile != null)
+                {
+                    var vfxId = profile.FindPropertyRelative("attackVfxId");
+                    if (vfxId != null) vfxId.stringValue = VfxId.Slash;
+
+                    var range = profile.FindPropertyRelative("range");
+                    if (range != null) range.floatValue = 1.6f; // 검 사거리 — 허수아비에 닿도록
+
+                    so.ApplyModifiedPropertiesWithoutUndo();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 용도별 이펙트 정의와 카탈로그를 생성한다.
+        /// (시트, 색상 행, 프레임 수)는 픽셀 분석 결과에 근거해 선택했다.
+        /// </summary>
+        private static VfxLibrary EnsureVfxLibrary()
+        {
+            const string folder = "Assets/Settings/VFX";
+            const string libPath = folder + "/VfxLibrary.asset";
+            Directory.CreateDirectory(folder);
+
+            var library = AssetDatabase.LoadAssetAtPath<VfxLibrary>(libPath);
+            if (library == null)
+            {
+                library = ScriptableObject.CreateInstance<VfxLibrary>();
+                AssetDatabase.CreateAsset(library, libPath);
+            }
+
+            // (id, 시트 경로, 색상 행, PPU, 크기 배율, 정렬)
+            var specs = new (string id, string sheet, VfxRow row, float ppu, float scale)[]
+            {
+                // 일반 타격 — 작고 짧은 스파크(28x28, 9프레임)
+                (VfxId.HitNeutral,  "Part7/335.png",   VfxRow.Neutral, 48f, 1.0f),
+                // 치명타 — 더 크고 화려한 폭발(34x34, 12프레임)
+                (VfxId.HitCritical, "Part2/79.png",    VfxRow.Fire,    40f, 1.2f),
+                // 출혈 — 진홍 행
+                (VfxId.HitBlood,    "Part11/528.png",  VfxRow.Blood,   48f, 1.0f),
+                // 검 베기 — 가로로 긴 파동(46x22, 15프레임)
+                (VfxId.Slash,       "Part1/06.png",    VfxRow.Neutral, 40f, 1.1f),
+                // 폭발 — 가장 큰 폭발(52x52, 13프레임)
+                (VfxId.Explosion,   "Part1/03.png",    VfxRow.Fire,    32f, 1.3f),
+                // 대쉬 잔상 — 가로로 납작(18x6, 14프레임)
+                (VfxId.DashTrail,   "Part1/05.png",    VfxRow.Neutral, 48f, 1.0f),
+                // 착지 먼지 — 납작한 가로 파동(50x10, 8프레임)
+                (VfxId.LandDust,    "Part8/375.png",   VfxRow.Earth,   40f, 1.0f),
+                (VfxId.JumpDust,    "Part8/375.png",   VfxRow.Earth,   48f, 0.8f),
+                // 상태이상
+                (VfxId.StatusBurn,  "Part5/241.png",   VfxRow.Fire,    48f, 1.0f),
+                (VfxId.StatusPoison,"Part2/79.png",    VfxRow.Poison,  48f, 0.9f),
+                (VfxId.StatusFreeze,"Part2/79.png",    VfxRow.Ice,     48f, 0.9f),
+                (VfxId.StatusCurse, "Part2/79.png",    VfxRow.Arcane,  48f, 0.9f),
+                // 회복 — 하늘색(팔레트: 파랑 = 회복/보호)
+                (VfxId.Heal,        "Part11/529.png",  VfxRow.Ice,     48f, 1.0f),
+                // 사망 — 큰 폭발
+                (VfxId.Death,       "Part10/484.png",  VfxRow.Dusk,    36f, 1.1f),
+            };
+
+            var entries = new List<VfxLibrary.Entry>();
+
+            foreach (var spec in specs)
+            {
+                string sheetPath = "Assets/Sprites/VFX/" + spec.sheet;
+                var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(sheetPath);
+                if (texture == null)
+                {
+                    Debug.LogWarning($"[SandboxSceneBuilder] 시트를 찾지 못했습니다: {sheetPath}");
+                    continue;
+                }
+
+                string defPath = $"{folder}/Vfx_{spec.id.Replace('.', '_')}.asset";
+                var def = AssetDatabase.LoadAssetAtPath<VfxDefinition>(defPath);
+                if (def == null)
+                {
+                    def = ScriptableObject.CreateInstance<VfxDefinition>();
+                    AssetDatabase.CreateAsset(def, defPath);
+                }
+
+                def.vfxId = spec.id;
+                def.sheet = texture;
+                def.row = spec.row;
+                def.startFrame = 0;
+                def.frameCount = 0;   // 시트 끝까지
+                def.fps = 14f;        // 12FPS 기준보다 살짝 빠르게 — 타격이 경쾌하다
+                def.loop = false;
+                def.pixelsPerUnit = spec.ppu;
+                def.scale = spec.scale;
+                def.sortingOrder = 20;
+                EditorUtility.SetDirty(def);
+
+                entries.Add(new VfxLibrary.Entry { id = spec.id, definition = def });
+            }
+
+            library.SetEntries(entries);
+            EditorUtility.SetDirty(library);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"[TSWP] 이펙트 {entries.Count}종을 카탈로그에 등록했습니다.");
+            return library;
+        }
+
+        // ── 공격하는 적 ───────────────────────────────────────────
+
+        /// <summary>
+        /// 실제 Enemies 시스템(EnemyData + EnemyController + EnemyAI)으로 적을 만든다.
+        /// 정적 허수아비와 달리 플레이어를 쫓아와 공격하므로 피격 연출을 확인할 수 있다.
+        /// </summary>
+        private static void CreateAttackerEnemy(Sprite sprite)
+        {
+            var data = EnsureAttackerEnemyData();
+
+            var go = new GameObject("Enemy_Attacker");
+            go.transform.position = new Vector2(-9f, 0f);
+            go.transform.localScale = new Vector3(0.9f, 1f, 1f);
+
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = new Color(0.75f, 0.2f, 0.35f); // 적 = 빨강 (팔레트 시스템.md)
+            renderer.sortingOrder = 6;
+
+            var body = go.AddComponent<Rigidbody2D>();
+            body.gravityScale = 3f;
+            body.freezeRotation = true;
+
+            var collider = go.AddComponent<BoxCollider2D>();
+            collider.size = new Vector2(1f, 1f);
+            collider.sharedMaterial = EnsureZeroFrictionMaterial(); // 벽 끼임 방지
+
+            var entity = go.AddComponent<CombatEntity>();
+            SetPrivateField(entity, "team", (int)TeamType.Enemies, isEnum: true);
+            SetPrivateField(entity, "ownerPlayerId", -1);
+            SetPrivateField(entity, "maxHp", 80f);
+            SetPrivateField(entity, "autoReviveOnDeath", false);
+
+            go.AddComponent<StatusEffectController>();
+
+            var controller = go.AddComponent<EnemyController>();
+            SetPrivateFieldObject(controller, "data", data);
+
+            var ai = go.AddComponent<EnemyAI>();
+            var aiSo = new SerializedObject(ai);
+            var mask = aiSo.FindProperty("obstacleMask");
+            if (mask != null) mask.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
+            aiSo.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>테스트용 적 데이터. 플레이어를 쫓아와 근접 공격한다.</summary>
+        private static EnemyData EnsureAttackerEnemyData()
+        {
+            const string folder = "Assets/Settings/Enemies";
+            const string path = folder + "/Enemy_TestAttacker.asset";
+            Directory.CreateDirectory(folder);
+
+            var data = AssetDatabase.LoadAssetAtPath<EnemyData>(path);
+            if (data == null)
+            {
+                data = ScriptableObject.CreateInstance<EnemyData>();
+                AssetDatabase.CreateAsset(data, path);
+            }
+
+            var so = new SerializedObject(data);
+            SetProp(so, "enemyId", "test.attacker");
+            SetProp(so, "displayName", "테스트 추적자");
+            SetProp(so, "maxHp", 80f);
+            SetProp(so, "moveSpeed", 2.2f);
+
+            // 기본 공격 — 사거리 안에 들어오면 때린다
+            var attack = so.FindProperty("basicAttack");
+            if (attack != null)
+            {
+                var dmg = attack.FindPropertyRelative("damage");
+                if (dmg != null) dmg.floatValue = 8f;
+                var range = attack.FindPropertyRelative("range");
+                if (range != null) range.floatValue = 1.4f;
+                var cd = attack.FindPropertyRelative("cooldown");
+                if (cd != null) cd.floatValue = 1.2f;
+
+                // 넉백 — 맞으면 밀려나는 느낌을 확인하기 위해
+                var applyKb = attack.FindPropertyRelative("applyKnockback");
+                if (applyKb != null) applyKb.boolValue = true;
+                var kb = attack.FindPropertyRelative("knockback");
+                if (kb != null)
+                {
+                    var force = kb.FindPropertyRelative("Force");
+                    if (force != null) force.floatValue = 6f;
+                }
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(data);
+            AssetDatabase.SaveAssets();
+            return data;
+        }
+
+        /// <summary>UnityEngine.Object 참조형 private 필드 설정.</summary>
+        private static void SetPrivateFieldObject(Object target, string fieldName, Object value)
+        {
+            var so = new SerializedObject(target);
+            var prop = so.FindProperty(fieldName);
+            if (prop == null)
+            {
+                Debug.LogWarning($"[SandboxSceneBuilder] '{target.GetType().Name}'에 '{fieldName}' 필드가 없습니다.");
+                return;
+            }
+            prop.objectReferenceValue = value;
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         /// <summary>테스트용 상태이상 SO 4종을 생성한다 (혼란/공포/감전/중독).</summary>

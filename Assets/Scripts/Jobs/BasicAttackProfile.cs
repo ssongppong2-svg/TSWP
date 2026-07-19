@@ -29,9 +29,17 @@ namespace TSWP.Jobs
         [Tooltip("1회 피해량 (DamageInfo.BaseDamage 성분).")]
         [SerializeField] private float damage = 10f;     // TODO(밸런스): 문서 미정 — 개별 직업 데이터에서 정의
 
+        [Tooltip("공격 시 재생할 이펙트 id (Art.VfxId). 비우면 이펙트 없음.")]
+        [SerializeField] private string attackVfxId;
+
+        [Tooltip("이펙트를 캐릭터로부터 얼마나 앞에 띄울지 (사거리 비율).")]
+        [SerializeField, Range(0f, 1f)] private float vfxForwardRatio = 0.6f;
+
         public BasicAttackType AttackType => attackType;
         public float Range => range;
         public float AttackSpeed => attackSpeed;
         public float Damage => damage;
+        public string AttackVfxId => attackVfxId;
+        public float VfxForwardRatio => vfxForwardRatio;
     }
 }
