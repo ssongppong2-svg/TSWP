@@ -43,10 +43,20 @@ namespace TSWP.Combat
         [Tooltip("치명타에 재생할 이펙트 id.")]
         [SerializeField] private string criticalVfxId = Art.VfxId.HitCritical;
 
-        private Coroutine _hitStopRoutine;
+        [Tooltip("히트스톱 사이 최소 간격(초). 연타나 다중 타격이 화면을 계속 얼리지 않게 한다.")]
+        [SerializeField, Min(0f)] private float hitStopCooldown = 0.12f;
+
         private Coroutine _shakeRoutine;
         private Transform _cameraTransform;
         private Vector3 _cameraBasePosition;
+
+        // 히트스톱은 코루틴을 갈아끼우지 않고 '해제 예정 시각'으로 관리한다.
+        // 코루틴을 중간에 죽이면 timeScale 복구가 누락될 수 있고, 여러 대상이 동시에 맞을 때
+        // 정지가 연쇄되어 FixedUpdate가 계속 멈춘다(= 조작이 씹히는 원인).
+        private float _hitStopUntil;
+        private float _hitStopReadyAt;
+        private bool _hitStopActive;
+        private float _savedTimeScale = 1f;
 
         private void Awake()
         {
@@ -92,22 +102,48 @@ namespace TSWP.Combat
         {
             if (hitStopDuration <= 0f) return;
 
-            float duration = hitStopDuration * (isCritical ? criticalHitStopMultiplier : 1f);
+            float now = Time.unscaledTime;
 
-            if (_hitStopRoutine != null) StopCoroutine(_hitStopRoutine);
-            _hitStopRoutine = StartCoroutine(HitStopRoutine(duration));
+            // 직전 정지가 끝난 지 얼마 안 됐으면 건너뛴다 — 연속 정지로 조작이 먹통이 되는 것을 막는다.
+            if (!_hitStopActive && now < _hitStopReadyAt) return;
+
+            float duration = hitStopDuration * (isCritical ? criticalHitStopMultiplier : 1f);
+            float end = now + duration;
+
+            // 이미 정지 중이면 길이를 '연장'만 한다 (겹쳐서 누적되지 않게).
+            if (_hitStopActive)
+            {
+                if (end > _hitStopUntil) _hitStopUntil = end;
+                return;
+            }
+
+            _savedTimeScale = Time.timeScale > 0f ? Time.timeScale : 1f;
+            _hitStopUntil = end;
+            _hitStopActive = true;
+            Time.timeScale = hitStopTimeScale;
         }
 
-        private IEnumerator HitStopRoutine(float duration)
+        /// <summary>
+        /// 히트스톱 해제를 매 프레임 확인한다. 코루틴 대신 Update에서 처리해
+        /// 어떤 경로로도 timeScale이 0에 묶이지 않게 한다.
+        /// </summary>
+        private void Update()
         {
-            float previousScale = Time.timeScale;
-            Time.timeScale = hitStopTimeScale;
+            if (!_hitStopActive) return;
+            if (Time.unscaledTime < _hitStopUntil) return;
 
-            // 정지 중에도 흐르는 실시간 대기 — timeScale 영향을 받지 않아야 한다.
-            yield return new WaitForSecondsRealtime(duration);
+            _hitStopActive = false;
+            Time.timeScale = _savedTimeScale > 0f ? _savedTimeScale : 1f;
+            _hitStopReadyAt = Time.unscaledTime + hitStopCooldown;
+        }
 
-            Time.timeScale = previousScale > 0f ? previousScale : 1f;
-            _hitStopRoutine = null;
+        private void OnDisable()
+        {
+            // 씬 전환·비활성화 시 시간이 멈춘 채로 남지 않도록 반드시 복구한다.
+            if (!_hitStopActive) return;
+
+            _hitStopActive = false;
+            Time.timeScale = _savedTimeScale > 0f ? _savedTimeScale : 1f;
         }
 
         // ── 화면 흔들림 ───────────────────────────────────────────

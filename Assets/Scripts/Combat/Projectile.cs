@@ -32,6 +32,15 @@ namespace TSWP.Combat
         [Tooltip("진행 방향으로 스프라이트를 회전시킨다.")]
         [SerializeField] private bool rotateToDirection = true;
 
+        [Tooltip("비행 중 남기는 꼬리 이펙트 id. 비우면 없음.")]
+        [SerializeField] private string trailVfxId = Art.VfxId.ProjectileFly;
+
+        [Tooltip("꼬리 이펙트 생성 간격(초). 짧을수록 촘촘하다.")]
+        [SerializeField, Min(0.01f)] private float trailInterval = 0.05f;
+
+        [Tooltip("탄환 자체가 회전하는 속도(도/초). 0이면 회전 없음.")]
+        [SerializeField] private float spinSpeed = 360f;
+
         private Vector2 _direction = Vector2.right;
         private float _damage;
         private CombatEntity _source;
@@ -40,6 +49,7 @@ namespace TSWP.Combat
         private KnockbackInfo? _knockback;
         private bool _isExplosive;
         private float _lifeTimer;
+        private float _trailTimer;
         private Rigidbody2D _body;
 
         private void Awake()
@@ -81,7 +91,9 @@ namespace TSWP.Combat
 
         private void Update()
         {
-            _lifeTimer -= Time.deltaTime;
+            float dt = Time.deltaTime;
+
+            _lifeTimer -= dt;
             if (_lifeTimer <= 0f)
             {
                 Despawn(playImpact: false);
@@ -90,7 +102,21 @@ namespace TSWP.Combat
 
             // Rigidbody2D가 없으면 직접 이동한다.
             if (_body == null)
-                transform.position += (Vector3)(_direction * (speed * Time.deltaTime));
+                transform.position += (Vector3)(_direction * (speed * dt));
+
+            // 탄환 회전 — 날아가는 게 보이면 위협적으로 느껴진다.
+            // rotateToDirection과 겹치지 않도록 방향 고정이 아닐 때만 돌린다.
+            if (!rotateToDirection && !Mathf.Approximately(spinSpeed, 0f))
+                transform.Rotate(0f, 0f, spinSpeed * dt);
+
+            // 꼬리 이펙트 — 궤적이 보여야 피할 수 있다 ("피격은 공정해야 한다").
+            if (string.IsNullOrEmpty(trailVfxId)) return;
+
+            _trailTimer -= dt;
+            if (_trailTimer > 0f) return;
+
+            _trailTimer = trailInterval;
+            Art.VfxSpawner.Instance?.Play(trailVfxId, transform.position);
         }
 
         private void OnTriggerEnter2D(Collider2D other)

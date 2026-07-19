@@ -21,6 +21,10 @@ namespace TSWP.Jobs
         private float _attackIntervalRemaining;
         private CombatEntity _entity;
         private StatusEffectController _statusController;
+        private Rigidbody2D _body;
+
+        /// <summary>휘두르는 방향을 번갈아 바꿔 연타가 단조롭지 않게 한다.</summary>
+        private bool _swingAlternate;
 
         public BasicAttackProfile Profile => profile;
 
@@ -35,6 +39,7 @@ namespace TSWP.Jobs
         {
             _entity = GetComponent<CombatEntity>();
             _statusController = GetComponent<StatusEffectController>();
+            _body = GetComponent<Rigidbody2D>();
         }
 
         private void Update()
@@ -58,7 +63,34 @@ namespace TSWP.Jobs
             if (spawner == null) return;
 
             Vector3 origin = transform.position + (Vector3)(direction * (profile.Range * profile.VfxForwardRatio));
-            spawner.Play(profile.AttackVfxId, origin, flipX: direction.x < 0f);
+
+            // 이펙트를 조준 방향으로 회전시켜 어디를 베는지 명확히 한다.
+            // 좌우 반전 시에는 스프라이트가 뒤집히므로 각도를 보정한다.
+            float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+            bool flip = direction.x < 0f;
+            if (flip) angle = 180f - angle;
+
+            // 매번 같은 궤적이면 지루하므로 휘두르는 각도 범위 안에서 흔든다 (위→아래 번갈아).
+            _swingAlternate = !_swingAlternate;
+            angle += (_swingAlternate ? 1f : -1f) * profile.SwingArc * 0.25f;
+
+            spawner.Play(profile.AttackVfxId, origin, flipX: flip, rotation: angle);
+        }
+
+        /// <summary>
+        /// 공격 시 앞으로 파고든다. 몸이 따라 나가야 휘두르는 맛이 난다.
+        /// 지상에서만 적용해 공중에서 공격으로 활공하는 것을 막는다.
+        /// </summary>
+        private void ApplyLunge(Vector2 direction)
+        {
+            if (profile == null || profile.LungeForce <= 0f) return;
+            if (_body == null) return;
+
+            // 상태이상으로 이동이 막혀 있으면 파고들지 않는다.
+            if (_statusController != null && !_statusController.CanMove) return;
+
+            Vector2 lunge = new Vector2(Mathf.Sign(direction.x), 0f) * profile.LungeForce;
+            _body.linearVelocity = new Vector2(lunge.x, _body.linearVelocity.y);
         }
 
         public void SetProfile(BasicAttackProfile newProfile)
@@ -97,6 +129,7 @@ namespace TSWP.Jobs
             _attackIntervalRemaining = GetAttackInterval();
             Vector2 direction = aimDirection.sqrMagnitude > 0f ? aimDirection.normalized : Vector2.right;
 
+            ApplyLunge(direction);
             PlayAttackVfx(direction);
             PerformAttack(direction);
             return true;

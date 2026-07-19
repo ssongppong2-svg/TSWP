@@ -10,32 +10,32 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 32ce2d684b6754f4d97c74f0597dc6f2, type: 3}
-  m_Name: Enemy_TestAttacker
+  m_Name: Enemy_TestRanged
   m_EditorClassIdentifier: Assembly-CSharp::TSWP.Enemies.EnemyData
-  enemyId: test.attacker
-  displayName: "\uD14C\uC2A4\uD2B8 \uCD94\uC801\uC790"
-  grade: 0
+  enemyId: test.ranged
+  displayName: "\uD14C\uC2A4\uD2B8 \uC800\uACA9\uC218"
+  grade: 1
   roles: 1
   enemyPrefab: {fileID: 0}
-  maxHp: 80
-  moveSpeed: 2.2
+  maxHp: 60
+  moveSpeed: 1.4
   basicAttack:
     attackName: "\uAE30\uBCF8 \uACF5\uACA9"
-    damage: 8
-    range: 1.4
-    cooldown: 1.2
+    damage: 6
+    range: 11
+    cooldown: 1.6
     isExplosive: 0
-    applyKnockback: 1
+    applyKnockback: 0
     knockback:
       Direction: {x: 0, y: 0}
-      Force: 6
+      Force: 0
       StunDuration: 0
     statusEffects: []
-    isRanged: 0
-    projectilePrefab: {fileID: 0}
-    projectileSpeed: 8
-    muzzleForward: 0.7
-    attackVfxId: 
+    isRanged: 1
+    projectilePrefab: {fileID: 4634899565854280211, guid: 04ddc919212f67d4283b3ba768e21f7d, type: 3}
+    projectileSpeed: 7
+    muzzleForward: 0.8
+    attackVfxId: projectile.impact
   specialAttacks: []
   patterns: []
   specialAbility: {fileID: 0}

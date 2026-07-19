@@ -42,6 +42,16 @@ namespace TSWP.Jobs
         [Tooltip("넉백에 실리는 위쪽 성분 — 살짝 띄우면 맞는 맛이 산다.")]
         [SerializeField, Range(0f, 1f)] private float knockbackUpward = 0.35f;
 
+        [Header("공격 모션")]
+        [Tooltip("공격할 때 앞으로 파고드는 힘. 몸이 따라 나가야 휘두르는 맛이 난다.")]
+        [SerializeField, Min(0f)] private float lungeForce = 4f; // TODO(밸런스): 문서 미정
+
+        [Tooltip("파고드는 시간(초).")]
+        [SerializeField, Min(0f)] private float lungeDuration = 0.08f;
+
+        [Tooltip("휘두르는 각도 범위(도). 이펙트가 이 범위를 훑고 지나간다.")]
+        [SerializeField] private float swingArc = 70f;
+
         public BasicAttackType AttackType => attackType;
         public float Range => range;
         public float AttackSpeed => attackSpeed;
@@ -50,5 +60,8 @@ namespace TSWP.Jobs
         public float VfxForwardRatio => vfxForwardRatio;
         public float KnockbackForce => knockbackForce;
         public float KnockbackUpward => knockbackUpward;
+        public float LungeForce => lungeForce;
+        public float LungeDuration => lungeDuration;
+        public float SwingArc => swingArc;
     }
 }

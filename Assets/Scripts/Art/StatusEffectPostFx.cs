@@ -63,6 +63,22 @@ namespace TSWP.Art
         [Tooltip("효과가 켜지고 꺼질 때의 보간 속도. 높을수록 즉각적이다.")]
         [SerializeField, Min(0.1f)] private float blendSpeed = 6f;
 
+        // ── 피격 섬광 ──
+        // 캐릭터 플래시만으로는 화면 중앙을 보고 있을 때 자기가 맞은 걸 놓친다.
+        // 화면 가장자리를 붉게 번쩍여 시선이 어디 있든 피격을 알아채게 한다.
+        // 비네트를 상태이상과 공유하므로 한 컴포넌트가 함께 소유한다(두 곳에서 쓰면 서로 덮어쓴다).
+        [Header("피격 섬광")]
+        [Tooltip("로컬 플레이어의 CombatEntity. 비우면 자동 탐색한다.")]
+        [SerializeField] private TSWP.Combat.CombatEntity damageTarget;
+
+        [Range(0f, 1f)][SerializeField] private float hitFlashIntensity = 0.55f;
+        [SerializeField] private Color hitFlashColor = new Color(0.75f, 0.05f, 0.1f);
+        [SerializeField, Min(0.1f)] private float hitFadeSpeed = 4f;
+
+        [Tooltip("체력이 이 비율 이하면 옅은 붉은 비네트를 상시 유지한다 (위험 경고).")]
+        [Range(0f, 1f)][SerializeField] private float lowHealthRatio = 0.3f;
+        [Range(0f, 1f)][SerializeField] private float lowHealthIntensity = 0.2f;
+
         private Volume _volume;
         private ChromaticAberration _chromatic;
         private Vignette _vignette;
@@ -71,6 +87,7 @@ namespace TSWP.Art
         private float _currentChromatic;
         private float _currentVignette;
         private float _currentSaturation;
+        private float _hitFlash;
 
         private void Awake()
         {
@@ -92,13 +109,31 @@ namespace TSWP.Art
 
         private void Start()
         {
-            if (target == null)
-            {
-                // 로컬 플레이어 탐색 — 여러 명이면 첫 번째(로컬)만 대상으로 한다.
-                var player = FindFirstObjectByType<TSWP.Player.PlayerController>();
-                if (player != null) target = player.GetComponent<StatusEffectController>();
-            }
+            var player = FindFirstObjectByType<TSWP.Player.PlayerController>();
+
+            // 로컬 플레이어 탐색 — 여러 명이면 첫 번째(로컬)만 대상으로 한다.
+            if (target == null && player != null)
+                target = player.GetComponent<StatusEffectController>();
+
+            if (damageTarget == null && player != null)
+                damageTarget = player.GetComponent<TSWP.Combat.CombatEntity>();
+
+            SubscribeDamage();
         }
+
+        private void OnDisable()
+        {
+            if (damageTarget != null) damageTarget.Damaged -= OnDamaged;
+        }
+
+        private void SubscribeDamage()
+        {
+            if (damageTarget == null) return;
+            damageTarget.Damaged -= OnDamaged; // 중복 구독 방지
+            damageTarget.Damaged += OnDamaged;
+        }
+
+        private void OnDamaged(TSWP.Combat.DamageInfo info) => _hitFlash = hitFlashIntensity;
 
         private T GetOrAdd<T>() where T : VolumeComponent
         {
@@ -145,9 +180,29 @@ namespace TSWP.Art
             _currentVignette = Mathf.Lerp(_currentVignette, targetVignette, t);
             _currentSaturation = Mathf.Lerp(_currentSaturation, targetSaturation, t);
 
+            // ── 피격 섬광 / 저체력 경고 ──
+            float healthFloor = 0f;
+            if (damageTarget != null && damageTarget.MaxHp > 0f && !damageTarget.IsDead)
+            {
+                float ratio = damageTarget.CurrentHp / damageTarget.MaxHp;
+                if (ratio <= lowHealthRatio) healthFloor = lowHealthIntensity;
+            }
+
+            _hitFlash = Mathf.Max(healthFloor,
+                                  Mathf.Lerp(_hitFlash, healthFloor, Time.unscaledDeltaTime * hitFadeSpeed));
+
+            // 비네트는 상태이상과 피격이 공유한다 — 더 강한 쪽을 쓰고, 색도 그쪽을 따른다.
+            float finalVignette = _currentVignette;
+            Color finalColor = targetColor;
+            if (_hitFlash > finalVignette)
+            {
+                finalVignette = _hitFlash;
+                finalColor = hitFlashColor;
+            }
+
             _chromatic.intensity.value = _currentChromatic;
-            _vignette.intensity.value = _currentVignette;
-            _vignette.color.value = targetColor;
+            _vignette.intensity.value = finalVignette;
+            _vignette.color.value = finalColor;
             _colorAdjustments.saturation.value = _currentSaturation;
         }
     }

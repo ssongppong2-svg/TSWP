@@ -13,31 +13,263 @@ MonoBehaviour:
   m_Name: VfxLibrary
   m_EditorClassIdentifier: Assembly-CSharp::TSWP.Art.VfxLibrary
   entries:
-  - id: hit.neutral
-    definition: {fileID: 11400000, guid: ed32a9179034c2b4c96dae08b8789844, type: 2}
-  - id: hit.critical
-    definition: {fileID: 11400000, guid: b8b312da5193b834aadd2bddb024a7fb, type: 2}
-  - id: hit.blood
-    definition: {fileID: 11400000, guid: 56e80ae4c171f094c9359131d62ee533, type: 2}
   - id: slash
-    definition: {fileID: 11400000, guid: 71dc386f7e0051341b26fce664e2d0e9, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: b8ac347ec5574f042bf34478e97df6e8, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.35
+      rotation: -18
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: f6ee60e02fe83fe408537195be03a712, type: 2}
+      offset: {x: 0.35, y: 0}
+      delay: 0.02
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: ff184bfd5bc319148a874f065b268d71, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.05
+      scaleMultiplier: 1.15
+      rotation: 14
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1.3
+  - id: hit.neutral
+    layers:
+    - definition: {fileID: 11400000, guid: 53a6cb18b3ca26244919fa45d38f23fc, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.1
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: 1d0a57f88a2188749867523434552fd1, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.02
+      scaleMultiplier: 1.2
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: 3f84cf9f0cfa6a84e9e90296cdd06187, type: 2}
+      offset: {x: 0.2, y: 0.15}
+      delay: 0.05
+      scaleMultiplier: 0.9
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+  - id: hit.critical
+    layers:
+    - definition: {fileID: 11400000, guid: 7a0db9316eafd1a40820d8b5dce7b4bb, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.3
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: a373108e2ae7c554da61001cfef00355, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.03
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: be9939512709bb743bfbf19bcd0d6151, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.06
+      scaleMultiplier: 1.3
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+  - id: hit.blood
+    layers:
+    - definition: {fileID: 11400000, guid: 8223237574e20ad45b3ccc82889b1ae1, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: explosion
-    definition: {fileID: 11400000, guid: d4d9944185d4a4f4c9901594ab62b865, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: a373108e2ae7c554da61001cfef00355, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.3
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: 850c3f167ffbc9a42af85191fe130824, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.04
+      scaleMultiplier: 1.4
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: 2db12e8304629b540b433a83a0acafb6, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.07
+      scaleMultiplier: 1.2
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+  - id: projectile.impact
+    layers:
+    - definition: {fileID: 11400000, guid: 88fe6350aaf77a045a2258c35d78c756, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: 672f2cd3e39236e418663bf78564a2cc, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.02
+      scaleMultiplier: 1.1
+      rotation: 0
+      randomRotation: 1
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: dash.trail
-    definition: {fileID: 11400000, guid: 00a186506d76f2340bca34866bb901ab, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: ba204f5e110344c4181604e65f4f2013, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.2
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: land.dust
-    definition: {fileID: 11400000, guid: d7e86e1fdb83693479ff6974a38c224b, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: 4a9f7c181d03bd24d95187964ed196c6, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: jump.dust
-    definition: {fileID: 11400000, guid: 855c9a76a59d0a84892de470420c1182, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: 4a9f7c181d03bd24d95187964ed196c6, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 0.8
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: status.burn
-    definition: {fileID: 11400000, guid: 97c17482ac736bf4d8162a594d431976, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: 0d95c8c90e516b548acc7d325f2f7c60, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: status.poison
-    definition: {fileID: 11400000, guid: 284025e9a1ff6b6448f0c6b58cecf5aa, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: b1adc73ec40141d438a5df09875b7f77, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: status.freeze
-    definition: {fileID: 11400000, guid: 65a7b0712a8795247bb443131a255d93, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: 94388ea5637e5fd46ab242a8a8933cd0, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+  - id: status.shock
+    layers:
+    - definition: {fileID: 11400000, guid: 2db12e8304629b540b433a83a0acafb6, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: status.curse
-    definition: {fileID: 11400000, guid: 3d16d11edc68e864ea121514094aaf9e, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: ebb7139b9ae500442b4175c0041c1377, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+  - id: status.confusion
+    layers:
+    - definition: {fileID: 11400000, guid: ebb7139b9ae500442b4175c0041c1377, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.05
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+  - id: status.fear
+    layers:
+    - definition: {fileID: 11400000, guid: 52063e814a8e0964cb4b6b1111c0a2b0, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: heal
-    definition: {fileID: 11400000, guid: 6d95e6b97783e0541ad9d76b22101c2a, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: 8b1886639a0ee42459c964b689854686, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
   - id: death
-    definition: {fileID: 11400000, guid: cfe51c25e9ad8ae48889006d72c95b5e, type: 2}
+    layers:
+    - definition: {fileID: 11400000, guid: 9c06e24a3a2d9f44ba799d8c5dfd92dc, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0
+      scaleMultiplier: 1.1
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1
+    - definition: {fileID: 11400000, guid: 20ce51268ff6e4a4daf14b703904b5e6, type: 2}
+      offset: {x: 0, y: 0}
+      delay: 0.05
+      scaleMultiplier: 1.2
+      rotation: 0
+      randomRotation: 0
+      tint: {r: 1, g: 1, b: 1, a: 1}
+      speedMultiplier: 1

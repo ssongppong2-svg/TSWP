@@ -344,6 +344,10 @@ namespace TSWP.EditorTools
                     Layer("Part2/70.png",  VfxRow.Fire, 30f, 1.4f, 16f, delay: 0.04f),
                     Layer("Part8/397.png", VfxRow.Fire, 36f, 1.2f, 18f, delay: 0.07f, randomRot: true)),
 
+                // ── 투사체 꼬리 ── 작고 짧게, 촘촘히 남는다
+                Composite(folder, VfxId.ProjectileFly,
+                    Layer("Part11/518.png", VfxRow.Arcane, 64f, 0.8f, 22f)),
+
                 // ── 투사체 착탄 ──
                 Composite(folder, VfxId.ProjectileImpact,
                     Layer("Part7/335.png",  VfxRow.Arcane, 44f, 1.0f, 18f, randomRot: true),
@@ -600,6 +604,11 @@ namespace TSWP.EditorTools
             var so = new SerializedObject(projectile);
             var mask = so.FindProperty("obstacleMask");
             if (mask != null) mask.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
+
+            // 방향 고정 대신 회전시킨다 — 빙글빙글 도는 탄이 더 눈에 띈다.
+            var rotate = so.FindProperty("rotateToDirection");
+            if (rotate != null) rotate.boolValue = false;
+
             so.ApplyModifiedPropertiesWithoutUndo();
 
             var saved = PrefabUtility.SaveAsPrefabAsset(go, path);
