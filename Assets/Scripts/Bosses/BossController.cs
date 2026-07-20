@@ -84,6 +84,18 @@ namespace TSWP.Bosses
         // ── 초기화 ────────────────────────────────────────────────
         private void Awake()
         {
+            // BossData는 이 컨트롤러의 모든 동작(패턴·체력·페이즈·이벤트 id)의 근거다.
+            // 없는 채로 굴리면 피격·페이즈 전환 등 임의의 시점에 NullReference가 터져 원인을 찾기 어렵다.
+            // 시작 시점에 크게 실패시키고 컴포넌트를 꺼서, 나머지 씬은 정상 동작하게 둔다.
+            if (data == null)
+            {
+                Debug.LogError(
+                    $"[BossController] '{name}': BossData가 없어 보스를 비활성화합니다. " +
+                    "인스펙터에서 data를 지정하거나 씬 빌더가 에셋을 생성하도록 하세요.", this);
+                enabled = false;
+                return;
+            }
+
             _entity = GetComponent<CombatEntity>();
             _body = GetComponent<Rigidbody2D>(); // 없어도 된다 — 돌진 패턴이 transform 이동으로 폴백한다
             _selector = new BossPatternSelector();
@@ -102,6 +114,9 @@ namespace TSWP.Bosses
 
         private void OnEnable()
         {
+            // Awake에서 데이터 부재로 비활성화된 경우 _entity가 null이다 — 구독하지 않는다.
+            if (data == null || _entity == null) return;
+
             _subscribed = true;
             _entity.Damaged += OnEntityDamaged;
             _entity.Died += OnEntityDied;
@@ -119,6 +134,9 @@ namespace TSWP.Bosses
 
         private void OnDisable()
         {
+            // 구독한 적이 없으면 해제할 것도 없다 (데이터 부재로 Awake에서 꺼진 경우).
+            if (!_subscribed || _entity == null) return;
+
             _subscribed = false;
             _entity.Damaged -= OnEntityDamaged;
             _entity.Died -= OnEntityDied;

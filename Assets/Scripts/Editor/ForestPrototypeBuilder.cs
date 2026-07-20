@@ -42,9 +42,7 @@ namespace TSWP.EditorTools
         [MenuItem("TSWP/Forest 프로토타입 씬 만들기", priority = 1)]
         public static void BuildAndOpen()
         {
-            EnsureGroundLayer();
-            _groundLayer = LayerMask.NameToLayer(GroundLayerName);
-            _square = EnsureSquareSprite();
+            EnsureSharedState();
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             RenderSettings.ambientLight = Color.white;
@@ -86,6 +84,17 @@ namespace TSWP.EditorTools
         }
 
         // ── 방 배치 ───────────────────────────────────────────────
+
+        /// <summary>
+        /// 빌더가 공유하는 정적 상태(임시 스프라이트, 지형 레이어)를 준비한다.
+        /// BuildAndOpen 경로와 외부 직접 호출 경로 양쪽에서 안전하게 쓰기 위한 것.
+        /// </summary>
+        private static void EnsureSharedState()
+        {
+            EnsureGroundLayer();
+            _groundLayer = LayerMask.NameToLayer(GroundLayerName);
+            if (_square == null) _square = EnsureSquareSprite();
+        }
 
         private static float RoomOriginX(int index) => index * RoomWidth;
 
@@ -643,8 +652,17 @@ namespace TSWP.EditorTools
             return saved;
         }
 
-        private static TSWP.Bosses.BossData EnsureHatchQueenData()
+        /// <summary>
+        /// Hatch Queen 데이터를 만들거나 가져온다. 패턴 5종까지 함께 구성한다.
+        /// 테스트 씬 빌더도 호출하므로 internal로 공개한다 — 보스 데이터가 없으면
+        /// BossController가 스스로 비활성화되어 아무것도 보이지 않는다.
+        /// </summary>
+        internal static TSWP.Bosses.BossData EnsureHatchQueenData()
         {
+            // 다른 빌더가 직접 부를 수 있으므로 공유 상태를 여기서도 보장한다.
+            // (BuildAndOpen을 거치지 않으면 _square/_groundLayer가 비어 프리팹 생성이 깨진다)
+            EnsureSharedState();
+
             string folder = SettingsRoot + "/Bosses";
             Directory.CreateDirectory(folder);
             const string path = SettingsRoot + "/Bosses/Boss_HatchQueen.asset";

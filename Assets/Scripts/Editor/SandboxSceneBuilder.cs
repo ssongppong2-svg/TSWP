@@ -310,12 +310,10 @@ namespace TSWP.EditorTools
         /// </summary>
         private static void CreateTestBoss(Sprite sprite)
         {
-            var data = AssetDatabase.LoadAssetAtPath<BossData>("Assets/Settings/Bosses/Boss_HatchQueen.asset");
-            if (data == null)
-            {
-                Debug.LogWarning("[TSWP] Boss_HatchQueen 데이터가 없습니다. " +
-                                 "[TSWP > Forest 프로토타입 씬 만들기]를 한 번 실행하면 생성됩니다.");
-            }
+            // 보스 데이터(+패턴 5종)를 여기서 직접 만든다.
+            // 예전에는 없으면 경고만 하고 넘어갔는데, BossController는 데이터 없이 동작할 수 없어
+            // 스스로 비활성화된다 — 결국 보스가 아무것도 하지 않는 상태로 씬이 만들어졌다.
+            var data = ForestPrototypeBuilder.EnsureHatchQueenData();
 
             var go = new GameObject("Boss_HatchQueen");
             go.transform.position = new Vector3(16f, 2f, 0f); // 맵 오른쪽 — 다가가면 전투 시작

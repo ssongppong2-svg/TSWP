@@ -47,7 +47,7 @@ MonoBehaviour:
   specialAbility: {fileID: 0}
   aiProfile:
     decisionInterval: 0.2
-    detectionRange: 12
+    detectionRange: 16
     allyScanRadius: 8
     retreatHealthRatio: 0.25
     holdDistanceRatio: 0.85
