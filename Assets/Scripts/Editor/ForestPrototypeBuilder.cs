@@ -660,16 +660,233 @@ namespace TSWP.EditorTools
             SetStr(so, "bossId", "boss.hatchqueen");
             SetStr(so, "displayName", "부화의 여왕");
             SetFloat(so, "baseMaxHp", 1850f); // 요구사항 명시 수치
+
+            // 패턴 피해량의 기준값 — 각 패턴은 이 값을 ctx.Damage로 받아 쓴다.
+            var basicAttack = so.FindProperty("basicAttack");
+            if (basicAttack != null)
+            {
+                SetRel(basicAttack, "damage", 14f);  // TODO(밸런스): 문서 미정
+                SetRel(basicAttack, "range", 2.5f);
+                SetRel(basicAttack, "attackSpeed", 0.6f);
+            }
+
+            // 패턴 연결 — 보스가 실제로 움직이려면 이게 있어야 한다.
+            var patterns = new List<TSWP.Bosses.BossPattern>
+            {
+                EnsureChargePattern(),
+                EnsureWebPattern(),
+                EnsureCocoonPattern(),
+                EnsureSlamPattern(),
+                EnsureSweepPattern(),
+            };
+
+            var patternList = so.FindProperty("patterns");
+            if (patternList != null)
+            {
+                patternList.arraySize = patterns.Count;
+                for (int i = 0; i < patterns.Count; i++)
+                    patternList.GetArrayElementAtIndex(i).objectReferenceValue = patterns[i];
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(asset);
+            return asset;
+        }
+
+        // ── Hatch Queen 패턴 ──────────────────────────────────────
+        // BossPattern(언제 쓸지) + BossPatternBehaviour(어떻게 실행할지) 2단 구조다.
+        // 보스를 추가할 때는 이 함수들을 흉내내 에셋만 더 만들면 되고, 실행 코드는 건드리지 않는다.
+
+        private static string BossFolder
+        {
+            get
+            {
+                string folder = SettingsRoot + "/Bosses/HatchQueen";
+                Directory.CreateDirectory(folder);
+                return folder;
+            }
+        }
+
+        /// <summary>패턴 정의(조건·카테고리)와 실행 전략을 묶어 하나의 BossPattern 에셋을 만든다.</summary>
+        private static TSWP.Bosses.BossPattern CreatePattern(
+            string id, string displayName, TSWP.Bosses.BossPatternCategory category,
+            TSWP.Bosses.BossPatternBehaviour behaviour, float telegraphSeconds, string telegraphVfx)
+        {
+            string path = $"{BossFolder}/Pattern_{id}.asset";
+
+            var asset = AssetDatabase.LoadAssetAtPath<TSWP.Bosses.BossPattern>(path);
+            if (asset == null)
+            {
+                asset = ScriptableObject.CreateInstance<TSWP.Bosses.BossPattern>();
+                AssetDatabase.CreateAsset(asset, path);
+            }
+
+            var so = new SerializedObject(asset);
+            SetStr(so, "patternId", id);
+            SetStr(so, "displayName", displayName);
+            SetEnum(so, "category", (int)category);
+            SetObj(so, "behaviour", behaviour);
             so.ApplyModifiedPropertiesWithoutUndo();
 
+            // 예고 시간은 실행 전략이 소유한다 (모든 패턴 공통 계약).
+            if (behaviour != null)
+            {
+                var bso = new SerializedObject(behaviour);
+                SetFloat(bso, "telegraphSeconds", telegraphSeconds);
+                if (!string.IsNullOrEmpty(telegraphVfx)) SetStr(bso, "telegraphVfxId", telegraphVfx);
+                bso.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(behaviour);
+            }
+
             EditorUtility.SetDirty(asset);
-
-            // TODO(패턴): Charge/Web/CocoonSpawn 패턴 에셋을 만들어 patterns 목록에 연결한다.
-            //   BossPatternBehaviour 파생 SO를 생성해야 하는데, 각 파생 타입의 필드 구성이
-            //   담당 에이전트 구현에 따라 다르므로 인스펙터에서 연결하는 편이 안전하다.
-            //   지금은 HP·식별자만 설정하고, 패턴은 수동 연결로 남긴다.
-
             return asset;
+        }
+
+        private static T EnsureBehaviour<T>(string fileName) where T : TSWP.Bosses.BossPatternBehaviour
+        {
+            string path = $"{BossFolder}/{fileName}.asset";
+
+            var asset = AssetDatabase.LoadAssetAtPath<T>(path);
+            if (asset != null) return asset;
+
+            asset = ScriptableObject.CreateInstance<T>();
+            AssetDatabase.CreateAsset(asset, path);
+            return asset;
+        }
+
+        /// <summary>돌진 — 플레이어를 향해 달려든다.</summary>
+        private static TSWP.Bosses.BossPattern EnsureChargePattern()
+        {
+            var behaviour = EnsureBehaviour<TSWP.Bosses.ChargePatternBehaviour>("Behaviour_Charge");
+
+            var so = new SerializedObject(behaviour);
+            SetFloat(so, "chargeSpeed", 14f);
+            SetFloat(so, "chargeSeconds", 1.1f);
+            SetBool(so, "horizontalOnly", true);
+            SetFloat(so, "hitRadius", 1.8f);
+            SetFloat(so, "knockbackForce", 10f);
+            SetFloat(so, "stunDuration", 0.3f);
+            SetFloat(so, "recoverySeconds", 0.8f); // 돌진 후 빈틈 — 반격 기회
+            SetStr(so, "impactVfxId", VfxId.HitCritical);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return CreatePattern("charge", "돌진", TSWP.Bosses.BossPatternCategory.Movement,
+                                 behaviour, 0.8f, VfxId.StatusBurn);
+        }
+
+        /// <summary>거미줄 — 바닥에 장판을 깔아 이동을 방해한다.</summary>
+        private static TSWP.Bosses.BossPattern EnsureWebPattern()
+        {
+            var behaviour = EnsureBehaviour<TSWP.Bosses.WebPatternBehaviour>("Behaviour_Web");
+
+            var so = new SerializedObject(behaviour);
+            SetInt(so, "fieldCount", 3);
+            SetFloat(so, "fieldRadius", 2.8f);
+            SetBool(so, "placeOnPlayers", true);
+            SetFloat(so, "fieldDuration", 6f);
+            SetFloat(so, "tickDamage", 2f);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return CreatePattern("web", "거미줄", TSWP.Bosses.BossPatternCategory.AreaAttack,
+                                 behaviour, 0.7f, VfxId.StatusPoison);
+        }
+
+        /// <summary>고치 소환 — 부화하면 거미가 나온다.</summary>
+        private static TSWP.Bosses.BossPattern EnsureCocoonPattern()
+        {
+            var behaviour = EnsureBehaviour<TSWP.Bosses.CocoonSpawnPatternBehaviour>("Behaviour_Cocoon");
+
+            var so = new SerializedObject(behaviour);
+            SetInt(so, "cocoonCount", 3);
+            SetFloat(so, "spawnRadius", 4f);
+            SetFloat(so, "hatchSeconds", 4f);
+            SetInt(so, "maxAliveCocoons", 6);
+            SetObj(so, "hatchEnemy", EnsureSpider());       // 부화 → 거미
+            SetObj(so, "cocoonPrefab", EnsureCocoonPrefab());
+            SetStr(so, "spawnVfxId", VfxId.Spawn);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return CreatePattern("cocoon", "고치 소환", TSWP.Bosses.BossPatternCategory.SpecialSkill,
+                                 behaviour, 1.0f, VfxId.StatusCurse);
+        }
+
+        /// <summary>내려찍기 — 제자리 범위 공격. 근접한 플레이어를 벌한다.</summary>
+        private static TSWP.Bosses.BossPattern EnsureSlamPattern()
+        {
+            var behaviour = EnsureBehaviour<TSWP.Bosses.AreaAttackPatternBehaviour>("Behaviour_Slam");
+
+            // 피해량은 BossData.basicAttack에서 온다(ctx.Damage) — 패턴은 범위·넉백·경직으로 차별화한다.
+            var so = new SerializedObject(behaviour);
+            SetFloat(so, "radius", 4.5f);
+            SetBool(so, "centerOnNearestPlayer", false); // 제자리 내려찍기
+            SetFloat(so, "knockbackForce", 12f);
+            SetFloat(so, "stunDuration", 0.35f);
+            SetBool(so, "isExplosive", true);            // 구조물도 부순다
+            SetFloat(so, "recoverySeconds", 0.7f);
+            SetStr(so, "impactVfxId", VfxId.Explosion);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return CreatePattern("slam", "내려찍기", TSWP.Bosses.BossPatternCategory.AreaAttack,
+                                 behaviour, 0.9f, VfxId.HitCritical);
+        }
+
+        /// <summary>휩쓸기 — 넓고 약한 공격. 기본 견제기.</summary>
+        private static TSWP.Bosses.BossPattern EnsureSweepPattern()
+        {
+            var behaviour = EnsureBehaviour<TSWP.Bosses.AreaAttackPatternBehaviour>("Behaviour_Sweep");
+
+            var so = new SerializedObject(behaviour);
+            SetFloat(so, "radius", 3f);
+            SetBool(so, "centerOnNearestPlayer", true); // 가까운 플레이어를 노린다
+            SetFloat(so, "knockbackForce", 6f);
+            SetFloat(so, "stunDuration", 0.1f);
+            SetFloat(so, "recoverySeconds", 0.3f);
+            SetStr(so, "impactVfxId", VfxId.HitNeutral);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            return CreatePattern("sweep", "휩쓸기", TSWP.Bosses.BossPatternCategory.BasicAttack,
+                                 behaviour, 0.5f, "");
+        }
+
+        /// <summary>고치 프리팹 — 때려 부수거나 놔두면 부화한다.</summary>
+        private static GameObject EnsureCocoonPrefab()
+        {
+            const string path = SettingsRoot + "/Prefabs/Cocoon.prefab";
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (existing != null) return existing;
+
+            Directory.CreateDirectory(SettingsRoot + "/Prefabs");
+
+            var go = new GameObject("Cocoon");
+            go.transform.localScale = new Vector3(0.7f, 0.9f, 1f);
+
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = _square;
+            sr.color = new Color(0.85f, 0.82f, 0.7f); // 고치 — 옅은 미색
+            sr.sortingOrder = 7;
+
+            var body = go.AddComponent<Rigidbody2D>();
+            body.gravityScale = 3f;
+            body.freezeRotation = true;
+
+            var col = go.AddComponent<BoxCollider2D>();
+            col.size = new Vector2(1f, 1f);
+            col.sharedMaterial = EnsureZeroFrictionMaterial();
+
+            var entity = go.AddComponent<CombatEntity>();
+            SetPrivate(entity, "team", (int)TeamType.Enemies, isEnum: true);
+            SetPrivate(entity, "ownerPlayerId", -1);
+            SetPrivate(entity, "maxHp", 25f);
+            SetPrivate(entity, "autoReviveOnDeath", false);
+            SetPrivate(entity, "isKnockbackImmune", true);
+
+            go.AddComponent<StatusEffectController>();
+            go.AddComponent<EnemyHealthBar>();
+            go.AddComponent<TSWP.Bosses.BossCocoon>();
+
+            var saved = PrefabUtility.SaveAsPrefabAsset(go, path);
+            Object.DestroyImmediate(go);
+            return saved;
         }
 
         private static PuzzleDefinition EnsureCoopButtonPuzzleDefinition()
