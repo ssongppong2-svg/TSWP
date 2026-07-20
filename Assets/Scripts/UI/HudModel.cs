@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using TSWP.Core;
+using TSWP.StatusEffects;   // StatusEffectType(표시용 키)만 참조 — 판정 로직은 StatusEffectController 소유
 
 namespace TSWP.UI
 {
@@ -43,8 +44,21 @@ namespace TSWP.UI
         public const int ReviveWarningThreshold = 3;
         public bool IsReviveLow => SharedReviveCount <= ReviveWarningThreshold;
 
+        // ── 상태이상 ──────────────────────────────────────────────
+        /// <summary>로컬 플레이어에게 적용 중인 상태이상 목록.
+        /// GameEvents에 상태이상 이벤트가 없으므로 StatusEffectHudBridge가 밀어 넣는다(푸시 방식).</summary>
+        public readonly List<StatusEffectHudInfo> StatusEffects = new List<StatusEffectHudInfo>();
+
         // ── 현재 방 ───────────────────────────────────────────────
         public int CurrentRoomId = -1;
+
+        /// <summary>표시용 방 번호 (1부터). RoomEntered에서 roomId+1로 자동 채워지며,
+        /// Map 측(RoomFlowManager.CurrentRoomNumber)이 SetRoomInfo로 덮어쓸 수 있다.</summary>
+        public int CurrentRoomNumber;
+
+        /// <summary>스테이지 총 방 수. 0이면 뷰가 "n / m" 대신 "n"만 표시한다.</summary>
+        public int TotalRoomCount;
+
         /// <summary>현재 방 표시 문구. roomId만 이벤트로 오므로 뷰가 방 이름을 조회해 채운다.</summary>
         public string CurrentRoomLabel;
 
@@ -173,6 +187,9 @@ namespace TSWP.UI
         private void OnRoomEntered(int roomId)
         {
             CurrentRoomId = roomId;
+            // Map 측이 SetRoomInfo로 정확한 번호를 주기 전까지의 기본값.
+            // Map.RoomFlowManager.CurrentRoomNumber와 동일한 규칙(roomId+1)이라 값이 어긋나지 않는다.
+            CurrentRoomNumber = roomId + 1;
             Changed?.Invoke();
         }
 
@@ -220,6 +237,90 @@ namespace TSWP.UI
             Changed?.Invoke();
         }
 
+        /// <summary>
+        /// 직업 표시 갱신. 직업 조립(Jobs.JobSelectionManager) 후 뷰 브리지가 밀어 넣는다.
+        /// jobId는 문자열 키 — 직업 enum을 만들지 않는다(ARCHITECTURE.md §5).
+        /// </summary>
+        public void SetJob(string jobId, Sprite icon = null)
+        {
+            JobId = jobId;
+            if (icon != null) JobIcon = icon;
+
+            var member = FindOrAddMember(LocalPlayerId);
+            member.JobId = jobId;
+            if (icon != null) member.JobIcon = icon;
+            Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// 방 번호 표시 갱신. Map 측(RoomFlowManager.CurrentRoomNumber/TotalRoomCount)이 밀어 넣는 지점.
+        /// 호출되지 않아도 RoomEntered에서 채운 기본값으로 표시된다 — Map 배선이 없어도 HUD는 실패하지 않는다.
+        /// </summary>
+        public void SetRoomInfo(int roomNumber, int totalRoomCount = 0, string label = null)
+        {
+            CurrentRoomNumber = roomNumber;
+            TotalRoomCount = Mathf.Max(0, totalRoomCount);
+            if (label != null) CurrentRoomLabel = label;
+            Changed?.Invoke();
+        }
+
+        // ── 상태이상 푸시 API (StatusEffectHudBridge 전용) ─────────
+
+        /// <summary>상태이상 적용/갱신. 같은 종류는 중첩하지 않고 갱신한다(상태이상 시스템.md 공통 규칙과 동일).</summary>
+        public void ApplyStatusEffect(StatusEffectType type, string displayName, Sprite icon,
+                                      float remaining, float duration, bool isCC)
+        {
+            var info = FindStatusEffect(type);
+            if (info == null)
+            {
+                info = new StatusEffectHudInfo();
+                StatusEffects.Add(info);
+            }
+            info.SetIdentity(type, displayName);
+            info.Icon = icon;
+            info.Remaining = remaining;
+            info.Duration = duration;
+            info.IsCC = isCC;
+            Changed?.Invoke();
+        }
+
+        public void RemoveStatusEffect(StatusEffectType type)
+        {
+            for (int i = 0; i < StatusEffects.Count; i++)
+            {
+                if (StatusEffects[i].EffectType != type) continue;
+                StatusEffects.RemoveAt(i);
+                Changed?.Invoke();
+                return;
+            }
+        }
+
+        /// <summary>
+        /// 남은 시간만 갱신. 매 프레임 호출되는 경로이므로 Changed를 발행하지 않는다
+        /// (뷰는 값을 직접 읽어 게이지만 줄인다 — 문자열 재생성/이벤트 폭주 방지).
+        /// </summary>
+        public void UpdateStatusEffectRemaining(StatusEffectType type, float remaining)
+        {
+            var info = FindStatusEffect(type);
+            if (info != null) info.Remaining = remaining;
+        }
+
+        public void ClearStatusEffects()
+        {
+            if (StatusEffects.Count == 0) return;
+            StatusEffects.Clear();
+            Changed?.Invoke();
+        }
+
+        private StatusEffectHudInfo FindStatusEffect(StatusEffectType type)
+        {
+            for (int i = 0; i < StatusEffects.Count; i++)
+            {
+                if (StatusEffects[i].EffectType == type) return StatusEffects[i];
+            }
+            return null;
+        }
+
         /// <summary>런 시작/스테이지 전환 시 초기화.</summary>
         public void ResetForNewRun()
         {
@@ -227,9 +328,12 @@ namespace TSWP.UI
             IsDead = false;
             for (int i = 0; i < EquippedItemCodes.Length; i++) EquippedItemCodes[i] = null;
             SkillCooldowns.Clear();
+            StatusEffects.Clear();
             PartyMembers.Clear();
             SpeakingPlayerIds.Clear();
             CurrentRoomId = -1;
+            CurrentRoomNumber = 0;
+            TotalRoomCount = 0;
             CurrentRoomLabel = null;
             Minimap.Clear();
             Changed?.Invoke();

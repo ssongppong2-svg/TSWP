@@ -98,8 +98,22 @@ namespace TSWP.Enemies
         public EnemyRole roles = EnemyRole.Melee;
 
         [Header("스폰")]
-        [Tooltip("EnemyController + CombatEntity가 붙은 프리팹 — SpawnManager가 인스턴스화.")]
+        // 근거: 적 시스템.md — 적 1종 = SO 에셋 1개. 몸통(리지드바디/콜라이더/컴포넌트 구성)은 적마다 같으므로
+        //   프리팹을 종마다 만들면 '에셋 1개 = 적 1종' 원칙이 깨진다. 비워 두면 SpawnManager의
+        //   공용 몸통 프리팹(defaultEnemyPrefab)이 사용되고, 외형 차이는 아래 '외형' 항목이 담당한다.
+        [Tooltip("전용 프리팹이 필요한 적만 지정. 비우면 SpawnManager의 공용 적 프리팹을 사용한다.")]
         public GameObject enemyPrefab;
+
+        [Header("외형 (공용 프리팹 + 에셋별 차별화)")]
+        // 근거: 도트 시스템.md — 캐릭터 32px/PPU 16. 프로토타입 단계에서는 스프라이트 대신 색·크기로 종을 구분한다.
+        [Tooltip("본체 스프라이트. 비우면 프리팹의 스프라이트를 그대로 쓴다.")]
+        public Sprite bodySprite;
+
+        [Tooltip("본체 색조. 프로토타입에서는 이 색으로 적 종류를 구분한다(팔레트 시스템.md 의미 색상).")]
+        public Color bodyColor = Color.white;
+
+        [Tooltip("프리팹 크기 대비 배율. (1,1)이면 프리팹 그대로. 콜라이더도 함께 커진다.")]
+        public Vector2 bodyScale = Vector2.one;
 
         [Header("기본 능력치")]
         [Min(1f)] public float maxHp = 30f;     // TODO(밸런스): 문서 미정 (일반 적은 낮게)
@@ -173,10 +187,7 @@ namespace TSWP.Enemies
         /// AI 성격 조회. 직렬화 누락(구버전 에셋)으로 null이어도 공용 기본값을 돌려주어
         /// AI가 NullReference로 멈추지 않는다 — 데이터 결함이 게임 로직을 깨뜨리지 않게 한다.
         /// </summary>
-        public EnemyAIProfile ResolveAIProfile() => aiProfile ?? DefaultAIProfile;
-
-        /// <summary>모든 적이 공유하는 읽기 전용 폴백 프로파일 (에셋마다 새로 만들지 않는다).</summary>
-        private static readonly EnemyAIProfile DefaultAIProfile = new EnemyAIProfile();
+        public EnemyAIProfile ResolveAIProfile() => aiProfile ?? EnemyAIProfile.Default;
 
         /// <summary>난이도별 배율 조회 — SpawnManager가 EnemyController.Initialize에 전달한다.</summary>
         public EnemyDifficultyScaling GetScaling(Difficulty difficulty)
@@ -220,9 +231,12 @@ namespace TSWP.Enemies
                 Debug.LogWarning($"[EnemyData] '{name}': DropTable 골드 범위와 KillReward.Gold가 동시에 설정됨 — 이중 지급 주의. " +
                                  "// NOTE(기획 확인 필요): 골드 지급 경로 단일화", this);
 
-            // 스폰 불가 조기 경고 — 프리팹이 없으면 SpawnManager가 런타임에 스폰을 통째로 생략한다.
-            if (enemyPrefab == null)
-                Debug.LogWarning($"[EnemyData] '{name}': enemyPrefab이 비어 있어 SpawnManager가 스폰하지 못합니다.", this);
+            // 프리팹이 비어 있는 것은 정상(공용 몸통 사용). 경고 대상은 '크기 0' 같은 실수뿐이다.
+            if (bodyScale.x <= 0f || bodyScale.y <= 0f)
+            {
+                Debug.LogWarning($"[EnemyData] '{name}': bodyScale에 0 이하 값이 있습니다 — (1,1)로 되돌립니다.", this);
+                bodyScale = Vector2.one;
+            }
 
             // 원거리 공격인데 투사체가 없으면 EnemyAI가 근접 판정으로 폴백해 사거리 밖에서 헛치게 된다.
             if (basicAttack != null && basicAttack.isRanged && basicAttack.projectilePrefab == null)

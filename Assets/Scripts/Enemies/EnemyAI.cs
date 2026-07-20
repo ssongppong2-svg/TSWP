@@ -13,29 +13,28 @@ namespace TSWP.Enemies
     /// <summary>적이 선택할 수 있는 행동.</summary>
     public enum EnemyAction
     {
-        Idle,        // 대기 — 대상 없음
-        Approach,    // 접근
-        Retreat,     // 후퇴 — 저체력/근접 회피
-        Attack,      // 공격
-        UseAbility,  // 고유 능력 사용 (특수 적)
-        Reposition,  // 우회 — 장애물로 시야가 막힘
-        Telegraph,   // 공격 예비 동작 — 이동 정지 + 예고 연출 (전투 시스템.md '공정한 피격')
+        Idle,          // 대기 — 대상 없음
+        Approach,      // 접근
+        Retreat,       // 후퇴 — 저체력/근접 회피
+        Attack,        // 공격
+        UseAbility,    // 고유 능력 사용 (특수 적)
+        Reposition,    // 우회 — 장애물로 시야가 막힘
+        Telegraph,     // 공격 예비 동작 — 이동 정지 + 예고 연출 (전투 시스템.md '공정한 피격')
+        KeepDistance,  // 사거리 유지 — 너무 붙었을 때 물러난다 (원거리 적의 정체성)
     }
 
     /// <summary>
-    /// 유틸리티 AI 스켈레톤. 실제 이동/공격 실행은 TODO(연출·물리)로 두되 판단 흐름은 완성한다.
+    /// 유틸리티 AI. 컨텍스트 6요소 수집 → 행동 스코어링 → 실행(이동/예고/공격)까지 담당한다.
+    /// 행동 성향 값은 전부 <see cref="EnemyAIProfile"/>(= EnemyData 소유)에서 읽으므로
+    /// 새로운 적을 만들 때 이 컴포넌트도 프리팹도 건드릴 필요가 없다.
     /// </summary>
     [RequireComponent(typeof(EnemyController))]
     public class EnemyAI : MonoBehaviour
     {
-        [Header("판단 주기")]
-        [Tooltip("AI 재판단 간격(초). 매 프레임 판단을 피해 8인 멀티에서 부하를 줄인다.")]
-        [SerializeField, Min(0.02f)] private float decisionInterval = 0.2f; // TODO(밸런스): 문서 미정
-
-        [Header("감지")]
-        [SerializeField, Min(0f)] private float detectionRange = 12f;   // TODO(밸런스): 문서 미정
-        [SerializeField, Min(0f)] private float allyScanRadius = 8f;    // TODO(밸런스): 문서 미정
-        [SerializeField, Min(0f)] private float retreatHealthRatio = 0.25f; // TODO(밸런스): 문서 미정
+        // 주의: 감지 거리·후퇴 임계치·행동 점수 같은 '성격' 값은 이 컴포넌트에 두지 않는다.
+        //   그 값들이 프리팹에 박히면 적 1종을 추가할 때마다 프리팹을 복제해야 한다.
+        //   → 성격은 EnemyData.aiProfile(EnemyAIProfile)이 소유하고, 여기에는 '씬 환경' 값만 남긴다.
+        //   (공용 몸통 프리팹 1개 + EnemyData N개 = 적 N종)
 
         [Header("레이어")]
         [Tooltip("시야 차단 판정 대상 — 지형/구조물 레이어.")]
@@ -61,6 +60,18 @@ namespace TSWP.Enemies
 
         [Tooltip("탐지선 시작 높이(자기 원점 기준). 콜라이더 안쪽에서 시작하지 않도록 살짝 올린다.")]
         [SerializeField] private float ledgeProbeOriginY = 0.1f;
+
+        [Header("연출")]
+        [Tooltip("이동/공격 방향으로 스프라이트를 좌우 반전한다 (Art.CharacterVisual과 동일 규칙).")]
+        [SerializeField] private bool faceTarget = true;
+
+        [Tooltip("원본 스프라이트가 오른쪽을 보고 있는가. 왼쪽을 보고 그렸다면 끈다.")]
+        [SerializeField] private bool spriteFacesRight = true;
+
+        /// <summary>
+        /// 후퇴 시작 경계 = 유지 거리 × 이 비율. 접근 정지 경계(유지 거리)와 겹치지 않게 하는 히스테리시스 폭.
+        /// </summary>
+        private const float KeepDistanceInnerRatio = 0.7f;
 
         private EnemyController _controller;
         private CombatEntity _combat;
@@ -89,12 +100,47 @@ namespace TSWP.Enemies
         /// <summary>공격 예비 동작 중인가 (연출·디버그 조회용).</summary>
         public bool IsTelegraphing => _telegraphing;
 
+        /// <summary>
+        /// 예비 동작이 끝난 뒤 되돌아갈 '원래 색'을 갱신한다.
+        /// EnemyController가 에셋 외형(bodyColor)을 입힌 뒤 호출한다 — 이걸 하지 않으면
+        /// 예고가 끝날 때 프리팹 원본 색(보통 흰색)으로 되돌아가 적 색깔이 사라진다.
+        /// </summary>
+        public void SetBaseColor(Color color)
+        {
+            _baseColor = color;
+            if (_telegraphing) return;      // 예고 중이면 종료 시 이 색으로 복귀한다
+            if (_renderer != null && !_tintApplied) _renderer.color = color;
+        }
+
+        /// <summary>
+        /// 현재 적의 AI 성격. 데이터가 없거나(단독 배치) 프로파일이 비어 있어도 공용 기본값이 나오므로
+        /// AI가 NullReference로 멈추지 않는다.
+        /// </summary>
+        public EnemyAIProfile Profile
+        {
+            get
+            {
+                var data = _controller != null ? _controller.Data : null;
+                return data != null ? data.ResolveAIProfile() : EnemyAIProfile.Default;
+            }
+        }
+
+        /// <summary>현재 기본 공격 사거리. 데이터가 없으면 근접 기본값.</summary>
+        private float AttackRange
+        {
+            get
+            {
+                var data = _controller != null ? _controller.Data : null;
+                return data != null && data.basicAttack != null ? data.basicAttack.range : 1.5f;
+            }
+        }
+
         private void Awake()
         {
             _controller = GetComponent<EnemyController>();
             _combat = GetComponent<CombatEntity>();
             _body = GetComponent<Rigidbody2D>();
-            _renderer = GetComponentInChildren<SpriteRenderer>();
+            _renderer = ResolveBodyRenderer();
             _hitFlash = GetComponent<HitFlash>();
             if (_renderer != null) _baseColor = _renderer.color;
 
@@ -112,6 +158,28 @@ namespace TSWP.Enemies
             if (_telegraphing) CancelTelegraph();
         }
 
+        /// <summary>
+        /// 본체 스프라이트를 찾는다. 체력바(EnemyHealthBar)가 만든 자식 바를 본체로 착각하면
+        /// 예비 동작 색이 체력바에 칠해지므로 자기 오브젝트의 렌더러를 우선한다.
+        /// </summary>
+        private SpriteRenderer ResolveBodyRenderer()
+        {
+            if (TryGetComponent(out SpriteRenderer own)) return own;
+
+            var candidates = GetComponentsInChildren<SpriteRenderer>(true);
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                var candidate = candidates[i];
+                if (candidate == null) continue;
+                // 체력바 루트("HealthBar") 밑에 있는 렌더러는 본체가 아니다.
+                if (candidate.GetComponentInParent<EnemyHealthBar>() != null &&
+                    candidate.transform.parent != null &&
+                    candidate.transform.parent.name == "HealthBar") continue;
+                return candidate;
+            }
+            return null;
+        }
+
         private void Update()
         {
             if (_combat == null || _combat.IsDead)
@@ -127,8 +195,17 @@ namespace TSWP.Enemies
             // 예고한 공격은 반드시 발동해야 회피가 의미를 갖는다 (예고 후 취소는 학습을 방해한다).
             if (_telegraphing)
             {
+                // 단, 기절/침묵 등으로 공격이 봉쇄되면 예고는 무효가 된다 —
+                // CC를 걸었는데도 예고된 공격이 그대로 터지면 CC가 무의미해진다(공략 방법 존재 원칙).
+                if (_controller.Status != null && !_controller.Status.CanAttack)
+                {
+                    CancelTelegraph();
+                    return;
+                }
+
                 CurrentAction = EnemyAction.Telegraph;
                 StopMoving();
+                if (_telegraphTarget != null) FaceToward(_telegraphTarget.transform.position);
 
                 _telegraphTimer -= dt;
                 if (_telegraphTimer <= 0f) ReleaseTelegraph();
@@ -137,7 +214,7 @@ namespace TSWP.Enemies
 
             _decisionTimer -= dt;
             if (_decisionTimer > 0f) return;
-            _decisionTimer = decisionInterval;
+            _decisionTimer = Profile.SafeDecisionInterval;
 
             BuildContext();
             CurrentAction = SelectAction();
@@ -149,6 +226,7 @@ namespace TSWP.Enemies
         {
             _context.Reset();
 
+            var profile = Profile;
             Vector2 self = transform.position;
 
             // ② 자신의 체력
@@ -156,7 +234,7 @@ namespace TSWP.Enemies
 
             // ① 최근접 생존 플레이어 + ⑥ 아군 적 위치
             int hitCount = Physics2D.OverlapCircle(
-                self, Mathf.Max(detectionRange, allyScanRadius), _scanFilter, _overlapBuffer);
+                self, Mathf.Max(profile.detectionRange, profile.allyScanRadius), _scanFilter, _overlapBuffer);
 
             // 버퍼가 꽉 찼다면 결과가 잘렸다는 뜻 — 플레이어가 잘려 나가면 적이 Idle에 빠진다.
             if (hitCount >= _overlapBuffer.Length && !_warnedTruncated)
@@ -180,13 +258,13 @@ namespace TSWP.Enemies
 
                 if (other.Team == TeamType.Players)
                 {
-                    if (distance <= detectionRange && distance < bestDistance)
+                    if (distance <= profile.detectionRange && distance < bestDistance)
                     {
                         bestDistance = distance;
                         _context.targetPlayer = other;
                     }
                 }
-                else if (other.Team == TeamType.Enemies && distance <= allyScanRadius)
+                else if (other.Team == TeamType.Enemies && distance <= profile.allyScanRadius)
                 {
                     _context.allyPositions.Add(other.transform.position);
                 }
@@ -203,12 +281,10 @@ namespace TSWP.Enemies
             _context.hasLineOfSight = !_context.hasObstacleBetween;
 
             // ⑤ 공격 가능 여부 — 쿨타임 + 사거리 + 시야 + 상태이상 미차단
-            var data = _controller.Data;
-            float attackRange = data != null ? data.basicAttack.range : 1.5f;
             bool notBlocked = _controller.Status == null || _controller.Status.CanAttack;
 
             _context.canAttack = _attackCooldown <= 0f
-                                 && bestDistance <= attackRange
+                                 && bestDistance <= AttackRange
                                  && _context.hasLineOfSight
                                  && notBlocked;
         }
@@ -224,6 +300,7 @@ namespace TSWP.Enemies
             Evaluate(EnemyAction.Attack, ScoreAttack(), ref best, ref bestScore);
             Evaluate(EnemyAction.UseAbility, ScoreAbility(), ref best, ref bestScore);
             Evaluate(EnemyAction.Retreat, ScoreRetreat(), ref best, ref bestScore);
+            Evaluate(EnemyAction.KeepDistance, ScoreKeepDistance(), ref best, ref bestScore);
             Evaluate(EnemyAction.Reposition, ScoreReposition(), ref best, ref bestScore);
             Evaluate(EnemyAction.Approach, ScoreApproach(), ref best, ref bestScore);
 
@@ -237,34 +314,64 @@ namespace TSWP.Enemies
             best = action;
         }
 
-        private float ScoreAttack() => _context.canAttack ? 100f : float.MinValue;
+        private float ScoreAttack() => _context.canAttack ? Profile.attackScore : float.MinValue;
 
         private float ScoreAbility()
         {
             var ability = _controller.Data != null ? _controller.Data.specialAbility : null;
             if (ability == null) return float.MinValue;
             if (!ability.CanExecute(_controller, _context)) return float.MinValue;
-            return 90f; // 고유 능력은 일반 공격보다 우선순위가 낮다 (쿨타임 자원)
+            return Profile.abilityScore; // 고유 능력은 일반 공격보다 우선순위가 낮다 (쿨타임 자원)
         }
 
         private float ScoreRetreat()
         {
-            // 저체력일수록, 대상이 가까울수록 후퇴 선호
-            if (_context.selfHealthRatio > retreatHealthRatio) return float.MinValue;
-            return 80f + (retreatHealthRatio - _context.selfHealthRatio) * 50f;
+            var profile = Profile;
+
+            // retreatHealthRatio == 0 → 절대 후퇴하지 않는 우직한 추격형 (예: Spider)
+            if (profile.NeverRetreats) return float.MinValue;
+
+            // 저체력일수록 후퇴 선호
+            if (_context.selfHealthRatio > profile.retreatHealthRatio) return float.MinValue;
+            return profile.retreatScore + (profile.retreatHealthRatio - _context.selfHealthRatio) * 50f;
+        }
+
+        /// <summary>
+        /// 사거리 유지 — 유지 거리보다 안쪽으로 들어온 대상에게서 물러난다.
+        /// 이게 없으면 원거리 적이 플레이어에게 붙어 버려 '원거리'라는 정체성이 사라진다.
+        /// </summary>
+        private float ScoreKeepDistance()
+        {
+            var profile = Profile;
+            if (!profile.KeepsDistance) return float.MinValue;
+            if (float.IsPositiveInfinity(_context.distanceToPlayer)) return float.MinValue;
+
+            // 접근을 멈추는 경계와 물러나기 시작하는 경계를 겹치지 않게 띄운다(히스테리시스).
+            // 같은 값이면 경계선에서 접근/후퇴를 매 판단마다 번갈아 골라 제자리 떨림이 생긴다.
+            float hold = profile.GetHoldDistance(AttackRange) * KeepDistanceInnerRatio;
+            if (_context.distanceToPlayer >= hold) return float.MinValue;
+
+            return profile.keepDistanceScore;
         }
 
         private float ScoreReposition()
         {
             // 시야가 막혀 있으면 우회
-            return _context.hasObstacleBetween ? 70f : float.MinValue;
+            return _context.hasObstacleBetween ? Profile.repositionScore : float.MinValue;
         }
 
         private float ScoreApproach()
         {
+            var profile = Profile;
+
             // 항상 가능한 기본 행동 — 멀수록 선호도 상승
             if (float.IsPositiveInfinity(_context.distanceToPlayer)) return float.MinValue;
-            return 10f + Mathf.Min(_context.distanceToPlayer, detectionRange);
+
+            // 유지 거리 안쪽이면 더 접근하지 않는다 (원거리 적이 붙는 것을 막는다).
+            if (profile.KeepsDistance && _context.distanceToPlayer <= profile.GetHoldDistance(AttackRange))
+                return float.MinValue;
+
+            return profile.approachScore + Mathf.Min(_context.distanceToPlayer, profile.detectionRange);
         }
 
         // ── ③ 행동 실행 ───────────────────────────────────────────
@@ -285,7 +392,10 @@ namespace TSWP.Enemies
                     break;
 
                 case EnemyAction.Retreat:
+                case EnemyAction.KeepDistance:
+                    // 물러나면서도 대상을 바라본다 — 다음 공격 타이밍을 노리는 자세.
                     MoveAwayFrom(_context.targetPlayer.transform.position);
+                    FaceToward(_context.targetPlayer.transform.position);
                     break;
 
                 case EnemyAction.Reposition:
@@ -295,7 +405,9 @@ namespace TSWP.Enemies
 
                 case EnemyAction.Idle:
                 default:
+                    // 유지 거리 안에서 대기하는 경우도 여기로 온다 — 멈춰도 대상은 계속 바라본다.
                     StopMoving();
+                    if (_context.targetPlayer != null) FaceToward(_context.targetPlayer.transform.position);
                     break;
             }
         }
@@ -326,6 +438,7 @@ namespace TSWP.Enemies
             _telegraphTarget = target;
             CurrentAction = EnemyAction.Telegraph;
             StopMoving();
+            FaceToward(target.transform.position);
 
             // 흰색이면 색을 바꾸지 않는다 (이펙트만으로 예고하는 적)
             if (data.basicAttack.telegraphColor != Color.white)
@@ -399,6 +512,7 @@ namespace TSWP.Enemies
 
             EnemyAttack attack = data.basicAttack;
             Vector2 direction = ((Vector2)target.transform.position - (Vector2)transform.position).normalized;
+            FaceToward(target.transform.position);
 
             // 공격 이펙트
             if (!string.IsNullOrEmpty(attack.attackVfxId))
@@ -443,17 +557,38 @@ namespace TSWP.Enemies
             _attackCooldown = attack.cooldown / speed;
         }
 
-        /// <summary>투사체 발사 — 총구는 자기 콜라이더 밖에서 생성한다.</summary>
+        /// <summary>
+        /// 투사체 발사 — 총구는 자기 콜라이더 밖에서 생성한다.
+        /// 8인 난전에서 발사마다 Instantiate/Destroy가 일어나지 않도록 ProjectilePool을 경유한다
+        /// (풀이 씬에 없으면 풀이 스스로 만들어지고, 종료 중이면 Instantiate로 폴백한다).
+        /// </summary>
         private void FireProjectile(EnemyAttack attack, Vector2 direction, float damage,
                                     List<StatusEffects.StatusEffectData> statusEffects,
                                     KnockbackInfo? knockback)
         {
             Vector3 muzzle = transform.position + (Vector3)(direction * attack.muzzleForward);
 
-            var projectile = Instantiate(attack.projectilePrefab, muzzle, Quaternion.identity);
+            var projectile = ProjectilePool.Spawn(attack.projectilePrefab, muzzle, Quaternion.identity);
+            if (projectile == null) return;
+
             projectile.SetSpeed(attack.projectileSpeed);
             projectile.SetObstacleMask(obstacleMask);
             projectile.Launch(_combat, direction, damage, statusEffects, knockback, attack.isExplosive);
+        }
+
+        /// <summary>
+        /// 대상 쪽으로 스프라이트를 돌린다. 연출용이므로 렌더러가 없으면 조용히 생략한다
+        /// (연출 부재가 게임 로직을 실패시키지 않는다).
+        /// </summary>
+        private void FaceToward(Vector2 worldPosition)
+        {
+            if (!faceTarget || _renderer == null) return;
+
+            float dx = worldPosition.x - transform.position.x;
+            if (Mathf.Abs(dx) < 0.01f) return; // 수직 정렬 시 좌우가 떨리는 것을 막는다
+
+            bool lookingRight = dx > 0f;
+            _renderer.flipX = spriteFacesRight ? !lookingRight : lookingRight;
         }
 
         private void MoveToward(Vector2 destination)
@@ -493,6 +628,8 @@ namespace TSWP.Enemies
 
             // 2D 횡스크롤 — 수평 이동만 적용하고 중력은 유지한다.
             _body.linearVelocity = new Vector2(sign * speed, _body.linearVelocity.y);
+
+            FaceToward((Vector2)transform.position + new Vector2(sign, 0f));
         }
 
         /// <summary>진행 방향 앞의 발밑에 땅이 없으면 true (= 그쪽으로 걸어가면 안 된다).</summary>

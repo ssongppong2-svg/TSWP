@@ -20,6 +20,23 @@ namespace TSWP.Map
         Secret,       // 비밀방 — 발견 전 미니맵 비표시, 희귀 아이템/특별 이벤트
         BossPractice, // 보스 기믹 연습 방 — 보스전 직전 고정 배치, 다음 보스 핵심 기믹 체험
         Boss,         // 보스 방 — 스테이지 마지막, 처치 시 아이템 3~4개 드롭
+
+        // ── 아래는 ARCHITECTURE.md §4 계약(10종) 이후 가산된 항목 ──
+        // 값을 '맨 뒤에만' 추가한다 — 앞에 끼워 넣으면 기존 SO/씬의 직렬화된 정수값이 전부 밀린다.
+        Reward,       // 보상 방 — 전투 없이 보상만 수령. 클리어 조건 없음(진입 즉시 클리어) + RoomDefinition.reward 지급
+    }
+
+    /// <summary>
+    /// 방 클리어 시 지급하는 보상 종류. RoomDefinition이 값을 들고 RoomInstance가 지급한다.
+    /// 보상 로직 자체는 Items(ItemDropManager)/Core(GameEvents) 소관 — 여기서는 '무엇을 줄지'만 데이터로 고른다.
+    /// </summary>
+    public enum RoomRewardType
+    {
+        None,      // 보상 없음
+        ItemDrop,  // 아이템 드롭 (ItemDropManager.SpawnDrop — 획득 경로는 RoomDefinition이 지정)
+        BossDrop,  // 보스 드롭 3~4개 (GameRules 규칙 — ItemDropManager.SpawnBossDrops)
+        Gold,      // 골드 지급 (GameEvents.RaiseGoldGained)
+        Heal,      // 팀 전체 회복 (휴식 방 — CombatEntity.Heal)
     }
 
     /// <summary>

@@ -35,15 +35,31 @@ namespace TSWP.Bosses
         [Tooltip("패턴 간 기본 간격(초). 난이도·광폭화 속도 배율로 나눠 적용된다.")]
         [SerializeField] private float patternIntervalSeconds = 3f; // TODO(밸런스): 문서 미정
 
+        [Tooltip("패턴 1회의 최대 지속 시간(초). 이 시간을 넘기면 강제 중단한다 — " +
+                 "잘못 만든 Runner 하나가 보스전을 영구 정지시키는 것을 막는 안전장치.")]
+        [SerializeField] private float maxPatternSeconds = 12f; // TODO(밸런스): 문서 미정
+
+        [Header("보상")]
+        [Tooltip("보상 단계에서 방의 목표형 클리어를 통지할지 (전멸형 방이면 아무 일도 일어나지 않는다).")]
+        [SerializeField] private bool notifyRoomObjectiveOnReward = true;
+
         private CombatEntity _entity;
+        private Rigidbody2D _body;
         private BossPatternSelector _selector;
         private BossAIContext _context;
+        private BossPatternContext _patternContext;
         private CooldownTimer _patternCooldown;
         private readonly List<BossPattern> _candidateBuffer = new();
 
-        private IGimmick[] _gimmicks;
-        private ICoopPuzzle[] _coopPuzzles;
+        // 배열이 아니라 리스트인 이유: BossData의 프리팹으로 런타임에 기믹/퍼즐이 추가될 수 있다.
+        private readonly List<IGimmick> _gimmicks = new();
+        private readonly List<ICoopPuzzle> _coopPuzzles = new();
         private ICoopPuzzle _activePuzzle;
+
+        // 현재 실행 중인 패턴 (전략 Runner). null이면 다음 패턴을 고를 수 있다.
+        private BossPatternRunner _activeRunner;
+        private float _runnerElapsed;
+        private bool _subscribed;
 
         // SYNC: 호스트 권위, 추후 NGO NetworkVariable — 현재 페이즈/광폭화 여부.
         private BossFightPhase _phase = BossFightPhase.Intro;
@@ -69,46 +85,111 @@ namespace TSWP.Bosses
         private void Awake()
         {
             _entity = GetComponent<CombatEntity>();
+            _body = GetComponent<Rigidbody2D>(); // 없어도 된다 — 돌진 패턴이 transform 이동으로 폴백한다
             _selector = new BossPatternSelector();
             _context = new BossAIContext();
             _patternCooldown = new CooldownTimer(patternIntervalSeconds);
 
+            _patternContext = new BossPatternContext();
+            _patternContext.Bind(this, _entity, _body, _context);
+
             _entity.SetTeam(TeamType.Enemies);
 
             // 기믹/협동 퍼즐 플러그인 수집 (보스 프리팹·보스 방 하위 컴포넌트 — 스펙 unityNotes ④).
-            _gimmicks = GetComponentsInChildren<IGimmick>(true);
-            _coopPuzzles = GetComponentsInChildren<ICoopPuzzle>(true);
+            // 비활성 오브젝트도 포함한다(기믹은 대개 꺼진 채로 배치된다).
+            CollectPluginsFrom(gameObject);
         }
 
         private void OnEnable()
         {
+            _subscribed = true;
             _entity.Damaged += OnEntityDamaged;
             _entity.Died += OnEntityDied;
             GameEvents.DifficultyChanged += OnDifficultyChanged;
             GameEvents.SkillUsed += OnPlayerSkillUsed; // 보스 AI '행동' 요소 — 이벤트 기반 수집 (ARCHITECTURE.md §3-8)
 
-            foreach (var gimmick in _gimmicks)
-                gimmick.Completed += OnGimmickCompleted;
-            foreach (var puzzle in _coopPuzzles)
+            for (int i = 0; i < _gimmicks.Count; i++)
+                _gimmicks[i].Completed += OnGimmickCompleted;
+            for (int i = 0; i < _coopPuzzles.Count; i++)
             {
-                puzzle.Solved += OnPuzzleSolved;
-                puzzle.ProgressChanged += OnPuzzleProgressChanged;
+                _coopPuzzles[i].Solved += OnPuzzleSolved;
+                _coopPuzzles[i].ProgressChanged += OnPuzzleProgressChanged;
             }
         }
 
         private void OnDisable()
         {
+            _subscribed = false;
             _entity.Damaged -= OnEntityDamaged;
             _entity.Died -= OnEntityDied;
             GameEvents.DifficultyChanged -= OnDifficultyChanged;
             GameEvents.SkillUsed -= OnPlayerSkillUsed;
 
-            foreach (var gimmick in _gimmicks)
-                gimmick.Completed -= OnGimmickCompleted;
-            foreach (var puzzle in _coopPuzzles)
+            for (int i = 0; i < _gimmicks.Count; i++)
+                _gimmicks[i].Completed -= OnGimmickCompleted;
+            for (int i = 0; i < _coopPuzzles.Count; i++)
             {
-                puzzle.Solved -= OnPuzzleSolved;
-                puzzle.ProgressChanged -= OnPuzzleProgressChanged;
+                _coopPuzzles[i].Solved -= OnPuzzleSolved;
+                _coopPuzzles[i].ProgressChanged -= OnPuzzleProgressChanged;
+            }
+        }
+
+        // ── 플러그인 등록 ─────────────────────────────────────────
+        /// <summary>
+        /// 대상 오브젝트 하위의 IGimmick/ICoopPuzzle을 전부 등록한다.
+        /// 보스 프리팹 하위 컴포넌트와 BossData의 프리팹 인스턴스 양쪽에서 쓰인다.
+        /// </summary>
+        private void CollectPluginsFrom(GameObject root)
+        {
+            if (root == null) return;
+
+            var gimmicks = root.GetComponentsInChildren<IGimmick>(true);
+            for (int i = 0; i < gimmicks.Length; i++) RegisterGimmick(gimmicks[i]);
+
+            var puzzles = root.GetComponentsInChildren<ICoopPuzzle>(true);
+            for (int i = 0; i < puzzles.Length; i++) RegisterCoopPuzzle(puzzles[i]);
+        }
+
+        /// <summary>
+        /// 기믹 플러그인을 런타임에 추가한다 (보스 방이 자기 기믹을 스스로 등록하는 경우 등).
+        /// 중복 등록은 무시되므로 여러 번 불러도 안전하다.
+        /// </summary>
+        public void RegisterGimmick(IGimmick gimmick)
+        {
+            if (gimmick == null || _gimmicks.Contains(gimmick)) return;
+            _gimmicks.Add(gimmick);
+            if (_subscribed) gimmick.Completed += OnGimmickCompleted;
+        }
+
+        /// <summary>협동 퍼즐 플러그인을 런타임에 추가한다. 중복 등록은 무시된다.</summary>
+        public void RegisterCoopPuzzle(ICoopPuzzle puzzle)
+        {
+            if (puzzle == null || _coopPuzzles.Contains(puzzle)) return;
+            _coopPuzzles.Add(puzzle);
+            if (!_subscribed) return;
+            puzzle.Solved += OnPuzzleSolved;
+            puzzle.ProgressChanged += OnPuzzleProgressChanged;
+        }
+
+        /// <summary>
+        /// BossData에 등록된 기믹/퍼즐 프리팹을 보스 하위에 생성해 플러그인으로 편입한다.
+        /// 이걸 하지 않으면 GimmickEntry.gimmickPrefab / CoopPuzzleEntry.puzzlePrefab 필드가
+        /// 아무도 읽지 않는 죽은 데이터가 된다.
+        /// </summary>
+        private void InstantiateDataPlugins()
+        {
+            for (int i = 0; i < data.Gimmicks.Count; i++)
+            {
+                var prefab = data.Gimmicks[i]?.GimmickPrefab;
+                if (prefab == null) continue;
+                CollectPluginsFrom(Instantiate(prefab, transform));
+            }
+
+            for (int i = 0; i < data.CoopPuzzles.Count; i++)
+            {
+                var prefab = data.CoopPuzzles[i]?.PuzzlePrefab;
+                if (prefab == null) continue;
+                CollectPluginsFrom(Instantiate(prefab, transform));
             }
         }
 
@@ -121,7 +202,8 @@ namespace TSWP.Bosses
             if (_started || data == null) return;
             _started = true;
 
-            ApplyDifficultyScaling(); // 난이도는 체력/공격력/패턴 속도 3종만 조정 — 기믹 불변
+            InstantiateDataPlugins();  // BossData의 기믹/퍼즐 프리팹 → 실제 플러그인 인스턴스
+            ApplyDifficultyScaling();  // 난이도는 체력/공격력/패턴 속도 3종만 조정 — 기믹 불변
             _selector.ClearHistory();
 
             EnterPhase(BossFightPhase.Intro);
@@ -157,7 +239,7 @@ namespace TSWP.Bosses
                     break;
 
                 case BossFightPhase.NormalPattern:
-                    TickCombat();
+                    TickCombat(dt);
                     // ③ 협동 퍼즐 단계 진입 트리거 (체력 기반 — 30초 워치독으로도 강제 진입 가능).
                     if (!_puzzlePhaseDone && HpRatio <= coopPuzzleTriggerHpRatio)
                         EnterPhase(BossFightPhase.CoopPuzzle);
@@ -166,18 +248,18 @@ namespace TSWP.Bosses
                 case BossFightPhase.CoopPuzzle:
                     // 퍼즐 해결(Solved 이벤트) 대기 — 퍼즐 중 보스는 방해성 보조 패턴만 사용.
                     // TODO(패턴): 퍼즐 방해 전용 패턴 카테고리 후보 축소 (PuzzleInProgress/PuzzleProgressAbove 조건 활용).
-                    TickCombat();
+                    TickCombat(dt);
                     break;
 
                 case BossFightPhase.PatternChange:
-                    TickCombat();
+                    TickCombat(dt);
                     // ⑤ 광폭화 진입 (필요 시 — 광폭화 없는 보스는 이 단계가 최종 전투 단계).
                     if (data.HasEnrage && !_isEnraged && HpRatio <= data.Enrage.TriggerHealthRatio)
                         EnterPhase(BossFightPhase.Enrage);
                     break;
 
                 case BossFightPhase.Enrage:
-                    TickCombat();
+                    TickCombat(dt);
                     break;
 
                 case BossFightPhase.DeathCinematic:
@@ -246,8 +328,27 @@ namespace TSWP.Bosses
         }
 
         // ── 패턴 실행 ─────────────────────────────────────────────
-        private void TickCombat()
+        private void TickCombat(float dt)
         {
+            // ① 실행 중인 패턴이 있으면 그것부터 굴린다 — 패턴이 겹쳐 실행되지 않게 한다.
+            if (_activeRunner != null)
+            {
+                _runnerElapsed += dt;
+                _activeRunner.Tick(_patternContext, dt);
+
+                // 안전장치: Runner가 끝나지 않는 버그가 있어도 보스전이 멈추지 않게 강제 중단한다.
+                if (!_activeRunner.IsFinished && _runnerElapsed >= maxPatternSeconds)
+                {
+                    Debug.LogWarning($"[BossController] '{name}': 패턴 '{_lastExecutedPatternId}'이 " +
+                                     $"{maxPatternSeconds}초를 넘겨 강제 중단했습니다.", this);
+                    _activeRunner.Interrupt(_patternContext);
+                }
+
+                if (!_activeRunner.IsFinished) return;
+                _activeRunner = null;
+            }
+
+            // ② 다음 패턴 선택
             if (!_patternCooldown.TryUse()) return;
 
             UpdateContext();
@@ -305,14 +406,26 @@ namespace TSWP.Bosses
                           * pattern.GetSpeedMultiplier(_difficulty)
                           * (enhanced ? data.Enrage.EnhancedPatternSpeedMultiplier : 1f);
 
-            // TODO(전투): 실제 시전/히트박스/투사체 — pattern.CastTime·Duration을 speed로 나눠 재생,
-            //   피해는 DamageInfo{ BaseDamage = damage, Source = _entity }로 DamageSystem 파이프라인 사용.
-            // TODO(연출): 패턴 예고(텔레그래프) — '공정하지만 방심하면 치명적' 원칙상 예고 필수.
-            _ = damage; _ = speed;
-
-            // 협동 기믹 패턴이면 기믹 플러그인 작동.
+            // 협동 기믹 패턴이면 기믹 플러그인 작동 (기믹이 스스로 진행하므로 Runner는 없어도 된다).
             if (pattern.Category == BossPatternCategory.CoopGimmick)
-                ActivateNextGimmick();
+                ActivateGimmick(pattern.TargetGimmickId);
+
+            // 실행은 전적으로 전략(BossPatternBehaviour → BossPatternRunner)에 위임한다.
+            // 여기에 패턴별 분기(switch)를 넣는 순간 보스가 늘어날 때마다 이 파일을 고쳐야 하므로 금지.
+            var runner = pattern.CreateRunner();
+            if (runner != null)
+            {
+                _patternContext.SetExecution(pattern, damage, speed, _isEnraged);
+                _activeRunner = runner;
+                _runnerElapsed = 0f;
+                runner.Begin(_patternContext);
+            }
+            else if (pattern.Category != BossPatternCategory.CoopGimmick)
+            {
+                // 데이터 구성 오류 — 선택은 됐지만 실행할 동작이 없다. 전투는 계속 굴러간다.
+                Debug.LogWarning($"[BossController] '{name}': 패턴 '{pattern.PatternId}'에 " +
+                                 "실행 전략(BossPattern.behaviour)이 없어 아무 동작도 하지 않았습니다.", this);
+            }
 
             // 새로운 패턴 등장은 '반응할 상황' — 직전과 다른 패턴일 때만 비트 갱신 (30초 법칙).
             if (pattern.PatternId != _lastExecutedPatternId)
@@ -364,15 +477,38 @@ namespace TSWP.Bosses
         }
 
         // ── 기믹 ─────────────────────────────────────────────────
-        private void ActivateNextGimmick()
+        /// <summary>
+        /// 기믹 작동. gimmickId를 지정하면 그 기믹을, 비우면 작동 중이 아닌 첫 기믹을 쓴다.
+        /// id로 지정할 수 있으므로 보스가 기믹을 여러 개 가져도 패턴 데이터가 대상을 고를 수 있다.
+        /// </summary>
+        private void ActivateGimmick(string gimmickId)
         {
-            foreach (var gimmick in _gimmicks)
+            IGimmick fallback = null;
+
+            for (int i = 0; i < _gimmicks.Count; i++)
             {
+                var gimmick = _gimmicks[i];
                 if (gimmick.IsRunning) continue;
+
+                if (!string.IsNullOrEmpty(gimmickId))
+                {
+                    if (gimmick.GimmickId != gimmickId) continue;
+                }
+                else if (fallback == null)
+                {
+                    fallback = gimmick;
+                }
+
+                if (string.IsNullOrEmpty(gimmickId)) break;
+
                 gimmick.Activate(this);
                 NotifyBeat(); // 기믹 시작도 '반응할 상황'
                 return;
             }
+
+            if (fallback == null) return;
+            fallback.Activate(this);
+            NotifyBeat();
         }
 
         private void OnGimmickCompleted(IGimmick gimmick) => NotifyBeat();

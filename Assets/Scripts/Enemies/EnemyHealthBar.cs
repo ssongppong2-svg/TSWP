@@ -156,9 +156,14 @@ namespace TSWP.Enemies
             var collider = GetComponentInChildren<Collider2D>();
             if (collider == null) return heightOffset;
 
-            // bounds는 월드 기준이므로 자기 위치를 빼서 로컬 높이로 환산한다.
-            float top = collider.bounds.max.y - transform.position.y;
-            return top + autoOffsetPadding;
+            // bounds는 월드 기준이다. 체력바 루트는 자식이라 localPosition이 부모 스케일로 다시 곱해지므로
+            // 월드 높이를 부모 스케일로 나눠 로컬 값으로 환산해야 한다.
+            // (EnemyData.bodyScale로 크기를 바꾼 적에서 체력바가 더 높이 떠 버리는 것을 막는다.)
+            float top = collider.bounds.max.y - transform.position.y + autoOffsetPadding;
+
+            float scaleY = transform.lossyScale.y;
+            if (Mathf.Abs(scaleY) < 0.0001f) return top; // 0 스케일 방어 — 나눗셈 폭주 방지
+            return top / scaleY;
         }
 
         private static Sprite GetSharedPixel()

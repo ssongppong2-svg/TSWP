@@ -34,9 +34,9 @@ namespace TSWP.Enemies
         [Tooltip("체력이 이 비율 이하로 떨어지면 후퇴를 고려한다. 0이면 절대 후퇴하지 않는다(우직한 추격형).")]
         [Range(0f, 1f)] public float retreatHealthRatio = 0.25f; // TODO(밸런스): 문서 미정
 
-        [Tooltip("공격 사거리의 이 비율 안쪽으로는 더 접근하지 않는다(사거리 유지). " +
-                 "0이면 사거리와 무관하게 계속 밀고 들어간다. 원거리 적은 반드시 0보다 크게 둘 것.")]
-        [Range(0f, 1f)] public float holdDistanceRatio = 0.85f; // TODO(밸런스): 문서 미정
+        [Tooltip("공격 사거리의 이 비율 안쪽으로는 더 접근하지 않고, 더 파고들면 물러난다(사거리 유지). " +
+                 "0 = 계속 밀고 들어가는 근접형(기본). 원거리 적은 반드시 0보다 크게 둘 것(EnemyData.OnValidate가 경고).")]
+        [Range(0f, 1f)] public float holdDistanceRatio = 0f; // TODO(밸런스): 문서 미정 — 근접이 다수이므로 기본은 '유지 없음'
 
         [Header("행동 우선순위 (유틸리티 점수 — 높을수록 우선)")]
         // 점수를 데이터로 열어 두면 '겁 많은 적/저돌적인 적'을 코드 수정 없이 만들 수 있다.
@@ -55,10 +55,28 @@ namespace TSWP.Enemies
         [Tooltip("접근 기본 점수 (대상이 멀수록 거리만큼 가산된다).")]
         public float approachScore = 10f;
 
+        [Tooltip("사거리 유지 이탈(카이팅) 점수. 공격 점수보다 낮게 두어 '쏠 수 있으면 쏘고, 아니면 물러난다'가 되게 한다.")]
+        public float keepDistanceScore = 60f;
+
         /// <summary>후퇴 판정을 아예 사용하지 않는 성향인가 (추격 전용 적).</summary>
         public bool NeverRetreats => retreatHealthRatio <= 0f;
 
         /// <summary>사거리 유지를 사용하는가.</summary>
         public bool KeepsDistance => holdDistanceRatio > 0f;
+
+        /// <summary>
+        /// 공격 사거리에서 실제 유지 거리를 환산한다. 이 거리보다 가까우면 더 접근하지 않고,
+        /// 훨씬 가까우면(<see cref="keepDistanceScore"/>) 물러난다.
+        /// </summary>
+        public float GetHoldDistance(float attackRange) => Mathf.Max(0f, attackRange) * holdDistanceRatio;
+
+        /// <summary>재판단 간격 — 0에 가까운 값이 들어와도 프레임마다 판단하지 않도록 하한을 둔다.</summary>
+        public float SafeDecisionInterval => Mathf.Max(0.02f, decisionInterval);
+
+        /// <summary>
+        /// 에셋이 프로파일을 갖고 있지 않을 때(구버전 직렬화/데이터 없음) 공유하는 읽기 전용 폴백.
+        /// 데이터 결함이 AI를 NullReference로 멈추게 하지 않는다.
+        /// </summary>
+        public static readonly EnemyAIProfile Default = new EnemyAIProfile();
     }
 }

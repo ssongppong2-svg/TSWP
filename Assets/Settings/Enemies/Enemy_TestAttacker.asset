@@ -17,6 +17,9 @@ MonoBehaviour:
   grade: 0
   roles: 1
   enemyPrefab: {fileID: 0}
+  bodySprite: {fileID: 0}
+  bodyColor: {r: 1, g: 1, b: 1, a: 1}
+  bodyScale: {x: 1, y: 1}
   maxHp: 80
   moveSpeed: 2.2
   basicAttack:
@@ -36,9 +39,30 @@ MonoBehaviour:
     projectileSpeed: 8
     muzzleForward: 0.7
     attackVfxId: 
+    telegraphDuration: 0.35
+    telegraphColor: {r: 1, g: 0.55, b: 0.2, a: 1}
+    telegraphVfxId: 
   specialAttacks: []
   patterns: []
   specialAbility: {fileID: 0}
+  aiProfile:
+    decisionInterval: 0.2
+    detectionRange: 12
+    allyScanRadius: 8
+    retreatHealthRatio: 0.25
+    holdDistanceRatio: 0.85
+    attackScore: 100
+    abilityScore: 90
+    retreatScore: 80
+    repositionScore: 70
+    approachScore: 10
+    keepDistanceScore: 60
+  avoidLedges: 1
+  canTraverseGaps: 0
+  deathVfxId: 
+  deathLingerDuration: 0.4
+  fadeOutOnDeath: 1
+  showHealthBar: 1
   statusImmunities: 
   affectedByEnvironment: 1
   dropTable: {fileID: 0}

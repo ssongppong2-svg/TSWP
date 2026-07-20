@@ -34,6 +34,21 @@ namespace TSWP.UI
         /// <summary>기믹 진행도 0~1. HasGimmickGauge가 true일 때만 표시.</summary>
         public float GimmickGauge;
 
+        /// <summary>위험도(Danger Bar) 표시 여부. false면 위험도 바 자체를 숨긴다.</summary>
+        public bool HasDangerBar;
+
+        /// <summary>위험도 0~1. 보스 패턴(예: 돌진 예고)이 얼마나 임박했는지 — 1에 가까울수록 위험.</summary>
+        public float DangerLevel;
+
+        /// <summary>위험도 라벨 (예: "돌진"). 없으면 뷰가 라벨을 생략한다.</summary>
+        public string DangerLabel;
+
+        /// <summary>화면 덮기 연출 강도 0~1 (예: 거미줄이 시야를 가림). 0이면 뷰가 그리지 않는다.</summary>
+        public float ScreenOverlayAmount;
+
+        /// <summary>화면 덮기 색 (보스마다 다르다 — 코드가 아니라 호출자가 결정한다).</summary>
+        public Color ScreenOverlayColor = new Color(0.85f, 0.85f, 0.9f, 1f);
+
         public event Action Changed;
 
         private bool _subscribed;
@@ -68,6 +83,11 @@ namespace TSWP.UI
             IsEnraged = false;
             PhaseIndex = 0;
             GimmickGauge = 0f;
+            HasGimmickGauge = false;
+            HasDangerBar = false;
+            DangerLevel = 0f;
+            DangerLabel = null;
+            ScreenOverlayAmount = 0f;
             IsVisible = true;
             Changed?.Invoke();
         }
@@ -97,6 +117,10 @@ namespace TSWP.UI
         {
             if (bossId != BossId) return;
             IsVisible = false;
+            // 전투가 끝났는데 위험도/화면 덮기 연출이 남으면 화면이 잠긴 것처럼 보인다 — 반드시 정리한다.
+            HasDangerBar = false;
+            DangerLevel = 0f;
+            ScreenOverlayAmount = 0f;
             Changed?.Invoke();
         }
 
@@ -106,6 +130,43 @@ namespace TSWP.UI
         {
             HasGimmickGauge = hasGauge;
             GimmickGauge = Mathf.Clamp01(value01);
+            Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// 위험도(Danger Bar) 갱신. 보스별 패턴/기믹 구현이 UI로 밀어 넣는 지점.
+        /// 보스가 늘어도 UI 코드는 그대로다 — 새 보스는 이 API를 호출하기만 하면 된다.
+        /// TODO: 위험도 전용 GameEvents가 없으므로 직접 호출 (GameEvents 수정 금지).
+        /// </summary>
+        public void SetDangerLevel(float value01, bool hasBar = true, string label = null)
+        {
+            HasDangerBar = hasBar;
+            DangerLevel = Mathf.Clamp01(value01);
+            if (label != null) DangerLabel = label;
+            Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// 화면 덮기 연출 갱신 (예: 거미줄이 시야를 가리는 패턴). amount 0이면 사라진다.
+        /// 색을 인자로 받으므로 보스별 연출이 늘어도 UI 코드는 바뀌지 않는다.
+        /// </summary>
+        public void SetScreenOverlay(float amount01, Color? color = null)
+        {
+            ScreenOverlayAmount = Mathf.Clamp01(amount01);
+            if (color.HasValue) ScreenOverlayColor = color.Value;
+            Changed?.Invoke();
+        }
+
+        /// <summary>보스전 이탈/리셋 시 정리 (전투 중단 시 잔상 연출 제거).</summary>
+        public void Clear()
+        {
+            IsVisible = false;
+            HasGimmickGauge = false;
+            GimmickGauge = 0f;
+            HasDangerBar = false;
+            DangerLevel = 0f;
+            DangerLabel = null;
+            ScreenOverlayAmount = 0f;
             Changed?.Invoke();
         }
     }

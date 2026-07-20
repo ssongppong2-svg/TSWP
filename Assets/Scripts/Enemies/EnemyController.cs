@@ -31,6 +31,9 @@ namespace TSWP.Enemies
         private System.Random _rng;
         private bool _deathHandled;
 
+        /// <summary>프리팹 원본 크기 — 에셋의 bodyScale은 이 값에 곱해진다(중복 적용 방지).</summary>
+        private Vector3 _prefabScale = Vector3.one;
+
         /// <summary>처치 기여 플레이어 — 마지막으로 피해를 준 플레이어에게 귀속. (-1 = 미귀속)</summary>
         private int _lastDamagerPlayerId = -1;
 
@@ -48,6 +51,7 @@ namespace TSWP.Enemies
         {
             _combat = GetComponent<CombatEntity>();
             _status = GetComponent<StatusEffectController>();
+            _prefabScale = transform.localScale;
         }
 
         private void OnEnable()
@@ -108,9 +112,45 @@ namespace TSWP.Enemies
                     _status.AddImmunity(data.statusImmunities[i], immunitySource);
             }
 
+            ApplyVisual();
             SetupHealthBar();
 
             _lastDamagerPlayerId = -1;
+        }
+
+        /// <summary>
+        /// 에셋의 외형(스프라이트/색/크기)을 공용 몸통 프리팹에 입힌다.
+        /// 이 단계가 있어야 "프리팹 1개 + EnemyData N개 = 적 N종"이 성립한다.
+        /// 값이 비어 있으면 프리팹 원본을 그대로 두므로 전용 프리팹을 쓰는 적도 영향받지 않는다.
+        /// </summary>
+        private void ApplyVisual()
+        {
+            if (data == null) return;
+
+            // 크기 — 프리팹 원본 크기에 곱한다(Initialize가 두 번 불려도 누적되지 않는다).
+            if (data.bodyScale.x > 0f && data.bodyScale.y > 0f)
+            {
+                transform.localScale = new Vector3(
+                    _prefabScale.x * data.bodyScale.x,
+                    _prefabScale.y * data.bodyScale.y,
+                    _prefabScale.z);
+            }
+
+            // 본체 렌더러는 루트 우선 — 체력바가 만든 자식 바에 색을 칠하지 않기 위해서다.
+            if (!TryGetComponent(out SpriteRenderer renderer)) return;
+
+            if (data.bodySprite != null) renderer.sprite = data.bodySprite;
+
+            // 알파 0은 '보이지 않는 적'이 되어 버린다 — 색 항목이 없던 구버전 에셋 방어.
+            Color color = data.bodyColor.a > 0f ? data.bodyColor : Color.white;
+
+            // 색은 HitFlash가 '원래 색'으로 되돌릴 기준값이기도 하다 — 있으면 그쪽에 알려야
+            // 피격 플래시가 끝난 뒤 흰색으로 고착되지 않는다 (EnemyAI 예비 동작 틴트와 동일 규약).
+            if (TryGetComponent(out HitFlash flash)) flash.SetBaseColor(color);
+            renderer.color = color;
+
+            // 예비 동작(telegraph) 복귀 색도 함께 갱신 — 안 하면 예고 후 프리팹 원본 색으로 돌아간다.
+            if (TryGetComponent(out EnemyAI ai)) ai.SetBaseColor(color);
         }
 
         /// <summary>

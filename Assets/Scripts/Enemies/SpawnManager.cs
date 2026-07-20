@@ -21,8 +21,15 @@ namespace TSWP.Enemies
         [Tooltip("화면 밖 판정에 사용할 카메라. 비우면 Camera.main.")]
         [SerializeField] private Camera viewCamera;
 
+        [Header("공용 몸통 프리팹")]
+        // 근거: 적 시스템.md — 적 1종 = SO 에셋 1개. 적마다 프리팹을 만들면 그 원칙이 깨지므로
+        //   몸통은 하나를 공유하고 외형/수치/행동은 EnemyData가 결정한다.
+        [Tooltip("EnemyData.enemyPrefab이 비어 있을 때 사용할 공용 적 프리팹 (EnemyController+CombatEntity 보유).")]
+        [SerializeField] private GameObject defaultEnemyPrefab;
+
         [Header("생성 지점")]
-        [Tooltip("씬에 배치된 생성 지점. 비어 있으면 자식 SpawnPoint를 자동 수집한다.")]
+        [Tooltip("씬에 배치된 생성 지점. 비어 있으면 자식 SpawnPoint를 자동 수집한다. " +
+                 "방 프리팹의 SpawnPoint는 스스로 등록하므로 여기에 넣을 필요가 없다.")]
         [SerializeField] private List<SpawnPoint> spawnPoints = new List<SpawnPoint>();
 
         [Header("연동")]
@@ -39,6 +46,22 @@ namespace TSWP.Enemies
         private readonly List<CombatEntity> _players = new List<CombatEntity>();
         private readonly List<SpawnPoint> _candidates = new List<SpawnPoint>();
         private float _nextPlayerDiscoveryAt;
+
+        /// <summary>
+        /// 런타임에 등장한 생성 지점(방 프리팹 인스턴스 등). SpawnPoint가 스스로 등록/해제하므로
+        /// 방을 활성화하는 쪽(Map)이 SpawnManager를 알 필요가 없다.
+        /// 매니저 인스턴스가 아니라 정적 목록인 이유: 방 프리팹이 매니저보다 먼저 켜질 수 있기 때문.
+        /// </summary>
+        private static readonly List<SpawnPoint> _runtimePoints = new List<SpawnPoint>();
+
+        /// <summary>SpawnPoint가 활성화될 때 스스로 호출한다.</summary>
+        public static void RegisterSpawnPoint(SpawnPoint point)
+        {
+            if (point != null && !_runtimePoints.Contains(point)) _runtimePoints.Add(point);
+        }
+
+        /// <summary>SpawnPoint가 비활성화/파괴될 때 스스로 호출한다.</summary>
+        public static void UnregisterSpawnPoint(SpawnPoint point) => _runtimePoints.Remove(point);
 
         private void Awake()
         {
@@ -123,11 +146,7 @@ namespace TSWP.Enemies
         public EnemyController Spawn(EnemyData data, Difficulty difficulty)
         {
             // SYNC: 호스트 권위 — 스폰 추첨·위치 결정은 호스트 전용, 클라이언트는 복제 수신.
-            if (data == null || data.enemyPrefab == null)
-            {
-                Debug.LogWarning("[SpawnManager] EnemyData 또는 프리팹 미할당 — 스폰 생략", this);
-                return null;
-            }
+            if (data == null) return null;
 
             if (!TryPickSpawnPosition(out Vector2 position))
             {
@@ -135,11 +154,33 @@ namespace TSWP.Enemies
                 return null;
             }
 
-            GameObject instance = Instantiate(data.enemyPrefab, position, Quaternion.identity);
+            return SpawnAt(data, difficulty, position);
+        }
+
+        /// <summary>
+        /// 위치를 지정한 스폰. 배치 규칙(최소 거리/화면 밖)은 호출측이 보장한 것으로 본다 —
+        /// 방 진입 시 고정 배치, 보스전 소환 연출 등 '연출상 위치가 정해진' 경우에만 사용한다.
+        /// </summary>
+        public EnemyController SpawnAt(EnemyData data, Difficulty difficulty, Vector2 position)
+        {
+            if (data == null) return null;
+
+            // 전용 프리팹이 없으면 공용 몸통을 쓴다 — 적 1종 추가에 프리팹 제작이 필요 없게 한다.
+            GameObject prefab = data.enemyPrefab != null ? data.enemyPrefab : defaultEnemyPrefab;
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[SpawnManager] '{data.name}': 전용 프리팹도 공용 프리팹(defaultEnemyPrefab)도 " +
+                                 "없어 스폰을 생략했습니다.", this);
+                return null;
+            }
+
+            GameObject instance = Instantiate(prefab, position, Quaternion.identity);
             var controller = instance.GetComponent<EnemyController>();
             if (controller == null)
             {
+                // 잘못 만든 프리팹이 씬에 유령으로 남지 않게 즉시 정리한다.
                 Debug.LogError($"[SpawnManager] '{data.name}' 프리팹에 EnemyController가 없습니다.", instance);
+                Destroy(instance);
                 return null;
             }
 
@@ -163,11 +204,32 @@ namespace TSWP.Enemies
 
             EnsurePlayersKnown();
 
+            // 파괴된 방의 지점이 정적 목록에 쌓이지 않도록 정리한다(씬 전환 누수 방지).
+            for (int i = _runtimePoints.Count - 1; i >= 0; i--)
+                if (_runtimePoints[i] == null) _runtimePoints.RemoveAt(i);
+
             _candidates.Clear();
-            for (int i = 0; i < spawnPoints.Count; i++)
+            CollectCandidates(spawnPoints);
+            CollectCandidates(_runtimePoints); // 방 프리팹이 들고 온 지점
+
+            if (_candidates.Count == 0) return false;
+
+            var rng = GetRng();
+            position = _candidates[rng.Next(_candidates.Count)].transform.position;
+            return true;
+        }
+
+        /// <summary>
+        /// 배치 규칙을 통과한 지점만 후보에 담는다. 인스펙터 목록과 런타임 등록 목록에
+        /// 같은 지점이 중복으로 들어와도 한 번만 담는다(추첨 확률 왜곡 방지).
+        /// </summary>
+        private void CollectCandidates(List<SpawnPoint> source)
+        {
+            for (int i = 0; i < source.Count; i++)
             {
-                var point = spawnPoints[i];
-                if (point == null) continue;
+                var point = source[i];
+                if (point == null || !point.isActiveAndEnabled) continue;
+                if (_candidates.Contains(point)) continue;
 
                 Vector2 candidate = point.transform.position;
 
@@ -179,12 +241,6 @@ namespace TSWP.Enemies
 
                 _candidates.Add(point);
             }
-
-            if (_candidates.Count == 0) return false;
-
-            var rng = GetRng();
-            position = _candidates[rng.Next(_candidates.Count)].transform.position;
-            return true;
         }
 
         /// <summary>

@@ -109,6 +109,18 @@ namespace TSWP.Bosses
         [SerializeField] private float duration = 1.5f;    // TODO(밸런스): 문서 미정
         [SerializeField] private float baseDamage = 10f;   // TODO(밸런스): 문서 미정 — DamageInfo.BaseDamage 성분
 
+        [Header("실행 로직 (전략)")]
+        // 이 SO는 '어떤 상황에 고를지'만 안다. '무엇을 하는지'는 이 Behaviour가 안다.
+        // 돌진/거미줄/고치 소환 같은 구체 동작을 BossController의 switch문에 넣지 않기 위한 분리다
+        //   → 보스 2번의 새 패턴은 Behaviour SO를 하나 더 만들어 꽂으면 끝이고, 컨트롤러는 손대지 않는다.
+        [Tooltip("이 패턴이 실제로 무엇을 하는지 정의하는 실행 전략 SO. " +
+                 "CoopGimmick 카테고리는 기믹이 대신 동작하므로 비워 둘 수 있다.")]
+        [SerializeField] private BossPatternBehaviour behaviour;
+
+        [Tooltip("CoopGimmick 카테고리 전용 — 작동시킬 기믹의 GimmickId. " +
+                 "비우면 현재 작동 중이 아닌 첫 번째 기믹을 사용한다.")]
+        [SerializeField] private string targetGimmickId;
+
         public string PatternId => patternId;
         public string DisplayName => displayName;
         public BossPatternCategory Category => category;
@@ -117,6 +129,14 @@ namespace TSWP.Bosses
         public float CastTime => castTime;
         public float Duration => duration;
         public float BaseDamage => baseDamage;
+        public BossPatternBehaviour Behaviour => behaviour;
+        public string TargetGimmickId => targetGimmickId;
+
+        /// <summary>
+        /// 이 패턴 1회 실행분의 Runner를 만든다. Behaviour가 없으면 null —
+        /// 호출측(BossController)은 null을 '실행할 동작이 없는 패턴'으로 처리한다.
+        /// </summary>
+        public BossPatternRunner CreateRunner() => behaviour != null ? behaviour.CreateRunner() : null;
 
         /// <summary>비어 있는 조건 목록도 후보가 되도록 부여하는 기본 스코어.</summary>
         public const float BaseScore = 1f;
@@ -153,6 +173,12 @@ namespace TSWP.Bosses
         {
             if (string.IsNullOrEmpty(patternId))
                 Debug.LogWarning($"[BossPattern] '{name}': patternId가 비어 있음 — 이력 반복 방지·동기화 식별에 필수.", this);
+
+            // 협동 기믹 패턴은 기믹이 대신 동작하므로 Behaviour가 없어도 된다.
+            // 그 외 패턴에 Behaviour가 없으면 '선택은 되는데 아무 일도 일어나지 않는' 유령 패턴이 된다.
+            if (behaviour == null && category != BossPatternCategory.CoopGimmick)
+                Debug.LogWarning($"[BossPattern] '{name}': 실행 전략(behaviour)이 비어 있음 — " +
+                                 "선택돼도 아무 동작을 하지 않는다.", this);
         }
 #endif
     }
