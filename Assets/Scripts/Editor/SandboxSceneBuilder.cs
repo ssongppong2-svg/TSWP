@@ -234,9 +234,16 @@ namespace TSWP.EditorTools
 
         private static void CreateHud(GameObject player)
         {
+            // 조작감 확인용 정보 패널 — 우측 상단
             var go = new GameObject("SandboxHud");
             var hud = go.AddComponent<SandboxHud>();
             hud.SetPlayer(player.GetComponent<PlayerController>());
+
+            // 실제 게임 UI — 좌측 상단 (HP·스킬·아이템·상태이상·부활 횟수·방 번호)
+            // 프로토타입에서 새 시스템이 눈에 보여야 검증이 된다.
+            var hudGo = new GameObject("GameplayHud");
+            hudGo.AddComponent<TSWP.UI.GameplayHud>();
+            hudGo.AddComponent<TSWP.UI.BossHealthBar>();
         }
 
         private static void CreateManagers()

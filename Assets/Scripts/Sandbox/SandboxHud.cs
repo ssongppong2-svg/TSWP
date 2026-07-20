@@ -32,7 +32,9 @@ namespace TSWP.Sandbox
             EnsureStyles();
 
             const float width = 280f;
-            GUILayout.BeginArea(new Rect(12f, 12f, width, 300f), GUIContent.none, _boxStyle);
+            // 우측 상단에 그린다 — 좌측 상단은 실제 게임 UI(UI.GameplayHud)가 쓴다.
+            GUILayout.BeginArea(new Rect(Screen.width - width - 12f, 12f, width, 320f),
+                                GUIContent.none, _boxStyle);
 
             GUILayout.Label("TSWP 프로토타입 테스트", _labelStyle);
             GUILayout.Space(4f);
