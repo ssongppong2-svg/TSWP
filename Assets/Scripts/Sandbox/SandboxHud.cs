@@ -47,6 +47,9 @@ namespace TSWP.Sandbox
             GUILayout.Space(3f);
             GUILayout.Label("← 왼쪽: 추적 근접 적 (빨강)", _labelStyle);
             GUILayout.Label("→ 오른쪽: 원거리 저격수 (보라)", _labelStyle);
+            GUILayout.Label("→ 더 오른쪽: 보스 (자주, HP 1850)", _labelStyle);
+            GUILayout.Space(3f);
+            GUILayout.Label("좌상단: 게임 UI · 우상단: 알림", _labelStyle);
 
             GUILayout.Space(6f);
 

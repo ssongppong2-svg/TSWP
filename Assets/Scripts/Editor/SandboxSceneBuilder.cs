@@ -15,6 +15,7 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using TSWP.Art;
 using TSWP.Combat;
+using TSWP.Bosses;
 using TSWP.Core;
 using TSWP.Enemies;
 using TSWP.Jobs;
@@ -50,6 +51,7 @@ namespace TSWP.EditorTools
             CreateVfx(player);
             CreateAttackerEnemy(square);
             CreateRangedEnemy(square);
+            CreateTestBoss(square);
             CreateMapIntro();
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
@@ -240,10 +242,47 @@ namespace TSWP.EditorTools
             hud.SetPlayer(player.GetComponent<PlayerController>());
 
             // 실제 게임 UI — 좌측 상단 (HP·스킬·아이템·상태이상·부활 횟수·방 번호)
-            // 프로토타입에서 새 시스템이 눈에 보여야 검증이 된다.
             var hudGo = new GameObject("GameplayHud");
-            hudGo.AddComponent<TSWP.UI.GameplayHud>();
+            var gameplayHud = hudGo.AddComponent<TSWP.UI.GameplayHud>();
             hudGo.AddComponent<TSWP.UI.BossHealthBar>();
+
+            // HUD 브리지 — 이것이 없으면 스킬 쿨타임과 상태이상 칸이 영원히 비어 있다.
+            var statusController = player.GetComponent<StatusEffectController>();
+
+            var statusBridge = hudGo.AddComponent<TSWP.UI.StatusEffectHudBridge>();
+            var sbSo = new SerializedObject(statusBridge);
+            SetPrivateFieldObject2(sbSo, "source", statusController);
+            SetPrivateFieldObject2(sbSo, "hud", gameplayHud);
+            sbSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var skillBridge = hudGo.AddComponent<TSWP.UI.SkillCooldownHudBridge>();
+            var kbSo = new SerializedObject(skillBridge);
+            SetPrivateFieldObject2(kbSo, "statusController", statusController);
+            SetPrivateFieldObject2(kbSo, "hud", gameplayHud);
+            var casters = kbSo.FindProperty("casters");
+            if (casters != null)
+            {
+                var caster = player.GetComponent<SkillCaster>();
+                casters.arraySize = caster != null ? 1 : 0;
+                if (caster != null) casters.GetArrayElementAtIndex(0).objectReferenceValue = caster;
+            }
+            kbSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 알림 토스트 — 매니저(큐)와 뷰(표시)를 함께 붙인다. 뷰가 없으면 알림이 보이지 않는다.
+            var notifyGo = new GameObject("Notifications");
+            notifyGo.AddComponent<TSWP.UI.NotificationManager>();
+            notifyGo.AddComponent<TSWP.UI.NotificationView>();
+
+            // 패널 관리 / 설정 저장
+            var uiGo = new GameObject("UIManagers");
+            uiGo.AddComponent<TSWP.UI.UIManager>();
+            uiGo.AddComponent<TSWP.UI.SettingsManager>();
+        }
+
+        private static void SetPrivateFieldObject2(SerializedObject so, string field, Object value)
+        {
+            var p = so.FindProperty(field);
+            if (p != null) p.objectReferenceValue = value;
         }
 
         private static void CreateManagers()
@@ -264,6 +303,50 @@ namespace TSWP.EditorTools
         }
 
         // ── 맵 인트로 ─────────────────────────────────────────────
+
+        /// <summary>
+        /// 테스트용 보스 — BossHealthBar와 패턴 연출을 눈으로 확인하기 위해 배치한다.
+        /// 패턴 에셋은 ForestPrototypeBuilder가 만든 것을 재사용한다(없으면 체력바만 보인다).
+        /// </summary>
+        private static void CreateTestBoss(Sprite sprite)
+        {
+            var data = AssetDatabase.LoadAssetAtPath<BossData>("Assets/Settings/Bosses/Boss_HatchQueen.asset");
+            if (data == null)
+            {
+                Debug.LogWarning("[TSWP] Boss_HatchQueen 데이터가 없습니다. " +
+                                 "[TSWP > Forest 프로토타입 씬 만들기]를 한 번 실행하면 생성됩니다.");
+            }
+
+            var go = new GameObject("Boss_HatchQueen");
+            go.transform.position = new Vector3(16f, 2f, 0f); // 맵 오른쪽 — 다가가면 전투 시작
+            go.transform.localScale = new Vector3(3f, 2.6f, 1f);
+
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = new Color(0.45f, 0.15f, 0.35f);
+            renderer.sortingOrder = 8;
+
+            var body = go.AddComponent<Rigidbody2D>();
+            body.gravityScale = 3f;
+            body.freezeRotation = true;
+
+            var collider = go.AddComponent<BoxCollider2D>();
+            collider.size = new Vector2(1f, 1f);
+            collider.sharedMaterial = EnsureZeroFrictionMaterial();
+
+            var entity = go.AddComponent<CombatEntity>();
+            SetPrivateField(entity, "team", (int)TeamType.Enemies, isEnum: true);
+            SetPrivateField(entity, "ownerPlayerId", -1);
+            SetPrivateField(entity, "maxHp", 1850f);
+            SetPrivateField(entity, "autoReviveOnDeath", false);
+            SetPrivateField(entity, "isKnockbackImmune", true);
+
+            go.AddComponent<StatusEffectController>();
+            go.AddComponent<StatusEffectVisual>();
+
+            var boss = go.AddComponent<BossController>();
+            if (data != null) SetPrivateFieldObject(boss, "data", data);
+        }
 
         /// <summary>맵 진입 시네마틱. 맵마다 MapIntroData 에셋만 만들면 재사용된다.</summary>
         private static void CreateMapIntro()
@@ -312,7 +395,9 @@ namespace TSWP.EditorTools
             data.titleColor = Color.white;
             data.subtitleColor = new Color(0.78f, 0.82f, 0.78f, 1f); // 숲 = 옅은 초록빛
 
-            data.playOnlyOnce = true;
+            // 테스트 씬에서는 매번 재생되어야 연출을 확인할 수 있다.
+            // 실제 게임(Forest 씬)에서는 true로 두어 재입장 시 생략한다.
+            data.playOnlyOnce = false;
             data.skippable = true;
 
             // TODO(사운드): ambientSound(새소리·바람)와 bgm 에셋이 준비되면 여기에 연결한다.
@@ -644,10 +729,20 @@ namespace TSWP.EditorTools
             var mask = aiSo.FindProperty("obstacleMask");
             if (mask != null) mask.intValue = 1 << LayerMask.NameToLayer(GroundLayerName);
 
-            // 원거리이므로 멀리서도 플레이어를 인지해야 한다
-            var detection = aiSo.FindProperty("detectionRange");
-            if (detection != null) detection.floatValue = 16f;
             aiSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 원거리이므로 멀리서도 플레이어를 인지해야 한다.
+            // 감지 거리는 EnemyAI 컴포넌트가 아니라 EnemyData.aiProfile이 소유한다
+            // (적의 '성격'은 프리팹이 아니라 데이터에 있어야 적 1종 = 에셋 1개가 성립한다).
+            var dataSo = new SerializedObject(data);
+            var profile = dataSo.FindProperty("aiProfile");
+            if (profile != null)
+            {
+                var detection = profile.FindPropertyRelative("detectionRange");
+                if (detection != null) detection.floatValue = 16f;
+                dataSo.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(data);
+            }
         }
 
         /// <summary>투사체 프리팹을 만든다 (없으면 생성, 있으면 재사용).</summary>

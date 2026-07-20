@@ -27,6 +27,9 @@ namespace TSWP.UI
 
         public IReadOnlyList<NotificationEntry> ActiveNotifications => _active;
 
+        /// <summary>알림 1건이 화면에 머무는 시간(초). 뷰가 사라짐 연출 타이밍을 계산할 때 쓴다.</summary>
+        public float DisplaySeconds => displaySeconds;
+
         /// <summary>알림이 추가/제거될 때 발행 — 뷰가 갱신 시점을 안다.</summary>
         public event Action Changed;
 
