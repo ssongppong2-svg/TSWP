@@ -96,12 +96,23 @@ namespace TSWP.Puzzles
             owner.AddParticipant(ResolveParticipantId(user));
         }
 
+        /// <summary>
+        /// 참여자 식별자. CombatEntity가 붙어 있으면 그 PlayerId를 쓴다.
+        /// 없을 때의 폴백은 인스턴스 고유값이 필요한데, GetInstanceID는 Unity 6에서 폐기됐고
+        /// GetEntityId는 버전에 따라 없을 수 있어 둘 다 쓰지 않는다.
+        /// 대신 이름 해시로 구분한다 — 프로토타입에서 서로 다른 오브젝트를 구별하는 데 충분하고
+        /// 엔진 API 변경에 영향받지 않는다.
+        /// </summary>
         protected static int ResolveParticipantId(PlayerController user)
         {
             if (user == null) return -1;
+
             int id = user.PlayerId;
             if (id >= 0) return id;
-            return Mathf.Abs(user.GetInstanceID()); // 프로토타입 폴백 — CombatEntity 미부착 플레이어 구분용
+
+            // NOTE: 이름이 같은 플레이어가 둘이면 같은 참여자로 취급된다.
+            //   멀티플레이 도입 시 PlayerId가 항상 유효해지므로 이 경로는 사라진다.
+            return Mathf.Abs(user.name.GetHashCode());
         }
 
         // ── 콜라이더 통과 처리 (운반/투척) ────────────────────────
