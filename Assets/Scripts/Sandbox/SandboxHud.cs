@@ -42,8 +42,10 @@ namespace TSWP.Sandbox
             GUILayout.Label("Shift : 달리기    우클릭 : 대쉬", _labelStyle);
             GUILayout.Label("좌클릭 : 공격     E : 상호작용", _labelStyle);
             GUILayout.Space(3f);
-            GUILayout.Label("1 혼란 · 2 공포 · 3 감전 · 4 중독", _labelStyle);
-            GUILayout.Label("0 : 상태이상 해제", _labelStyle);
+            GUILayout.Label("Q 스킬(강타) · T 이모트 · 휠클릭 핑", _labelStyle);
+            GUILayout.Label("1~4 상태이상 · 0 해제", _labelStyle);
+            GUILayout.Label("F5 아이템 뿌리기 · F7 업적", _labelStyle);
+            GUILayout.Label("F8 칭호 · F3 퍼즐 상태", _labelStyle);
             GUILayout.Space(3f);
             GUILayout.Label("← 왼쪽: 추적 근접 적 (빨강)", _labelStyle);
             GUILayout.Label("→ 오른쪽: 원거리 저격수 (보라)", _labelStyle);

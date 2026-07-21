@@ -20,6 +20,10 @@ using TSWP.Core;
 using TSWP.Enemies;
 using TSWP.Jobs;
 using TSWP.Map;
+using TSWP.Items;
+using TSWP.Meta;
+using TSWP.UI;
+using TSWP.Puzzles;
 using TSWP.Player;
 using TSWP.Sandbox;
 using TSWP.StatusEffects;
@@ -53,6 +57,7 @@ namespace TSWP.EditorTools
             CreateRangedEnemy(square);
             CreateTestBoss(square);
             CreateMapIntro();
+            CreateShowcase(square, player);
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath));
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -344,6 +349,267 @@ namespace TSWP.EditorTools
 
             var boss = go.AddComponent<BossController>();
             if (data != null) SetPrivateFieldObject(boss, "data", data);
+        }
+
+        // ── 전시장 ────────────────────────────────────────────────
+        // 만든 기능이 화면에 보여야 검증이 된다. 아이템·직업 스킬·업적·이모트·핑·미니맵·
+        // 상호작용 오브젝트를 전부 배치하고 뷰를 붙인다.
+
+        private static void CreateShowcase(Sprite sprite, GameObject player)
+        {
+            AttachPlayerViews(player);
+            CreateDebugTools(player);
+            CreateInteractableRow(sprite);
+        }
+
+        /// <summary>플레이어에 직업·스킬·이모트·핑 관련 컴포넌트를 붙인다.</summary>
+        private static void AttachPlayerViews(GameObject player)
+        {
+            // 직업 — Q 스킬이 동작하려면 JobDefinition이 필요하다.
+            var jobBootstrap = player.AddComponent<JobBootstrapper>();
+            SetPrivateFieldObject(jobBootstrap, "job", EnsureWarriorJob());
+
+            player.AddComponent<SkillCaster>();
+            player.AddComponent<PassiveHolder>();
+            player.AddComponent<PlayerEquipment>();
+
+            // 이모트: T로 휠을 열고 머리 위에 표시
+            player.AddComponent<EmoteWheel>();
+            player.AddComponent<EmoteWheelView>();
+            player.AddComponent<EmoteOverheadView>();
+
+            // 핑: 휠클릭
+            player.AddComponent<PingEmitter>();
+
+            // 대쉬 통계 — 업적 카운터로 흘려보낸다
+            player.AddComponent<DashStatReporter>();
+        }
+
+        /// <summary>디버그 뷰와 도구를 한곳에 모은다. 키 충돌을 여기서 정리한다.</summary>
+        private static void CreateDebugTools(GameObject player)
+        {
+            var go = new GameObject("ShowcaseTools");
+
+            // 아이템 스포너 — F5로 전 아이템을 바닥에 뿌린다 (기본 F1/F2는 다른 뷰와 겹친다)
+            var spawner = go.AddComponent<ItemDebugSpawner>();
+            var spSo = new SerializedObject(spawner);
+            var itemList = spSo.FindProperty("items");
+            if (itemList != null)
+            {
+                var items = LoadAll<ItemDefinition>("Assets/Settings/Items");
+                itemList.arraySize = items.Count;
+                for (int i = 0; i < items.Count; i++)
+                    itemList.GetArrayElementAtIndex(i).objectReferenceValue = items[i];
+            }
+            SetKey(spSo, "spawnAllKey", KeyCode.F5);
+            SetKey(spSo, "spawnRandomKey", KeyCode.F6);
+            SetPrivateFieldObject2(spSo, "spawnOrigin", player.transform);
+            spSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 업적 — F7 토글, F8 칭호 순환
+            var achievements = go.AddComponent<AchievementView>();
+            var acSo = new SerializedObject(achievements);
+            SetKey(acSo, "toggleKey", KeyCode.F7);
+            SetKey(acSo, "cycleTitleKey", KeyCode.F8);
+            SetKey(acSo, "debugAddKey", KeyCode.F9);
+            acSo.ApplyModifiedPropertiesWithoutUndo();
+
+            go.AddComponent<AchievementManager>();
+            go.AddComponent<LocalPlayerIdentity>();
+
+            // 퍼즐 상태 HUD — F3 토글, 기본 꺼둔다(화면이 복잡해진다)
+            var puzzleHud = go.AddComponent<PuzzleDebugHud>();
+            var puSo = new SerializedObject(puzzleHud);
+            var visible = puSo.FindProperty("visibleOnStart");
+            if (visible != null) visible.boolValue = false;
+            SetKey(puSo, "toggleKey", KeyCode.F3);
+            puSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 미니맵 · 상호작용 안내 · 핑 마커
+            go.AddComponent<MinimapView>();
+            go.AddComponent<PingMarkerView>();
+
+            var prompt = go.AddComponent<InteractionPromptView>();
+            SetPrivateFieldObject(prompt, "source", player.GetComponent<PlayerInteraction>());
+        }
+
+        /// <summary>상호작용 오브젝트 전시 — 왼쪽에 한 줄로 늘어놓아 하나씩 만져볼 수 있게 한다.</summary>
+        private static void CreateInteractableRow(Sprite sprite)
+        {
+            var root = new GameObject("Interactables");
+            float y = 0.2f;
+
+            // 레버 — 단독으로도 당겨진다
+            var lever = MakeInteractable(root, sprite, "Lever", new Vector2(-9f, y),
+                                         new Vector2(0.6f, 1.2f), new Color(0.7f, 0.6f, 0.3f));
+            lever.AddComponent<PuzzleLever>();
+
+            // 버튼
+            var button = MakeInteractable(root, sprite, "Button", new Vector2(-11f, y - 0.3f),
+                                          new Vector2(1.2f, 0.5f), new Color(0.85f, 0.75f, 0.25f));
+            button.AddComponent<PuzzleButton>();
+
+            // 압력 발판 — 밟으면 반응
+            var plate = MakeInteractable(root, sprite, "PressurePlate", new Vector2(-13f, -0.4f),
+                                         new Vector2(2f, 0.3f), new Color(0.5f, 0.7f, 0.9f));
+            plate.AddComponent<PressurePlate>();
+
+            // 밀 수 있는 상자
+            var box = MakeInteractable(root, sprite, "PushableBox", new Vector2(-15f, 0.5f),
+                                       new Vector2(1f, 1f), new Color(0.6f, 0.45f, 0.3f), physical: true);
+            box.AddComponent<PushableBox>();
+
+            // 운반 오브젝트
+            var carry = MakeInteractable(root, sprite, "CarryObject", new Vector2(-17f, 0.4f),
+                                         new Vector2(0.8f, 0.8f), new Color(0.75f, 0.75f, 0.5f), physical: true);
+            carry.AddComponent<CarryObject>();
+
+            // 점프 발판
+            var jump = MakeInteractable(root, sprite, "JumpPlatform", new Vector2(-7f, -0.4f),
+                                        new Vector2(2f, 0.4f), new Color(0.35f, 0.8f, 0.9f));
+            var jumpTrigger = jump.AddComponent<BoxCollider2D>();
+            jumpTrigger.isTrigger = true;
+            jumpTrigger.size = new Vector2(1f, 4f);
+            jumpTrigger.offset = new Vector2(0f, 2f);
+            jump.AddComponent<JumpPlatform>();
+
+            // 폭탄 — 들고 던지면 터진다
+            var bomb = MakeInteractable(root, sprite, "BombObject", new Vector2(-5f, 0.3f),
+                                        new Vector2(0.6f, 0.6f), new Color(0.3f, 0.3f, 0.35f), physical: true);
+            bomb.AddComponent<BombObject>();
+        }
+
+        private static GameObject MakeInteractable(GameObject parent, Sprite sprite, string name,
+                                                   Vector2 position, Vector2 size, Color color,
+                                                   bool physical = false)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent.transform);
+            go.transform.position = position;
+            go.transform.localScale = new Vector3(size.x, size.y, 1f);
+
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = sprite;
+            renderer.color = color;
+            renderer.sortingOrder = 4;
+
+            var collider = go.AddComponent<BoxCollider2D>();
+            if (!physical)
+            {
+                // 상호작용 범위 — 넉넉하게 잡아 E키가 잘 닿게 한다.
+                collider.isTrigger = true;
+                collider.size = new Vector2(2f, 3f);
+            }
+            else
+            {
+                var body = go.AddComponent<Rigidbody2D>();
+                body.gravityScale = 3f;
+                body.freezeRotation = true;
+                collider.sharedMaterial = EnsureZeroFrictionMaterial();
+            }
+
+            return go;
+        }
+
+        /// <summary>용사 직업 — Q 강타. 강력한 대신 자기 체력을 소모한다(게임 성경: 위험 동반).</summary>
+        private static JobDefinition EnsureWarriorJob()
+        {
+            const string folder = "Assets/Settings/Jobs";
+            Directory.CreateDirectory(folder);
+
+            const string skillPath = folder + "/Skill_WarriorSmash.asset";
+            var skill = AssetDatabase.LoadAssetAtPath<WarriorSmashSkill>(skillPath);
+            if (skill == null)
+            {
+                skill = ScriptableObject.CreateInstance<WarriorSmashSkill>();
+                AssetDatabase.CreateAsset(skill, skillPath);
+            }
+            var skSo = new SerializedObject(skill);
+            SetStr2(skSo, "skillId", "skill.warrior.smash");
+            SetStr2(skSo, "displayName", "강타");
+            SetFloat2(skSo, "cooldown", 4f);
+            skSo.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(skill);
+
+            const string jobPath = folder + "/Job_Warrior.asset";
+            var job = AssetDatabase.LoadAssetAtPath<JobDefinition>(jobPath);
+            if (job == null)
+            {
+                job = ScriptableObject.CreateInstance<JobDefinition>();
+                AssetDatabase.CreateAsset(job, jobPath);
+            }
+
+            var jbSo = new SerializedObject(job);
+            SetStr2(jbSo, "jobId", "warrior");
+            SetStr2(jbSo, "displayName", "용사");
+            SetPrivateFieldObject2(jbSo, "activeSkill", skill);
+
+            var color = jbSo.FindProperty("jobColor");
+            if (color != null) color.colorValue = new Color(0.35f, 0.6f, 0.95f); // 용사 = 파랑
+
+            // 기본 공격 — 검
+            var basic = jbSo.FindProperty("basicAttack");
+            if (basic != null)
+            {
+                SetRelative(basic, "damage", 12f);
+                SetRelative(basic, "range", 1.6f);
+                SetRelative(basic, "attackSpeed", 1.2f);
+                SetRelative(basic, "attackVfxId", VfxId.Slash);
+                SetRelative(basic, "knockbackForce", 5f);
+            }
+
+            jbSo.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(job);
+            AssetDatabase.SaveAssets();
+            return job;
+        }
+
+        // ── 전시장 헬퍼 ───────────────────────────────────────────
+
+        private static List<T> LoadAll<T>(string folder) where T : Object
+        {
+            var result = new List<T>();
+            if (!Directory.Exists(folder)) return result;
+
+            string[] guids = AssetDatabase.FindAssets($"t:{typeof(T).Name}", new[] { folder });
+            for (int i = 0; i < guids.Length; i++)
+            {
+                var asset = AssetDatabase.LoadAssetAtPath<T>(AssetDatabase.GUIDToAssetPath(guids[i]));
+                if (asset != null) result.Add(asset);
+            }
+            return result;
+        }
+
+        private static void SetKey(SerializedObject so, string field, KeyCode key)
+        {
+            var p = so.FindProperty(field);
+            if (p != null) p.intValue = (int)key;
+        }
+
+        private static void SetStr2(SerializedObject so, string field, string value)
+        {
+            var p = so.FindProperty(field);
+            if (p != null) p.stringValue = value;
+        }
+
+        private static void SetFloat2(SerializedObject so, string field, float value)
+        {
+            var p = so.FindProperty(field);
+            if (p != null) p.floatValue = value;
+        }
+
+        private static void SetRelative(SerializedProperty parent, string field, object value)
+        {
+            var p = parent.FindPropertyRelative(field);
+            if (p == null) return;
+
+            switch (value)
+            {
+                case float f: p.floatValue = f; break;
+                case int i: p.intValue = i; break;
+                case bool b: p.boolValue = b; break;
+                case string s: p.stringValue = s; break;
+            }
         }
 
         /// <summary>맵 진입 시네마틱. 맵마다 MapIntroData 에셋만 만들면 재사용된다.</summary>
