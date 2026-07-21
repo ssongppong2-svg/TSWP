@@ -1098,19 +1098,7 @@ namespace TSWP.EditorTools
             return data;
         }
 
-        private static void SetRelative(SerializedProperty parent, string name, object value)
-        {
-            var p = parent.FindPropertyRelative(name);
-            if (p == null) return;
-
-            switch (value)
-            {
-                case float f: p.floatValue = f; break;
-                case int i: p.intValue = i; break;
-                case bool b: p.boolValue = b; break;
-                case string s: p.stringValue = s; break;
-            }
-        }
+        // SetRelative는 601줄에 이미 정의되어 있다 (전시장 배선을 추가하며 중복 작성했던 것을 제거).
 
         /// <summary>테스트용 적 데이터. 플레이어를 쫓아와 근접 공격한다.</summary>
         private static EnemyData EnsureAttackerEnemyData()
