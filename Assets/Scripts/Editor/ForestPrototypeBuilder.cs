@@ -455,9 +455,18 @@ namespace TSWP.EditorTools
         private static void CreateRoomFlow(List<RoomInstance> rooms)
         {
             var go = new GameObject("RoomFlowManager");
+
+            // RoomManager가 실제 방 전환(그래프 보유·현재 방 추적·적 등록)을 담당한다.
+            // RoomFlowManager는 그 위에서 스테이지 흐름만 지휘하므로 둘 다 있어야 한다.
+            var roomManager = go.AddComponent<RoomManager>();
+
             var flow = go.AddComponent<RoomFlowManager>();
 
             var so = new SerializedObject(flow);
+
+            // 자동 탐색도 하지만, 명시 연결이 실행 순서에 영향받지 않아 안전하다.
+            var managerProp = so.FindProperty("roomManager");
+            if (managerProp != null) managerProp.objectReferenceValue = roomManager;
 
             var mode = so.FindProperty("mapSource");
             if (mode != null) mode.enumValueIndex = 0; // SceneAuthored
