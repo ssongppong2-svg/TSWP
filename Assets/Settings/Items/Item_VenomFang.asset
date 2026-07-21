@@ -1,0 +1,62 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c2a3dd16591a6d45b13427c2d84b61c, type: 3}
+  m_Name: Item_VenomFang
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Items.ItemDefinition
+  itemCode: item.venom_fang
+  itemName: "\uB3C5\uB2C8 \uC7A5\uAC11"
+  rarity: 1
+  itemType: 2
+  icon: {fileID: 0}
+  description: "\uBAA8\uB4E0 \uACF5\uACA9\uC5D0 \uC911\uB3C5\uC744 \uBD80\uC5EC\uD55C\uB2E4. \uB300\uC2E0 \uBAB8\uC774 \uB3C5\uC5D0 \uC808\uC5B4 \uBC29\uC5B4\uB825\uC774 \uB5A8\uC5B4\uC9C4\uB2E4."
+  flavorText: "\uC190\uD1B1 \uBC11\uC774 \uB298 \uD30C\uB797\uB2E4."
+  acquisitionMethods: 38
+  maxPossessCount: 0
+  allowDuplicateEquip: 1
+  stackingBehavior: 0
+  maxStacks: 1
+  isCursed: 0
+  ability:
+    baseEffect: "\uBAA8\uB4E0 \uACF5\uACA9\uC5D0 \uC911\uB3C5 \uBD80\uC5EC"
+    additionalEffect: 
+    triggerCondition: 
+    duration: 0
+    cooldown: 0
+  effects:
+  - {fileID: 11400000, guid: 33c4d5e6f708192a41bc5d6e7f809122, type: 2}
+  statModifiers:
+  - stat: 4
+    mode: 1
+    value: 0.1
+  otherStatNote: 
+  risks:
+  - description: "\uBC29\uC5B4\uB825 -25%. \uC911\uB3C5\uC774 \uC544\uAD70\uC5D0\uAC8C\uB3C4 \uD280\uC5B4 \uC544\uAD70 \uD53C\uD574 +50%."
+    statPenalties:
+    - stat: 2
+      mode: 1
+      value: -0.25
+    conditionalPenalty: {fileID: 0}
+    allyDamageModifier: 0.5
+  synergy:
+    synergyJobIds:
+    - doctor
+    - archer
+    - psycho
+    synergyItemCodes:
+    - item.blood_chalice
+    synergyBossStrategies: []
+  visual:
+    appearanceOverride: {fileID: 0}
+    equipVisualPrefab: {fileID: 0}
+    particlePrefab: {fileID: 0}
+    sfx: {fileID: 0}
+    specialPresentation: 

@@ -24,6 +24,9 @@ namespace TSWP.Items
         // SYNC: 호스트 권위, 추후 NGO NetworkVariable — 드롭 추첨·스폰은 호스트만 수행 (시드 결정성 유지).
         private System.Random _rng = new System.Random();
 
+        /// <summary>프리팹 미할당 경고를 1회만 남기기 위한 플래그.</summary>
+        private bool _warnedMissingPrefab;
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -74,9 +77,9 @@ namespace TSWP.Items
         public DroppedItem SpawnDrop(AcquisitionMethod source, Vector2 position)
         {
             // SYNC: 호스트 권위 — 추첨과 스폰은 호스트 전용, 클라이언트는 스폰 복제만 수신.
-            if (lootTable == null || droppedItemPrefab == null)
+            if (lootTable == null)
             {
-                Debug.LogWarning("[ItemDropManager] lootTable 또는 droppedItemPrefab 미할당 — 드롭 생략", this);
+                Debug.LogWarning("[ItemDropManager] lootTable 미할당 — 드롭 생략", this);
                 return null;
             }
 
@@ -90,13 +93,27 @@ namespace TSWP.Items
         /// // SYNC: 호스트 권위 — 스폰은 호스트 전용, 클라이언트는 복제만 수신.</summary>
         public DroppedItem SpawnDrop(ItemDefinition definition, Vector2 position)
         {
-            if (definition == null || droppedItemPrefab == null)
+            if (definition == null) return null;
+
+            DroppedItem drop;
+            if (droppedItemPrefab != null)
             {
-                Debug.LogWarning("[ItemDropManager] definition 또는 droppedItemPrefab 미할당 — 드롭 생략", this);
-                return null;
+                drop = Instantiate(droppedItemPrefab, position, Quaternion.identity);
+            }
+            else
+            {
+                // 프로토타입 폴백 — 프리팹 배선 전에도 드롭이 눈에 보여야 한다.
+                // DroppedItem이 스프라이트/트리거 콜라이더를 스스로 만들므로 빈 오브젝트로 충분하다.
+                if (!_warnedMissingPrefab)
+                {
+                    _warnedMissingPrefab = true; // 매 드롭마다 로그를 뱉지 않는다
+                    Debug.Log("[ItemDropManager] droppedItemPrefab 미할당 — 임시 드롭 오브젝트로 대체합니다.", this);
+                }
+                var go = new GameObject($"Dropped_{definition.itemCode}");
+                go.transform.position = position;
+                drop = go.AddComponent<DroppedItem>();
             }
 
-            DroppedItem drop = Instantiate(droppedItemPrefab, position, Quaternion.identity);
             drop.Initialize(definition);
             return drop;
         }

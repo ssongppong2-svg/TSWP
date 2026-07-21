@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8bbcecfe1d12d8d4d9eda6c5f57a83a5, type: 3}
+  m_Name: room_forest_puzzle
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Map.RoomDefinition
+  roomDefinitionId: room.forest.puzzle
+  roomType: 6
+  anyBiome: 0
+  biome: 0
+  roomPrefab: {fileID: 0}
+  encounter: {fileID: 0}
+  clearOverride: 0
+  objectiveId: 
+  puzzleId: puzzle.forest.coopbutton
+  bossId: 
+  rewardType: 0
+  rewardAcquisition: 2
+  rewardAmount: 1
+  selectionWeight: 1
+  minStage: 1

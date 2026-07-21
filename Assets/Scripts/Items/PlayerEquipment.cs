@@ -1,10 +1,15 @@
 // 근거: 아이템 시스템.md — 장착 제한(최대 5개, GameRules.EquipSlotCount), 장착 즉시 효과 적용,
 //       아이템 교체(슬롯 가득 시 기존 아이템 버리고 교체 — 버린 아이템은 바닥에 떨어져 다른 플레이어가 획득 가능),
 //       중복(중첩 방식 아이템별 개별 설정), 소비 아이템(일회성, 사용 후 소멸).
+// 프로토타입 보강: 효과 모듈(ItemEffect)이 장착자의 컴포넌트를 매 프레임 GetComponent 하지 않도록
+//   Awake에서 한 번만 캐시해 공개한다. 또한 훅 배선이 아직 없는 시스템(Combat 사망 / 처치 통지)을
+//   Items 쪽에서 이벤트 구독으로 스스로 연결해, 씬에 아무 배선이 없어도 유물이 실제로 동작하게 한다.
 using System.Collections.Generic;
 using UnityEngine;
 using TSWP.Combat;
 using TSWP.Core;
+using TSWP.Player;
+using TSWP.StatusEffects;
 
 namespace TSWP.Items
 {
@@ -23,26 +28,137 @@ namespace TSWP.Items
         /// <summary>장착자의 스탯. Player 담당의 PlayerStats 조립 코드가 Initialize로 주입한다.</summary>
         private StatCollection _stats;
 
+        // ── 장착자 컴포넌트 캐시 (효과 모듈 공용) ────────────────
+        // 씬에 없어도 게임 로직이 실패하면 안 되므로 전부 null 허용이다.
+        private CombatEntity _entity;
+        private PlayerController _controller;
+        private Rigidbody2D _body;
+        private StatusEffectController _statusController;
+        private bool _subscribed;
+
         public int PlayerId => playerId;
         public IReadOnlyList<ItemInstance> EquippedItems => _slots;
         public bool HasFreeSlot => _slots.Count < GameRules.EquipSlotCount;
+
+        /// <summary>장착자 스탯 컨테이너. 효과 모듈이 직접 modifier를 걸 때 사용 (없으면 null).</summary>
+        public StatCollection Stats => _stats;
+
+        /// <summary>장착자 전투 유닛 (없으면 null).</summary>
+        public CombatEntity Entity => _entity;
+
+        /// <summary>장착자 이동 컨트롤러 (없으면 null — 적/NPC가 장비를 들 경우).</summary>
+        public PlayerController Controller => _controller;
+
+        /// <summary>장착자 강체 (없으면 null).</summary>
+        public Rigidbody2D Body => _body;
+
+        /// <summary>장착자 상태이상 컨트롤러 (없으면 null).</summary>
+        public StatusEffectController StatusController => _statusController;
+
+        private void Awake()
+        {
+            _entity = GetComponent<CombatEntity>();
+            _controller = GetComponent<PlayerController>();
+            _body = GetComponent<Rigidbody2D>();
+            _statusController = GetComponent<StatusEffectController>();
+        }
 
         /// <summary>Player 조립 지점에서 호출 (PlayerStats가 보유한 StatCollection 주입).
         /// TODO: Player 담당의 스폰 파이프라인에서 호출 연결.</summary>
         public void Initialize(int ownerPlayerId, StatCollection stats)
         {
+            int previousId = playerId;
             playerId = ownerPlayerId;
             _stats = stats;
 
             // 드롭 매니저에 등록 — 픽업 판정(호스트 권위 단일 지점)이 playerId → 장비를 해석할 수 있도록.
+            if (ItemDropManager.Instance == null) return;
+
+            // 자동 부트스트랩이 임시 id로 먼저 등록했을 수 있으므로 낡은 항목을 지운다.
+            if (previousId != ownerPlayerId)
+                ItemDropManager.Instance.UnregisterPlayer(previousId);
+
+            ItemDropManager.Instance.RegisterPlayer(this);
+        }
+
+        /// <summary>
+        /// 자동 부트스트랩 — Initialize 호출 배선이 아직 없는 씬에서도 아이템이 동작하도록
+        /// 같은 오브젝트의 PlayerStats / CombatEntity에서 스탯과 playerId를 스스로 끌어온다.
+        /// Initialize가 먼저 호출됐으면 아무것도 덮어쓰지 않는다.
+        /// </summary>
+        private void Start()
+        {
+            if (_stats == null)
+            {
+                var playerStats = GetComponent<PlayerStats>();
+                if (playerStats != null) _stats = playerStats.Stats;
+            }
+
+            if (playerId < 0 && _entity != null && _entity.OwnerPlayerId >= 0)
+                playerId = _entity.OwnerPlayerId;
+
             if (ItemDropManager.Instance != null)
                 ItemDropManager.Instance.RegisterPlayer(this);
+        }
+
+        private void OnEnable()
+        {
+            if (_subscribed) return;
+            _subscribed = true;
+
+            // 사망 훅 — Combat 측에 아이템 통지 배선이 없으므로 여기서 직접 구독한다.
+            // CombatEntity.Die는 Died 발행 → (autoRevive면) TryReviveShared 순서라,
+            // 이 핸들러 안에서 Revive()를 부르면 공유 부활 횟수를 소모하지 않는다
+            // (TryReviveShared는 !IsDead면 즉시 false). 자동 부활 유물의 의도와 일치한다.
+            if (_entity != null) _entity.Died += OnOwnerDied;
+
+            // 처치 훅 — Combat.KillReward가 발행하는 전역 이벤트로 대체 연결한다.
+            GameEvents.EnemyKilled += OnEnemyKilled;
+        }
+
+        private void OnDisable()
+        {
+            if (!_subscribed) return;
+            _subscribed = false;
+
+            if (_entity != null) _entity.Died -= OnOwnerDied;
+            GameEvents.EnemyKilled -= OnEnemyKilled;
         }
 
         private void OnDestroy()
         {
             if (ItemDropManager.Instance != null)
                 ItemDropManager.Instance.UnregisterPlayer(playerId);
+        }
+
+        private void OnOwnerDied(CombatEntity entity)
+        {
+            if (entity == null || !NotifyOwnerDeath()) return;
+
+            // 어떤 효과가 사망을 무효화했다 — 공유 부활을 쓰지 않고 되살린다.
+            // SYNC: 호스트 권위 — 추후 호스트가 부활 확정 후 복제.
+            entity.Revive();
+            GameEvents.RaiseStatCounter("item.autorevive", 1); // 업적/통계 집계용
+        }
+
+        private void OnEnemyKilled(int killerPlayerId, string enemyId)
+        {
+            if (playerId < 0 || killerPlayerId != playerId) return;
+            NotifyKill(enemyId);
+        }
+
+        /// <summary>
+        /// 공격 코드가 한 줄로 아이템 효과를 태울 수 있게 하는 정적 편의 진입점.
+        /// 예) Jobs.BasicAttacker.BuildDamageInfo 마지막에
+        ///     <c>PlayerEquipment.ApplyAttackHooks(gameObject, ref info);</c>
+        /// 장비가 없으면 조용히 아무 일도 하지 않는다.
+        /// </summary>
+        public static void ApplyAttackHooks(GameObject attacker, ref DamageInfo damage)
+        {
+            if (attacker == null) return;
+            var equipment = attacker.GetComponent<PlayerEquipment>();
+            if (equipment == null) return;
+            equipment.NotifyAttack(ref damage);
         }
 
         // ── 장착 ──────────────────────────────────────────────────
@@ -316,13 +432,24 @@ namespace TSWP.Items
         private void SpawnDroppedItem(ItemDefinition definition)
         {
             // SYNC: 호스트 권위 — 드롭 오브젝트 스폰은 호스트만 수행, 클라이언트는 복제 수신.
-            if (droppedItemPrefab == null)
+            if (droppedItemPrefab != null)
             {
-                Debug.LogWarning($"[PlayerEquipment] droppedItemPrefab 미할당 — '{definition.itemCode}' 드롭 스폰 생략", this);
+                DroppedItem drop = Instantiate(droppedItemPrefab, transform.position, Quaternion.identity);
+                drop.Initialize(definition);
                 return;
             }
-            DroppedItem drop = Instantiate(droppedItemPrefab, transform.position, Quaternion.identity);
-            drop.Initialize(definition);
+
+            // 프리팹 미할당 시에도 아이템이 사라지지 않도록 드롭 매니저에 위임한다
+            // (매니저도 없으면 매니저 쪽에서 임시 오브젝트를 만들어 준다).
+            if (ItemDropManager.Instance != null)
+            {
+                // 발밑보다 살짝 옆으로 놓아 버리자마자 다시 집히는 것을 줄인다.
+                Vector2 spawnPos = (Vector2)transform.position + new Vector2(0.6f, 0.2f);
+                ItemDropManager.Instance.SpawnDrop(definition, spawnPos);
+                return;
+            }
+
+            Debug.LogWarning($"[PlayerEquipment] droppedItemPrefab / ItemDropManager 둘 다 없음 — '{definition.itemCode}' 드롭 생략", this);
         }
 
         private ItemEffectContext MakeContext(ItemInstance instance)

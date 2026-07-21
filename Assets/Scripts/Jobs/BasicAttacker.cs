@@ -22,6 +22,7 @@ namespace TSWP.Jobs
         private CombatEntity _entity;
         private StatusEffectController _statusController;
         private Rigidbody2D _body;
+        private Player.PlayerStats _stats; // 아이템/패시브 스탯 반영 지점 (없으면 스탯 보정 없음)
 
         /// <summary>휘두르는 방향을 번갈아 바꿔 연타가 단조롭지 않게 한다.</summary>
         private bool _swingAlternate;
@@ -40,7 +41,18 @@ namespace TSWP.Jobs
             _entity = GetComponent<CombatEntity>();
             _statusController = GetComponent<StatusEffectController>();
             _body = GetComponent<Rigidbody2D>();
+            _stats = GetComponent<Player.PlayerStats>();
         }
+
+        /// <summary>
+        /// 스탯에서 온 추가 공격력 (아이템 modifier + 패시브 배율).
+        /// base 값은 직업 프로파일 damage가 담당하므로 '최종값 - base'만 보너스로 더한다
+        /// — 그래야 전투 시스템.md의 합산 공식(기본 + 아이템 + 스킬 + 기타)에서 기본이 중복되지 않는다.
+        /// </summary>
+        public float BonusAttackPower =>
+            _stats != null
+                ? _stats.Stats.GetValue(TSWP.Core.StatType.AttackPower) - _stats.Stats.GetBase(TSWP.Core.StatType.AttackPower)
+                : 0f;
 
         private void Update()
         {
@@ -150,7 +162,7 @@ namespace TSWP.Jobs
             return new DamageInfo
             {
                 BaseDamage = baseDamage,
-                ItemBonus = 0f,  // TODO: 아이템 modifier(Core.StatType.AttackPower) 반영 — Player.PlayerStats 연동 시
+                ItemBonus = BonusAttackPower, // 아이템 modifier + 패시브 배율 (Core.StatType.AttackPower)
                 SkillBonus = 0f, // 기본 공격에는 스킬 성분 없음
                 MiscBonus = 0f,
                 IsCritical = false, // TODO: 치명타 굴림 — 기본 0% (GameRules.BaseCritChance), 아이템/버프 연동 시
@@ -168,7 +180,17 @@ namespace TSWP.Jobs
             {
                 attacksPerSecond *= _statusController.GetAttackSpeedMultiplier();
             }
-            // TODO: Core.StatType.AttackSpeed 스탯(아이템) 반영 — Player.PlayerStats 연동 시.
+
+            // 공격 속도 스탯은 배율로 반영한다 (최종값 / base). base가 0이면 배율을 만들 수 없어 건너뛴다.
+            if (_stats != null)
+            {
+                float baseSpeed = _stats.Stats.GetBase(TSWP.Core.StatType.AttackSpeed);
+                if (baseSpeed > 0f)
+                {
+                    attacksPerSecond *= _stats.Stats.GetValue(TSWP.Core.StatType.AttackSpeed) / baseSpeed;
+                }
+            }
+
             return attacksPerSecond > 0f ? 1f / attacksPerSecond : 1f;
         }
 
@@ -187,8 +209,7 @@ namespace TSWP.Jobs
                     break;
 
                 case BasicAttackType.Throw:
-                    // TODO: 투척체 스폰 (bomber 폭탄) — 포물선 궤적, 착탄 시 IsExplosive=true 피해
-                    //       (구조물은 폭발 공격만 파괴 가능 — 전투 시스템 연계).
+                    PerformThrow(direction);
                     break;
 
                 case BasicAttackType.Injection:
@@ -233,6 +254,46 @@ namespace TSWP.Jobs
                     target.TakeDamage(in info);
                 }
             }
+        }
+
+        /// <summary>
+        /// 투척(bomber) — 작은 폭탄을 포물선으로 던진다. 착탄/도화선 종료 시 폭발한다.
+        /// 폭발이므로 구조물도 부술 수 있다 (전투 시스템.md — 구조물은 폭발 공격만 파괴 가능).
+        /// 아군 피해는 기본 50% 규칙을 그대로 탄다 — 기본 공격으로도 팀원을 날릴 수 있다는 뜻이며,
+        /// 이것이 폭탄마의 위험 요소다 (직업 시스템.md).
+        /// </summary>
+        private void PerformThrow(Vector2 direction)
+        {
+            // 기본 공격용 소형 폭탄 제원 — 스킬(거대 폭탄)보다 작고 빠르게 터진다.
+            // TODO(밸런스): 문서 미정 — 프로파일에 투척 전용 필드를 추가할지 검토.
+            const float ThrowSpeed = 9f;
+            const float ThrowGravity = 18f;
+            const float ThrowFuse = 0.9f;
+            const float SelfDamageRatio = 0.5f;
+
+            float damage = profile.Damage + BonusAttackPower;
+            if (_statusController != null)
+            {
+                damage *= _statusController.GetAttackPowerMultiplier(); // 약화 반영
+            }
+
+            Vector2 origin = (Vector2)transform.position + direction * (profile.Range * profile.VfxForwardRatio);
+
+            ThrownBomb bomb = ThrownBomb.Spawn(origin, new Color(0.2f, 0.2f, 0.25f, 1f), 0.35f);
+            bomb.Launch(
+                owner: _entity,
+                velocity: direction * ThrowSpeed,
+                gravity: ThrowGravity,
+                fuseSeconds: ThrowFuse,
+                damage: damage,
+                radius: profile.Range * 0.5f,
+                knockbackForce: profile.KnockbackForce,
+                knockbackUpward: profile.KnockbackUpward,
+                selfDamageRatio: SelfDamageRatio,
+                friendlyFireOverride: null,   // 기본 50% 규칙
+                explosionVfxId: TSWP.Art.VfxId.Explosion,
+                groundMask: default,
+                useGroundCheck: false);       // 지형 레이어 설정 없이도 도화선으로 반드시 터진다
         }
 
         /// <summary>

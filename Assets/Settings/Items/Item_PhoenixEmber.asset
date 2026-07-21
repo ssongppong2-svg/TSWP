@@ -1,0 +1,62 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c2a3dd16591a6d45b13427c2d84b61c, type: 3}
+  m_Name: Item_PhoenixEmber
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Items.ItemDefinition
+  itemCode: item.phoenix_ember
+  itemName: "\uBD88\uC0AC\uC870\uC758 \uC794\uBD88"
+  rarity: 4
+  itemType: 4
+  icon: {fileID: 0}
+  description: "\uC0AC\uB9DD \uC2DC 1\uD68C \uC790\uB3D9\uC73C\uB85C \uBD80\uD65C\uD55C\uB2E4. \uACF5\uC720 \uBD80\uD65C \uD69F\uC218\uB97C \uC18C\uBAA8\uD558\uC9C0 \uC54A\uB294\uB2E4."
+  flavorText: "\uD55C \uBC88\uC740 \uBD10\uC900\uB2E4. \uB450 \uBC88\uC740 \uC5C6\uB2E4."
+  acquisitionMethods: 72
+  maxPossessCount: 0
+  allowDuplicateEquip: 1
+  stackingBehavior: 3
+  maxStacks: 2
+  isCursed: 0
+  ability:
+    baseEffect: "\uC0AC\uB9DD \uC2DC 1\uD68C \uC790\uB3D9 \uBD80\uD65C"
+    additionalEffect: 
+    triggerCondition: 
+    duration: 0
+    cooldown: 0
+  effects:
+  - {fileID: 11400000, guid: 55e6f708192a3b4c63de7f8091223344, type: 2}
+  statModifiers:
+  []
+  otherStatNote: 
+  risks:
+  - description: "\uCD5C\uB300 \uCCB4\uB825 -30%, \uBC29\uC5B4\uB825 -20%. \uC794\uBD88\uC744 \uD488\uC740 \uBAB8\uC740 \uC6D0\uB798 \uC624\uB798 \uBABB \uAC04\uB2E4."
+    statPenalties:
+    - stat: 0
+      mode: 1
+      value: -0.3
+    - stat: 2
+      mode: 1
+      value: -0.2
+    conditionalPenalty: {fileID: 0}
+    allyDamageModifier: 0
+  synergy:
+    synergyJobIds:
+    - psycho
+    - doctor
+    synergyItemCodes:
+    - item.blood_chalice
+    synergyBossStrategies: []
+  visual:
+    appearanceOverride: {fileID: 0}
+    equipVisualPrefab: {fileID: 0}
+    particlePrefab: {fileID: 0}
+    sfx: {fileID: 0}
+    specialPresentation: 

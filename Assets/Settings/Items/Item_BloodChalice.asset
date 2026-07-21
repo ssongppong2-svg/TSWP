@@ -1,0 +1,61 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c2a3dd16591a6d45b13427c2d84b61c, type: 3}
+  m_Name: Item_BloodChalice
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Items.ItemDefinition
+  itemCode: item.blood_chalice
+  itemName: "\uD53C\uC758 \uC131\uBC30"
+  rarity: 3
+  itemType: 2
+  icon: {fileID: 0}
+  description: "\uC801\uC744 \uCC98\uCE58\uD560 \uB54C\uB9C8\uB2E4 \uCCB4\uB825\uC744 \uD68C\uBCF5\uD55C\uB2E4. \uACC4\uC18D \uC8FD\uC774\uC9C0 \uC54A\uC73C\uBA74 \uBC84\uD2F8 \uC218 \uC5C6\uB294 \uBAB8\uC774 \uB41C\uB2E4."
+  flavorText: "\uC794\uC744 \uCC44\uC6B0\uB294 \uAC74 \uC5B8\uC81C\uB098 \uB0A8\uC758 \uD53C\uB2E4."
+  acquisitionMethods: 76
+  maxPossessCount: 0
+  allowDuplicateEquip: 1
+  stackingBehavior: 0
+  maxStacks: 1
+  isCursed: 1
+  ability:
+    baseEffect: "\uCC98\uCE58 \uC2DC \uCCB4\uB825 \uD68C\uBCF5 (\uACE0\uC815 8 + \uCD5C\uB300 \uCCB4\uB825 2%)"
+    additionalEffect: 
+    triggerCondition: 
+    duration: 0
+    cooldown: 0
+  effects:
+  - {fileID: 11400000, guid: 66f708192a3b4c5d74ef809122334455, type: 2}
+  statModifiers:
+  - stat: 1
+    mode: 1
+    value: 0.2
+  otherStatNote: 
+  risks:
+  - description: "\uCD5C\uB300 \uCCB4\uB825 -35%. \uC131\uBC30\uC758 \uBB34\uAC8C\uB85C \uC774\uB3D9\uC18D\uB3C4 -15%, \uBC29\uC5B4\uB825 -10%."
+    statPenalties:
+    - stat: 0
+      mode: 1
+      value: -0.35
+    conditionalPenalty: {fileID: 11400000, guid: 22b3c4d5e6f7081930ab4c5d6e7f8091, type: 2}
+    allyDamageModifier: 0
+  synergy:
+    synergyJobIds:
+    - warrior
+    - psycho
+    synergyItemCodes:
+    - item.venom_fang
+    synergyBossStrategies: []
+  visual:
+    appearanceOverride: {fileID: 0}
+    equipVisualPrefab: {fileID: 0}
+    particlePrefab: {fileID: 0}
+    sfx: {fileID: 0}
+    specialPresentation: 

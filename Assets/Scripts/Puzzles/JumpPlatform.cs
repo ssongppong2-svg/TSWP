@@ -37,15 +37,24 @@ namespace TSWP.Puzzles
 
         [SerializeField, Min(0.01f)] private float squashRecoverSpeed = 6f;
 
+        [Tooltip("발동 순간 번쩍이는 색. 스프라이트가 없으면 흰 사각형이 자동 생성된다(프로토타입).")]
+        [SerializeField] private Color launchFlashColor = new Color(0.4f, 0.9f, 1f, 1f);
+
+        [SerializeField] private PuzzleElementVisual visual = new PuzzleElementVisual();
+
         private Vector3 _restPosition;
         private float _squashOffset;
 
         /// <summary>대상별 쿨타임 — 여러 명이 동시에 밟아도 각자 판정된다.</summary>
         private readonly System.Collections.Generic.Dictionary<Transform, float> _lastLaunch = new();
 
+        /// <summary>정리용 임시 버퍼 — 순회 중 삭제를 피한다.</summary>
+        private readonly System.Collections.Generic.List<Transform> _pruneBuffer = new();
+
         private void Awake()
         {
             _restPosition = transform.position;
+            visual.Bind(this);
         }
 
         private void OnTriggerEnter2D(Collider2D other) => TryLaunch(other);
@@ -54,6 +63,9 @@ namespace TSWP.Puzzles
         private void OnTriggerStay2D(Collider2D other) => TryLaunch(other);
 
         private void OnCollisionEnter2D(Collision2D collision) => TryLaunch(collision.collider);
+
+        // 트리거가 아닌 '단단한' 발판 위에 그냥 서 있는 경우도 처리한다.
+        private void OnCollisionStay2D(Collision2D collision) => TryLaunch(collision.collider);
 
         private void TryLaunch(Collider2D other)
         {
@@ -65,11 +77,14 @@ namespace TSWP.Puzzles
             // 아래에서 위로 통과하는 중이면 발동하지 않는다 — 위에서 밟았을 때만 튄다.
             if (body.linearVelocity.y > 0.1f) return;
 
-            var player = other.GetComponent<PlayerController>();
+            // 콜라이더가 자식에 달린 구성도 지원한다.
+            var player = other.GetComponentInParent<PlayerController>();
             if (player == null && !affectsEnemies) return;
 
             float now = Time.time;
             if (_lastLaunch.TryGetValue(other.transform, out float last) && now - last < cooldown) return;
+
+            PruneLaunchHistory();
             _lastLaunch[other.transform] = now;
 
             float speed = launchSpeed;
@@ -83,19 +98,40 @@ namespace TSWP.Puzzles
 
             body.linearVelocity = new Vector2(body.linearVelocity.x, speed);
 
-            PlayFeedback();
+            PlayFeedback(other.name, speed);
         }
 
-        private void PlayFeedback()
+        /// <summary>파괴된 대상의 기록이 쌓이지 않도록 정리한다.</summary>
+        private void PruneLaunchHistory()
+        {
+            if (_lastLaunch.Count < 16) return;
+
+            _pruneBuffer.Clear();
+            foreach (var pair in _lastLaunch)
+                if (pair.Key == null) _pruneBuffer.Add(pair.Key);
+
+            for (int i = 0; i < _pruneBuffer.Count; i++)
+                _lastLaunch.Remove(_pruneBuffer[i]);
+        }
+
+        private void PlayFeedback(string launchedName, float speed)
         {
             _squashOffset = squashDepth;
+            visual.Flash(launchFlashColor); // 발판이 반응했다는 것이 색으로 보인다
+
+            PuzzleLog.Record(this, $"{name}: '{launchedName}' 도약 (속도 {speed:0.#})");
 
             if (string.IsNullOrEmpty(launchVfxId)) return;
-            TSWP.Art.VfxSpawner.Instance?.Play(launchVfxId, transform.position);
+
+            // 씬에 이펙트 시스템이 없어도 조용히 생략된다.
+            var spawner = TSWP.Art.VfxSpawner.Instance;
+            if (spawner != null) spawner.Play(launchVfxId, transform.position);
         }
 
         private void Update()
         {
+            visual.Tick(Time.deltaTime);
+
             if (_squashOffset <= 0.0001f) return;
 
             // 눌렸다 돌아오는 연출 — 발판이 반응한다는 인상을 준다.

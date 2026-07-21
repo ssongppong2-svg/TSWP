@@ -1,5 +1,6 @@
 // 근거: 아이템 시스템.md — 중복 획득 기본 허용 + 중첩 방식 아이템별 개별 설정 → 정의(SO)와 런타임 인스턴스 분리.
 //       보스 보상: 먼저 집는 플레이어가 소유자가 된다 (선착순 선점).
+using System.Collections.Generic;
 using TSWP.Core;
 
 namespace TSWP.Items
@@ -35,6 +36,35 @@ namespace TSWP.Items
         public void RemoveStack()
         {
             if (StackCount > 0) StackCount--;
+        }
+
+        // ── 효과 모듈용 런타임 상태 저장소 ────────────────────────
+        // ItemEffect는 ScriptableObject(에셋)라 전 플레이어가 같은 인스턴스를 공유한다.
+        // 따라서 "자동 부활을 이미 썼는가", "공중 점프 잔여 횟수" 같은 상태를 효과 SO에 두면
+        // 8인 멀티에서 서로의 상태를 덮어쓴다. 상태는 반드시 이 인스턴스 쪽에 보관한다.
+        // key = 효과 SO 자신(this), slot = 효과 내부에서 구분하는 인덱스(0~SlotCount-1).
+        private const int SlotCount = 4;
+        private Dictionary<object, float[]> _effectState;
+
+        /// <summary>효과 모듈의 인스턴스별 상태 읽기. 미설정이면 0.</summary>
+        public float GetState(object effect, int slot)
+        {
+            if (_effectState == null || effect == null) return 0f;
+            if (slot < 0 || slot >= SlotCount) return 0f;
+            return _effectState.TryGetValue(effect, out float[] values) ? values[slot] : 0f;
+        }
+
+        /// <summary>효과 모듈의 인스턴스별 상태 쓰기.</summary>
+        public void SetState(object effect, int slot, float value)
+        {
+            if (effect == null || slot < 0 || slot >= SlotCount) return;
+            _effectState ??= new Dictionary<object, float[]>();
+            if (!_effectState.TryGetValue(effect, out float[] values))
+            {
+                values = new float[SlotCount];
+                _effectState[effect] = values;
+            }
+            values[slot] = value;
         }
     }
 }

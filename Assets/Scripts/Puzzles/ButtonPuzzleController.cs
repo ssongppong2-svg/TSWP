@@ -16,6 +16,28 @@ namespace TSWP.Puzzles
         [Tooltip("정답 조합에 포함되는 버튼들. 전부 동시에 눌려야 해결된다.")]
         [SerializeField] private List<PuzzleButton> buttons = new List<PuzzleButton>();
 
+        [Tooltip("목록이 비어 있으면 자식에서 정답 버튼을 자동 수집한다 (씬에 놓기만 해도 동작하도록).")]
+        [SerializeField] private bool autoCollectChildren = true;
+
+        private readonly List<PuzzleButton> _collectBuffer = new List<PuzzleButton>();
+
+        protected override void Awake()
+        {
+            base.Awake();
+
+            if (!autoCollectChildren || buttons.Count > 0) return;
+
+            GetComponentsInChildren(true, _collectBuffer);
+            for (int i = 0; i < _collectBuffer.Count; i++)
+            {
+                // 함정 버튼(isCorrectButton = false)은 정답 조합에 넣지 않는다 — 넣으면 영원히 풀리지 않는다.
+                if (_collectBuffer[i] != null && _collectBuffer[i].IsCorrectButton)
+                    buttons.Add(_collectBuffer[i]);
+            }
+
+            PuzzleLog.Record(this, $"{name}: 자식에서 버튼 {buttons.Count}개 자동 수집");
+        }
+
         private void OnEnable()
         {
             for (int i = 0; i < buttons.Count; i++)

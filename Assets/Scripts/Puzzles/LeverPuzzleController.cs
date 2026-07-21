@@ -30,6 +30,19 @@ namespace TSWP.Puzzles
         [Tooltip("순서형에서 틀렸을 때 전부 초기화할지. false면 틀린 레버만 되돌린다.")]
         [SerializeField] private bool resetAllOnWrongOrder = true;
 
+        [Tooltip("목록이 비어 있으면 자식에서 레버를 자동 수집한다 (씬에 놓기만 해도 동작하도록).")]
+        [SerializeField] private bool autoCollectChildren = true;
+
+        protected override void Awake()
+        {
+            base.Awake();
+
+            if (!autoCollectChildren || levers.Count > 0) return;
+
+            GetComponentsInChildren(true, levers);
+            PuzzleLog.Record(this, $"{name}: 자식에서 레버 {levers.Count}개 자동 수집");
+        }
+
         /// <summary>순서형 진행도 — 다음에 당겨야 할 orderIndex.</summary>
         private int _expectedIndex;
 

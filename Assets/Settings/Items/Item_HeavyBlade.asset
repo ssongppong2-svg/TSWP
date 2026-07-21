@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c2a3dd16591a6d45b13427c2d84b61c, type: 3}
+  m_Name: Item_HeavyBlade
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Items.ItemDefinition
+  itemCode: item.heavy_blade
+  itemName: "\uBB35\uC9C1\uD55C \uB300\uAC80"
+  rarity: 0
+  itemType: 0
+  icon: {fileID: 0}
+  description: "\uACF5\uACA9\uB825\uC774 \uD06C\uAC8C \uC624\uB974\uC9C0\uB9CC \uBB34\uAC70\uC6CC \uBAB8\uB180\uB9BC\uC774 \uB454\uD574\uC9C4\uB2E4."
+  flavorText: "\uD718\uB450\uB974\uB294 \uCABD\uC774 \uB354 \uD798\uB4E4\uB2E4."
+  acquisitionMethods: 35
+  maxPossessCount: 0
+  allowDuplicateEquip: 1
+  stackingBehavior: 0
+  maxStacks: 1
+  isCursed: 0
+  ability:
+    baseEffect: "\uACF5\uACA9\uB825 +35%"
+    additionalEffect: 
+    triggerCondition: 
+    duration: 0
+    cooldown: 0
+  effects: []
+  statModifiers:
+  - stat: 1
+    mode: 1
+    value: 0.35
+  otherStatNote: 
+  risks:
+  - description: "\uBB34\uAC8C \uB54C\uBB38\uC5D0 \uC774\uB3D9\uC18D\uB3C4 -20%, \uACF5\uACA9\uC18D\uB3C4 -15%."
+    statPenalties:
+    - stat: 3
+      mode: 1
+      value: -0.2
+    - stat: 4
+      mode: 1
+      value: -0.15
+    conditionalPenalty: {fileID: 0}
+    allyDamageModifier: 0
+  synergy:
+    synergyJobIds:
+    - warrior
+    - shieldbearer
+    synergyItemCodes:
+    - item.feather_boots
+    synergyBossStrategies: []
+  visual:
+    appearanceOverride: {fileID: 0}
+    equipVisualPrefab: {fileID: 0}
+    particlePrefab: {fileID: 0}
+    sfx: {fileID: 0}
+    specialPresentation: 

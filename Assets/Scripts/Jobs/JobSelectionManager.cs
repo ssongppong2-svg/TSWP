@@ -100,7 +100,15 @@ namespace TSWP.Jobs
         /// </summary>
         public void ApplyJobTo(int playerId, GameObject playerObject)
         {
-            JobDefinition definition = GetSelectedJob(playerId);
+            ApplyJob(GetSelectedJob(playerId), playerObject);
+        }
+
+        /// <summary>
+        /// 선택 현황을 거치지 않고 직업 데이터를 직접 주입한다.
+        /// 로비 없이 테스트 씬에서 바로 플레이할 때(그리고 싱글 디버그) 사용하는 진입점.
+        /// </summary>
+        public static void ApplyJob(JobDefinition definition, GameObject playerObject)
+        {
             if (definition == null || playerObject == null)
             {
                 return;
@@ -116,9 +124,26 @@ namespace TSWP.Jobs
                 attacker.SetProfile(definition.BasicAttack);
             }
 
-            // TODO: 패시브 부착 — definition.Passive.CreateBehaviour()로 전략을 생성해 보관/틱할 주체
-            //       (Player 측 PassiveHolder 또는 PlayerStats) 결정 후 연결.
-            // TODO: 직업 대표색/아이콘 → Art.JobColorConfig(jobId 키)·UI 오버헤드 표시 연동.
+            // 패시브 부착 — 보유/틱 주체는 PassiveHolder. 컴포넌트가 없으면 패시브만 빠지고
+            // 나머지 직업 조립은 정상 진행한다 (씬에 컴포넌트가 없어도 로직이 실패하지 않는다).
+            if (playerObject.TryGetComponent(out PassiveHolder holder))
+            {
+                holder.SetPassive(definition.Passive);
+            }
+            else if (definition.Passive != null)
+            {
+                Debug.LogWarning(
+                    $"[JobSelectionManager] '{definition.DisplayName}'에 패시브가 있으나 " +
+                    "플레이어 오브젝트에 PassiveHolder가 없어 적용되지 않았다.", playerObject);
+            }
+
+            // 직업 대표색 — 도트 에셋 도입 전에도 누가 무슨 직업인지 구분되도록 스프라이트 색을 칠한다.
+            // 정식 색상 매핑은 Art.JobColorConfig(jobId 키) 소관이며, 여기서는 폴백 색만 사용한다.
+            var renderer = playerObject.GetComponentInChildren<SpriteRenderer>();
+            if (renderer != null)
+            {
+                renderer.color = definition.JobColor;
+            }
         }
 
         private JobDefinition FindJob(string jobId)

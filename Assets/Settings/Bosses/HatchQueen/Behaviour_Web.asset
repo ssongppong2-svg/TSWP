@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 58df18c796e2f4446bec349da53f7a18, type: 3}
+  m_Name: Behaviour_Web
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Bosses.WebPatternBehaviour
+  telegraphSeconds: 0.7
+  telegraphVfxId: status.poison
+  fieldCount: 3
+  fieldRadius: 2.8
+  placeOnPlayers: 1
+  scatterRadius: 4
+  fieldDuration: 6
+  reapplyInterval: 0.5
+  statusEffects: []
+  tickDamage: 2
+  fieldVisualPrefab: {fileID: 0}
+  fieldVfxId: 
+  overlayIntensity: 1

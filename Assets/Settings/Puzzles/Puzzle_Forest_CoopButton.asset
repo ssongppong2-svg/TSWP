@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0fbeb863bd73fc0418f23ac5efe3bd28, type: 3}
+  m_Name: Puzzle_Forest_CoopButton
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Puzzles.PuzzleDefinition
+  puzzleId: puzzle.forest.coopbutton
+  displayName: "\uD611\uB3D9 \uBC84\uD2BC"
+  puzzleType: 0
+  difficultyPhase: 0
+  designerNote: 
+  minPlayers: 1
+  soloSolvable: 1
+  timeBonusPerExtraPlayer: 0.05
+  hasTimeLimit: 0
+  timeLimitSeconds: 60
+  superCowardTimeMultiplier: 1.5
+  humanTimeMultiplier: 1
+  godTimeMultiplier: 1
+  memeTimeMultiplier: 1
+  featuredAbilities: 0
+  featuredJobIds: []
+  alternativeSolutionRequired: 1
+  alternativeSolutionNote: 
+  environmentElements: 
+  rewards: []
+  failurePenalties: 
+  penaltyEncounter: {fileID: 0}
+  penaltyDamage: 10
+  rewardReductionRatio: 0.5
+  failureFeedbacks: 000000000100000002000000
+  recoveryMethod: 2
+  recoveryWaitSeconds: 5
+  maxRetryCount: 0

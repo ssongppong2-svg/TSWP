@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 603d3d00fcf1a8644815ebd99fbe95f2, type: 3}
+  m_Name: Boss_HatchQueen
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Bosses.BossData
+  bossId: boss.hatchqueen
+  displayName: "\uBD80\uD654\uC758 \uC5EC\uC655"
+  types: 1
+  psychologicalEffects: 
+  appearancePrefab: {fileID: 0}
+  bgm: {fileID: 0}
+  basicAttack:
+    attackType: 0
+    range: 2.5
+    attackSpeed: 0.6
+    damage: 14
+    attackVfxId: 
+    vfxForwardRatio: 0.6
+    knockbackForce: 5
+    knockbackUpward: 0.35
+    lungeForce: 4
+    lungeDuration: 0.08
+    swingArc: 70
+  patterns:
+  - {fileID: 11400000, guid: 1f49f753f73236445ab1f6849ce42165, type: 2}
+  - {fileID: 11400000, guid: 3e37df29736dbd148b487853c01f9332, type: 2}
+  - {fileID: 11400000, guid: 95c7fe4f06970434eb155d5908e73738, type: 2}
+  - {fileID: 11400000, guid: 7c6a188eea358844c803c7044b7fa464, type: 2}
+  - {fileID: 11400000, guid: 2408dd4faca5bc54cb4d623f1ba0b46b, type: 2}
+  gimmicks: []
+  coopPuzzles: []
+  weaknessJobIds: []
+  hasEnrage: 1
+  enrage:
+    triggerHealthRatio: 0.3
+    attackSpeedMultiplier: 1.25
+    moveSpeedMultiplier: 1.25
+    newPatterns: []
+    enhancedPatternDamageMultiplier: 1.2
+    enhancedPatternSpeedMultiplier: 1.2
+  introCinematicPrefab: {fileID: 0}
+  deathCinematicPrefab: {fileID: 0}
+  memorableElements: []
+  baseMaxHp: 1850
+  baseMoveSpeed: 2
+  difficultyScalings: []

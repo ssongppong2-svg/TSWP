@@ -1,0 +1,61 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c2a3dd16591a6d45b13427c2d84b61c, type: 3}
+  m_Name: Item_FeatherBoots
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Items.ItemDefinition
+  itemCode: item.feather_boots
+  itemName: "\uAE43\uD138 \uC7A5\uD654"
+  rarity: 2
+  itemType: 4
+  icon: {fileID: 0}
+  description: "\uACF5\uC911\uC5D0\uC11C \uD55C \uBC88 \uB354 \uB3C4\uC57D\uD560 \uC218 \uC788\uB2E4. \uBAB8\uC774 \uAC00\uBCBC\uC6CC\uC9C4 \uB9CC\uD07C \uB9F7\uC9D1\uC774 \uC0AC\uB77C\uC9C4\uB2E4."
+  flavorText: "\uAC00\uBCBC\uC6CC\uC9C4 \uAC83\uC740 \uBC1C\uBFD0\uB9CC\uC774 \uC544\uB2C8\uB2E4."
+  acquisitionMethods: 84
+  maxPossessCount: 0
+  allowDuplicateEquip: 1
+  stackingBehavior: 0
+  maxStacks: 1
+  isCursed: 0
+  ability:
+    baseEffect: "\uC810\uD504 2\uD68C + \uC774\uB3D9\uC18D\uB3C4 +15%"
+    additionalEffect: 
+    triggerCondition: 
+    duration: 0
+    cooldown: 0
+  effects:
+  - {fileID: 11400000, guid: 44d5e6f708192a3b52cd6e7f80912233, type: 2}
+  - {fileID: 11400000, guid: 11a2b3c4d5e6f708192a3b4c5d6e7f80, type: 2}
+  statModifiers:
+  []
+  otherStatNote: 
+  risks:
+  - description: "\uCD5C\uB300 \uCCB4\uB825 -20%. \uB109\uBC31\uC5D0 \uB354 \uBA40\uB9AC \uB0A0\uC544\uAC04\uB2E4(\uCCB4\uAC10)."
+    statPenalties:
+    - stat: 0
+      mode: 1
+      value: -0.2
+    conditionalPenalty: {fileID: 0}
+    allyDamageModifier: 0
+  synergy:
+    synergyJobIds:
+    - architect
+    - archer
+    - bomber
+    synergyItemCodes:
+    - item.heavy_blade
+    synergyBossStrategies: []
+  visual:
+    appearanceOverride: {fileID: 0}
+    equipVisualPrefab: {fileID: 0}
+    particlePrefab: {fileID: 0}
+    sfx: {fileID: 0}
+    specialPresentation: 

@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8487f63808e507f488ffd2cbbfe2ad76, type: 3}
+  m_Name: LootTable_Prototype
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Items.LootTable
+  itemPool:
+  - {fileID: 11400000, guid: 7708192a3b4c5d6e85f0912233445566, type: 2}
+  - {fileID: 11400000, guid: 88192a3b4c5d6e7f96a0912233445577, type: 2}
+  - {fileID: 11400000, guid: 992a3b4c5d6e7f80a7b1912233445588, type: 2}
+  - {fileID: 11400000, guid: aa3b4c5d6e7f8091b8c2912233445599, type: 2}
+  - {fileID: 11400000, guid: bb4c5d6e7f8091a2c9d39122334455aa, type: 2}
+  rarityWeights:
+  - rarity: 0
+    weight: 60
+  - rarity: 1
+    weight: 30
+  - rarity: 2
+    weight: 12
+  - rarity: 3
+    weight: 5
+  - rarity: 4
+    weight: 2

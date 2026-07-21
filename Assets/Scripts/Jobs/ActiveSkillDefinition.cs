@@ -62,7 +62,12 @@ namespace TSWP.Jobs
         }
 
 #if UNITY_EDITOR
-        private void OnValidate()
+        /// <summary>
+        /// 파생 스킬이 추가 검증을 넣을 수 있도록 virtual로 둔다.
+        /// (private으로 두면 파생 클래스가 OnValidate를 정의하는 순간 Unity가 파생 것만 호출해
+        ///  쿨타임 0 보정이 조용히 사라진다 — 반드시 base.OnValidate()를 부를 것.)
+        /// </summary>
+        protected virtual void OnValidate()
         {
             // 문서 규칙: 액티브 스킬은 반드시 쿨타임이 존재한다 — 0 이하 값을 강제 보정.
             if (cooldown <= 0f)

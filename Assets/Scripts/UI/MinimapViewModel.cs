@@ -29,6 +29,8 @@ namespace TSWP.UI
         public Vector2 WorldPos;
         /// <summary>플레이어 마커면 playerId, 핑이면 발신자 playerId, 그 외 -1.</summary>
         public int OwnerPlayerId;
+        /// <summary>방 단위 마커(비밀방 등)의 방 id. 월드 좌표가 없는 마커는 이 값으로만 위치를 안다. 없으면 -1.</summary>
+        public int RoomId;
         /// <summary>핑 마커일 때만 유효 (PingType은 Core 한 곳에만 정의 — 재정의 금지).</summary>
         public PingType PingKind;
         /// <summary>생성 시각(Time.time) — 핑 만료 처리용.</summary>
@@ -103,6 +105,8 @@ namespace TSWP.UI
             {
                 Type = MinimapMarkerType.SecretRoom,
                 OwnerPlayerId = -1,
+                // SecretRoomFound는 roomId만 전달한다(월드 좌표 없음) — 위치는 방 그래프에서 찾는다.
+                RoomId = roomId,
                 SpawnTime = Time.time,
             });
             Changed?.Invoke();
@@ -115,6 +119,7 @@ namespace TSWP.UI
                 Type = MinimapMarkerType.Ping,
                 WorldPos = worldPos,
                 OwnerPlayerId = senderId,
+                RoomId = CurrentRoomId,
                 PingKind = type,
                 SpawnTime = Time.time,
             });

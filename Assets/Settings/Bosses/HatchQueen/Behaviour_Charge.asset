@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 372b200c63fc54f49a943151fc68eadc, type: 3}
+  m_Name: Behaviour_Charge
+  m_EditorClassIdentifier: Assembly-CSharp::TSWP.Bosses.ChargePatternBehaviour
+  telegraphSeconds: 0.8
+  telegraphVfxId: status.burn
+  chargeSpeed: 14
+  chargeSeconds: 1.1
+  horizontalOnly: 1
+  hitRadius: 1.8
+  hitEachTargetOnce: 1
+  knockbackForce: 10
+  stunDuration: 0.3
+  statusEffects: []
+  recoverySeconds: 0.8
+  chargeVfxId: 
+  impactVfxId: hit.critical

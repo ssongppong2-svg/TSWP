@@ -20,6 +20,13 @@ namespace TSWP.Puzzles
         [Header("연출/리커버리")]
         [SerializeField] private PuzzleFeedbackService feedbackService;
 
+        [Header("프로토타입 편의 (씬에 놓기만 하면 동작하게 하는 스위치)")]
+        [Tooltip("씬 시작 시 자동으로 Begin()을 호출한다. 끄면 방/보스 시스템이 시작시켜야 하며, 그 전까지 요소를 조작할 수 없다.")]
+        [SerializeField] private bool autoBeginOnStart = true;
+
+        [Tooltip("최소 협동 인원 검사를 건너뛴다. 혼자 테스트할 때 켠다 — 실제 밸런싱 단계에서는 꺼야 한다.")]
+        [SerializeField] private bool ignoreMinPlayers = true;
+
         /// <summary>현재 상태. 외부에서는 읽기 전용.</summary>
         public PuzzleState State { get; private set; } = PuzzleState.Idle;
 
@@ -46,6 +53,15 @@ namespace TSWP.Puzzles
         protected virtual void Awake()
         {
             _recovery = new RecoveryHandler(this);
+        }
+
+        /// <summary>
+        /// 프로토타입 자동 시작. 컨트롤러가 Idle로 남아 있으면 요소들의 CanInteract가 전부 false가 되어
+        /// "씬에 놓았는데 아무것도 안 되는" 상태가 된다 — 기본값은 자동 시작이다.
+        /// </summary>
+        protected virtual void Start()
+        {
+            if (autoBeginOnStart) Begin();
         }
 
         protected virtual void Update()
@@ -79,6 +95,7 @@ namespace TSWP.Puzzles
         /// </summary>
         public bool HasEnoughParticipants()
         {
+            if (ignoreMinPlayers) return true; // 프로토타입: 혼자서도 끝까지 검증할 수 있어야 한다
             if (definition == null) return true;
             if (definition.SoloSolvable) return _participants.Count >= 1;
             return _participants.Count >= definition.MinPlayers;
@@ -112,6 +129,7 @@ namespace TSWP.Puzzles
             SetState(PuzzleState.Solved);
 
             string id = definition != null ? definition.PuzzleId : name;
+            PuzzleLog.Record(this, $"퍼즐 해결! '{id}' (참여 {_participants.Count}명, 재도전 {RetryCount}회)");
             GameEvents.RaisePuzzleSolved(id);
             GameEvents.RaiseStatCounter("puzzle.solved", 1);
             Solved?.Invoke(this);
@@ -129,6 +147,7 @@ namespace TSWP.Puzzles
             SetState(PuzzleState.Failed);
 
             string id = definition != null ? definition.PuzzleId : name;
+            PuzzleLog.Record(this, $"퍼즐 실패 '{id}' — 게임 오버가 아니라 리커버리로 간다");
             GameEvents.RaisePuzzleFailed(id);
             Failed?.Invoke(this);
 
@@ -171,7 +190,11 @@ namespace TSWP.Puzzles
         private void SetState(PuzzleState next)
         {
             if (State == next) return;
+
+            PuzzleState previous = State;
             State = next;
+
+            PuzzleLog.Record(this, $"{name} 상태 {previous} → {next}");
             StateChanged?.Invoke(next);
         }
 
@@ -188,6 +211,9 @@ namespace TSWP.Puzzles
         /// <summary>불이익 1건 적용. 파생 클래스가 유형별로 확장할 수 있다.</summary>
         protected virtual void ApplyPenalty(PuzzleFailurePenalty penalty)
         {
+            // 프로토타입: 실제 연동(적 스폰/함정/피해)은 아래 TODO들이지만, 무엇이 발동했는지는 항상 보여야 한다.
+            PuzzleLog.Record(this, $"{name} 불이익 적용 — {penalty}");
+
             switch (penalty)
             {
                 case PuzzleFailurePenalty.SpawnEnemies:
