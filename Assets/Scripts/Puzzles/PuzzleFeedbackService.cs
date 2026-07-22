@@ -33,7 +33,8 @@ namespace TSWP.Puzzles
             switch (feedback)
             {
                 case FailureFeedbackType.ScreenShake:
-                    // TODO(연출): 카메라 흔들림. 접근성 설정 'reduceScreenShake'가 켜져 있으면 생략해야 한다.
+                    // CameraShake가 씬에 없으면 조용히 생략된다. 접근성(흔들림 감소)은 CameraShake 쪽이 소유한다.
+                    TSWP.Art.CameraShake.Instance?.Shake(shakeMagnitude, shakeDuration);
                     break;
 
                 case FailureFeedbackType.SoundEffect:

@@ -23,7 +23,7 @@ namespace TSWP.Sandbox
 
         private void Awake()
         {
-            if (player == null) player = FindFirstObjectByType<PlayerController>();
+            if (player == null) player = FindAnyObjectByType<PlayerController>();
             if (player != null) _entity = player.GetComponent<CombatEntity>();
         }
 

@@ -234,7 +234,7 @@ namespace TSWP.UI
             if (!scanSceneEntities) return;
 
             // Unity 6: FindObjectOfType/FindObjectsOfType 제거 → FindObjectsByType 사용.
-            var found = Object.FindObjectsByType<CombatEntity>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            var found = Object.FindObjectsByType<CombatEntity>(FindObjectsInactive.Exclude);
             for (int i = 0; i < found.Length; i++)
             {
                 var entity = found[i];

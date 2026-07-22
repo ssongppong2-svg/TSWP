@@ -426,7 +426,7 @@ namespace TSWP.Map
         private static void GrantGold(int amount)
         {
             if (amount <= 0) return;
-            var players = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
+            var players = FindObjectsByType<PlayerController>();
             for (int i = 0; i < players.Length; i++)
                 GameEvents.RaiseGoldGained(players[i].PlayerId, amount);
         }
@@ -434,7 +434,7 @@ namespace TSWP.Map
         private static void HealParty(int amount)
         {
             if (amount <= 0) return;
-            var entities = FindObjectsByType<CombatEntity>(FindObjectsSortMode.None);
+            var entities = FindObjectsByType<CombatEntity>();
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];

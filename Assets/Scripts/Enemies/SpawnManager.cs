@@ -259,7 +259,7 @@ namespace TSWP.Enemies
             _nextPlayerDiscoveryAt = Time.time + playerDiscoveryInterval;
 
             // Unity 6: FindObjectOfType는 제거됨 — FindObjectsByType 사용.
-            var entities = FindObjectsByType<CombatEntity>(FindObjectsSortMode.None);
+            var entities = FindObjectsByType<CombatEntity>();
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];

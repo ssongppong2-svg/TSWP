@@ -109,7 +109,7 @@ namespace TSWP.Art
 
         private void Start()
         {
-            var player = FindFirstObjectByType<TSWP.Player.PlayerController>();
+            var player = FindAnyObjectByType<TSWP.Player.PlayerController>();
 
             // 로컬 플레이어 탐색 — 여러 명이면 첫 번째(로컬)만 대상으로 한다.
             if (target == null && player != null)

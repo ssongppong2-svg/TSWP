@@ -81,7 +81,7 @@ namespace TSWP.Player
         {
             // 배선을 잊어도 동작하도록 1회만 탐색한다 (Unity 6: FindObjectOfType 제거 → FindFirstObjectByType).
             if (showSelectedType && selectedTypeSource == null)
-                selectedTypeSource = FindFirstObjectByType<PingEmitter>();
+                selectedTypeSource = FindAnyObjectByType<PingEmitter>();
         }
 
         private void OnPingRaised(int senderId, PingType type, Vector2 worldPos)

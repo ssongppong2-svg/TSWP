@@ -120,7 +120,7 @@ namespace TSWP.Bosses
         /// <summary>현재 씬에 살아있는 고치 수. Unity 6: FindObjectOfType는 제거됨 — FindObjectsByType 사용.</summary>
         private static int CountAliveCocoons()
         {
-            var found = Object.FindObjectsByType<BossCocoon>(FindObjectsSortMode.None);
+            var found = Object.FindObjectsByType<BossCocoon>();
             return found != null ? found.Length : 0;
         }
     }

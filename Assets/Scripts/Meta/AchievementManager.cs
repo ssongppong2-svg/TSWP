@@ -67,7 +67,7 @@ namespace TSWP.Meta
             // 씬에 LocalPlayerIdentity가 있으면 자동 연결한다(없어도 조용히 생략).
             if (_identity != null) return;
 
-            var local = FindFirstObjectByType<LocalPlayerIdentity>();
+            var local = FindAnyObjectByType<LocalPlayerIdentity>();
             if (local != null) BindIdentity(local.Identity);
         }
 

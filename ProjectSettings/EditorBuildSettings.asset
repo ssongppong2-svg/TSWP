@@ -11,5 +11,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Sandbox.unity
     guid: 12d2cfca345c75a4e8100388258bcd7b
+  - enabled: 1
+    path: Assets/Scenes/Forest_Prototype.unity
+    guid: 4fed7f12bf8c73a4c8e9f9980375b240
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}

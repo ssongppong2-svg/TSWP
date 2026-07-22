@@ -649,7 +649,7 @@ namespace TSWP.Bosses
         {
             _context.PlayerPositions.Clear();
             // TODO(최적화): 씬 전수 탐색 대신 플레이어 레지스트리(Player 시스템)로 교체.
-            var entities = FindObjectsByType<CombatEntity>(FindObjectsSortMode.None);
+            var entities = FindObjectsByType<CombatEntity>();
             foreach (var e in entities)
             {
                 if (e.Team == TeamType.Players && !e.IsDead)
@@ -798,7 +798,7 @@ namespace TSWP.Bosses
             }
 
             // Unity 6: FindObjectOfType는 제거됨 — FindObjectsByType 사용 (비활성 포함).
-            var all = FindObjectsByType<BossPhaseTwoDirector>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            var all = FindObjectsByType<BossPhaseTwoDirector>(FindObjectsInactive.Include);
             for (int i = 0; i < all.Length; i++)
             {
                 var candidate = all[i];

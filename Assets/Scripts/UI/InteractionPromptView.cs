@@ -125,7 +125,7 @@ namespace TSWP.UI
         private void TryBindSource()
         {
             // Unity 6: FindObjectOfType 제거 → FindFirstObjectByType 사용.
-            var found = source != null ? source : Object.FindFirstObjectByType<PlayerInteraction>();
+            var found = source != null ? source : Object.FindAnyObjectByType<PlayerInteraction>();
             if (found == null) return;
 
             source = found;

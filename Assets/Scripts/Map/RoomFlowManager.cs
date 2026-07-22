@@ -103,7 +103,7 @@ namespace TSWP.Map
             Instance = this;
 
             if (roomManager == null) roomManager = RoomManager.Instance;
-            if (roomManager == null) roomManager = FindFirstObjectByType<RoomManager>();
+            if (roomManager == null) roomManager = FindAnyObjectByType<RoomManager>();
             if (roomRoot == null) roomRoot = transform;
         }
 
@@ -407,7 +407,7 @@ namespace TSWP.Map
             Transform spawn = instance.PlayerSpawnPoint;
             if (spawn == null) return;
 
-            var players = FindObjectsByType<PlayerController>(FindObjectsSortMode.None);
+            var players = FindObjectsByType<PlayerController>();
             for (int i = 0; i < players.Length; i++)
             {
                 var player = players[i];

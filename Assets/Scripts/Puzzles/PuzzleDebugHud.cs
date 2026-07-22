@@ -77,8 +77,8 @@ namespace TSWP.Puzzles
         /// <summary>Unity 6: FindObjectOfType 계열은 제거됨 — FindObjectsByType 사용.</summary>
         private void Rescan()
         {
-            _controllers = FindObjectsByType<PuzzleController>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-            _elements = FindObjectsByType<PuzzleElement>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            _controllers = FindObjectsByType<PuzzleController>(FindObjectsInactive.Exclude);
+            _elements = FindObjectsByType<PuzzleElement>(FindObjectsInactive.Exclude);
         }
 
         private void Rebuild()

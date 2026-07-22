@@ -96,7 +96,7 @@ namespace TSWP.Core
         /// <summary>살아 있는 플레이어 전투 유닛 수. 팀/소유자 id로 판별한다(레이어 아님 — ARCHITECTURE.md §3-6).</summary>
         private int CountAlivePlayers()
         {
-            var entities = FindObjectsByType<CombatEntity>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            var entities = FindObjectsByType<CombatEntity>(FindObjectsInactive.Exclude);
 
             int alive = 0;
             int tracked = 0;

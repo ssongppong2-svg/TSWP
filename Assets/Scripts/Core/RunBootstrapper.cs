@@ -133,7 +133,7 @@ namespace TSWP.Core
             if (!changeFlowState) return;
 
             var flow = GameFlowManager.Instance;
-            if (flow == null) flow = FindFirstObjectByType<GameFlowManager>();
+            if (flow == null) flow = FindAnyObjectByType<GameFlowManager>();
             if (flow == null) return; // 씬에 없어도 게임 로직은 계속된다
 
             // 씬 재시작 시 GameFlowManager는 DontDestroyOnLoad로 살아남아 GameOver/Results 상태가 남는다.
@@ -146,7 +146,7 @@ namespace TSWP.Core
             var run = RunManager.Instance;
             if (run != null) return run;
 
-            run = FindFirstObjectByType<RunManager>();
+            run = FindAnyObjectByType<RunManager>();
             if (run != null) return run;
 
             if (!create) return null;

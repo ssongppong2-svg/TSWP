@@ -156,7 +156,7 @@ namespace TSWP.Map
         {
             Players.Clear();
             // Unity 6: FindObjectOfType는 제거됨 — FindObjectsByType 사용.
-            var entities = Object.FindObjectsByType<CombatEntity>(FindObjectsSortMode.None);
+            var entities = Object.FindObjectsByType<CombatEntity>();
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];

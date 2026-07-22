@@ -61,7 +61,7 @@ namespace TSWP.Bosses
 
             // Unity 6: FindObjectOfType는 제거됨 — FindFirstObjectByType 사용. 결과는 캐시한다.
             if (_cachedBar == null)
-                _cachedBar = FindFirstObjectByType<BossHealthBar>();
+                _cachedBar = FindAnyObjectByType<BossHealthBar>();
 
             return _cachedBar != null ? _cachedBar.Model : null;
         }

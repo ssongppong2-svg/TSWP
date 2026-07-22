@@ -25,7 +25,7 @@ namespace TSWP.Sandbox
         {
             if (target != null) return;
 
-            var player = FindFirstObjectByType<PlayerController>();
+            var player = FindAnyObjectByType<PlayerController>();
             if (player != null) target = player.GetComponent<StatusEffectController>();
         }
 

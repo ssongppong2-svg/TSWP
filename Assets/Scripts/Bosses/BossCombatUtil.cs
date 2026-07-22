@@ -19,8 +19,7 @@ namespace TSWP.Bosses
         /// <summary>모든 레이어를 훑고 트리거도 포함한다 — 실제 선별은 TeamType 비교로 한다.</summary>
         private static ContactFilter2D BuildFilter()
         {
-            var filter = new ContactFilter2D();
-            filter.NoFilter();
+            var filter = ContactFilter2D.noFilter;
             filter.useTriggers = true;
             return filter;
         }
