@@ -347,7 +347,85 @@ namespace TSWP.EditorTools
             // 보스 실체 — EnemyData 기반 몸통에 BossController를 얹는다.
             CreateHatchQueen(root, new Vector2(x + 6f, 1.5f), bossData);
 
+            // 2막 세트 — 퀸 사망 → 거미 무리 + 레버 퍼즐 (요구사항 Phase 2)
+            CreatePhaseTwoSet(root, x);
+
             return AttachRoom(root, definition, spawn, new List<SpawnPoint> { bossSpawn }, door);
+        }
+
+        /// <summary>
+        /// Phase 2 구성: 퀸의 체력이 0이 되면 거미 무리가 쏟아지고 레버 퍼즐이 열린다.
+        /// 무리 전멸 + 퍼즐 해결을 모두 마쳐야 보스가 진짜로 죽고 승리로 넘어간다.
+        /// </summary>
+        private static void CreatePhaseTwoSet(GameObject root, float x)
+        {
+            // ① 레버 퍼즐 — 시작 시 꺼져 있다가 2막 개시 때 감독이 켠다.
+            var puzzleRoot = new GameObject("PhaseTwo_LeverPuzzle");
+            puzzleRoot.transform.SetParent(root.transform);
+            puzzleRoot.transform.position = new Vector3(x, 0f, 0f);
+
+            var leverPuzzle = puzzleRoot.AddComponent<LeverPuzzleController>();
+            // 동시형(기본값) — 레버 3개를 전부 정방향으로. autoCollectChildren이 자식 레버를 수집한다.
+
+            var leverPositions = new[] { new Vector2(x - 10f, 0.4f), new Vector2(x, 4.8f), new Vector2(x + 10f, 0.4f) };
+            for (int i = 0; i < leverPositions.Length; i++)
+            {
+                var leverGo = new GameObject($"PhaseTwo_Lever_{i}");
+                leverGo.transform.SetParent(puzzleRoot.transform);
+                leverGo.transform.position = leverPositions[i];
+                leverGo.transform.localScale = new Vector3(0.6f, 1.2f, 1f);
+
+                var sr = leverGo.AddComponent<SpriteRenderer>();
+                sr.sprite = _square;
+                sr.color = new Color(0.7f, 0.6f, 0.3f);
+                sr.sortingOrder = 4;
+
+                var col = leverGo.AddComponent<BoxCollider2D>();
+                col.isTrigger = true;
+                col.size = new Vector2(2.5f, 3f); // 상호작용 범위 넉넉히
+
+                leverGo.AddComponent<PuzzleLever>();
+            }
+
+            puzzleRoot.SetActive(false); // 2막 전에는 보이지 않는다
+
+            // ② 거미 무리 스폰 지점 3곳
+            var swarmPoints = new Transform[3];
+            var swarmPositions = new[] { new Vector2(x - 8f, 1f), new Vector2(x, 1f), new Vector2(x + 8f, 1f) };
+            for (int i = 0; i < swarmPositions.Length; i++)
+                swarmPoints[i] = MarkerAt(root, $"PhaseTwo_SwarmPoint_{i}", swarmPositions[i]);
+
+            // ③ 감독 — 퀸의 DeathCinematic 진입을 감시해 2막을 개시한다.
+            var directorGo = new GameObject("PhaseTwo_Director");
+            directorGo.transform.SetParent(root.transform);
+            directorGo.transform.position = new Vector3(x, 1f, 0f);
+
+            var director = directorGo.AddComponent<TSWP.Bosses.BossPhaseTwoDirector>();
+            var dSo = new SerializedObject(director);
+            SetStr(dSo, "watchBossId", "boss.hatchqueen");
+            SetObj(dSo, "swarmEnemy", EnsureSpider());
+
+            var count = dSo.FindProperty("swarmCount");
+            if (count != null) count.intValue = 4; // 테스트 편의 (정식은 6)
+
+            var points = dSo.FindProperty("swarmSpawnPoints");
+            if (points != null)
+            {
+                points.arraySize = swarmPoints.Length;
+                for (int i = 0; i < swarmPoints.Length; i++)
+                    points.GetArrayElementAtIndex(i).objectReferenceValue = swarmPoints[i];
+            }
+
+            SetObj(dSo, "phaseTwoPuzzle", leverPuzzle);
+
+            var enable = dSo.FindProperty("enableOnPhaseTwo");
+            if (enable != null)
+            {
+                enable.arraySize = 1;
+                enable.GetArrayElementAtIndex(0).objectReferenceValue = puzzleRoot;
+            }
+
+            dSo.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void CreateHatchQueen(GameObject parent, Vector2 position, TSWP.Bosses.BossData data)
@@ -383,6 +461,11 @@ namespace TSWP.EditorTools
             var boss = go.AddComponent<TSWP.Bosses.BossController>();
             var so = new SerializedObject(boss);
             SetObj(so, "data", data);
+
+            // 프로토타입 편의 — 1850 체력을 약 278로. 최종 검증 때 1로 되돌린다.
+            var hpMul = so.FindProperty("healthMultiplier");
+            if (hpMul != null) hpMul.floatValue = 0.15f;
+
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
@@ -1005,6 +1088,16 @@ namespace TSWP.EditorTools
             go.AddComponent<PlayerStats>();
             go.AddComponent<BasicAttacker>();
 
+            // 직업(용사) — Q 스킬·기본 공격 프로파일·장비 슬롯까지 테스트 씬과 동일하게
+            var jobBoot = go.AddComponent<Jobs.JobBootstrapper>();
+            var jbSo = new SerializedObject(jobBoot);
+            var jobProp = jbSo.FindProperty("job");
+            if (jobProp != null) jobProp.objectReferenceValue = SandboxSceneBuilder.EnsureWarriorJob();
+            jbSo.ApplyModifiedPropertiesWithoutUndo();
+            go.AddComponent<Jobs.SkillCaster>();
+            go.AddComponent<Jobs.PassiveHolder>();
+            go.AddComponent<Items.PlayerEquipment>();
+
             var controller = go.AddComponent<PlayerController>();
             var so = new SerializedObject(controller);
             var mask = so.FindProperty("groundMask");
@@ -1046,10 +1139,29 @@ namespace TSWP.EditorTools
         {
             var go = new GameObject("GameManagers");
             go.AddComponent<GameFlowManager>();
-            go.AddComponent<RunManager>();
+            var run = go.AddComponent<RunManager>();
             go.AddComponent<HitFeedback>();
             go.AddComponent<DamageNumberSpawner>();
             go.AddComponent<ProjectilePool>();
+
+            // 프로토타입 승리 조건 — 보스 1기 처치 = 승리
+            var runSo = new SerializedObject(run);
+            var victory = runSo.FindProperty("prototypeVictoryBossCount");
+            if (victory != null) victory.intValue = 1;
+            runSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 런 자동 시작 + 게임오버 감시 — 루프를 닫는 두 조각
+            go.AddComponent<RunBootstrapper>();
+            go.AddComponent<RunOutcomeWatcher>();
+
+            // 스폰 매니저 — 2막 거미 무리와 조우 스폰의 공용 경로.
+            // defaultEnemyPrefab이 없으면 프리팹 없는 EnemyData가 스폰되지 않는다.
+            var spawnGo = new GameObject("SpawnManager");
+            var spawner = spawnGo.AddComponent<SpawnManager>();
+            var spSo = new SerializedObject(spawner);
+            var prefab = spSo.FindProperty("defaultEnemyPrefab");
+            if (prefab != null) prefab.objectReferenceValue = EnsureEnemyPrefab();
+            spSo.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void CreatePostFx(GameObject player)
@@ -1081,6 +1193,13 @@ namespace TSWP.EditorTools
             var go = new GameObject("GameplayHud");
             go.AddComponent<GameplayHud>();
             go.AddComponent<BossHealthBar>();
+
+            // 결과·게임오버·보스 배너 — 항상 활성, 각자 표시/숨김 자가 관리.
+            // UIManager.RegisterPanel 금지(SetActive(false)면 구독이 끊긴다).
+            var screens = new GameObject("ResultScreens");
+            screens.AddComponent<MatchResultView>();
+            screens.AddComponent<GameOverView>();
+            screens.AddComponent<BossAppearBanner>();
         }
 
         private static void CreateMapIntro()

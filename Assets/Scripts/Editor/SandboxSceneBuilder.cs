@@ -282,6 +282,14 @@ namespace TSWP.EditorTools
             var uiGo = new GameObject("UIManagers");
             uiGo.AddComponent<TSWP.UI.UIManager>();
             uiGo.AddComponent<TSWP.UI.SettingsManager>();
+
+            // 결과·게임오버·보스 배너 — 항상 활성 상태로 두고 각자 표시/숨김을 스스로 관리한다.
+            // UIManager.RegisterPanel에 등록하지 말 것: SetActive(false)가 걸리면 구독이 끊겨
+            // MatchFinished를 영영 받지 못한다.
+            var screens = new GameObject("ResultScreens");
+            screens.AddComponent<TSWP.UI.MatchResultView>();
+            screens.AddComponent<TSWP.UI.GameOverView>();
+            screens.AddComponent<TSWP.UI.BossAppearBanner>();
         }
 
         private static void SetPrivateFieldObject2(SerializedObject so, string field, Object value)
@@ -295,7 +303,17 @@ namespace TSWP.EditorTools
             // 게임 흐름/런 매니저 — 공유 부활 횟수 등 Core 시스템 동작 확인용.
             var go = new GameObject("GameManagers");
             go.AddComponent<GameFlowManager>();
-            go.AddComponent<RunManager>();
+            var run = go.AddComponent<RunManager>();
+
+            // 프로토타입 승리 조건 — 보스 1기 처치 = 승리 (기본 15기는 도달 불가)
+            var runSo = new SerializedObject(run);
+            var victory = runSo.FindProperty("prototypeVictoryBossCount");
+            if (victory != null) victory.intValue = 1;
+            runSo.ApplyModifiedPropertiesWithoutUndo();
+
+            // 런 자동 시작(부활 횟수 초기화) + 게임오버 판정 감시 — 이 둘이 없으면 루프가 닫히지 않는다
+            go.AddComponent<RunBootstrapper>();
+            go.AddComponent<RunOutcomeWatcher>();
 
             // 타격 연출 — DamageSystem이 피해 적용 직후 자동 호출한다.
             go.AddComponent<TSWP.Combat.HitFeedback>();
@@ -349,6 +367,13 @@ namespace TSWP.EditorTools
 
             var boss = go.AddComponent<BossController>();
             if (data != null) SetPrivateFieldObject(boss, "data", data);
+
+            // 프로토타입 편의 — 1850 체력을 약 278로 낮춰 30초 안에 검증 가능하게 한다.
+            // 최종 밸런스 검증 때는 1로 되돌린다. (밸런스 값이 아니라 테스트 속도용)
+            var bSo = new SerializedObject(boss);
+            var hpMul = bSo.FindProperty("healthMultiplier");
+            if (hpMul != null) hpMul.floatValue = 0.15f;
+            bSo.ApplyModifiedPropertiesWithoutUndo();
         }
 
         // ── 전시장 ────────────────────────────────────────────────
@@ -512,7 +537,7 @@ namespace TSWP.EditorTools
         }
 
         /// <summary>용사 직업 — Q 강타. 강력한 대신 자기 체력을 소모한다(게임 성경: 위험 동반).</summary>
-        private static JobDefinition EnsureWarriorJob()
+        internal static JobDefinition EnsureWarriorJob()
         {
             const string folder = "Assets/Settings/Jobs";
             Directory.CreateDirectory(folder);
