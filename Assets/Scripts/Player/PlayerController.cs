@@ -39,9 +39,9 @@ namespace TSWP.Player
         [Header("점프 (조작감)")]
         [SerializeField] private float jumpSpeed = 12f;           // TODO(밸런스): 문서 미정 — 점프 초기 속도
         [Tooltip("발판에서 떨어진 뒤에도 점프를 받아주는 유예 시간(초). 낭떠러지 점프 실패를 줄인다.")]
-        [SerializeField] private float coyoteTime = 0.1f;
+        [SerializeField] private float coyoteTime = 0.12f;
         [Tooltip("착지 직전에 누른 점프를 기억하는 시간(초). 착지 순간 자동 발동한다.")]
-        [SerializeField] private float jumpBufferTime = 0.12f;
+        [SerializeField] private float jumpBufferTime = 0.1f;
         [Tooltip("점프 키를 일찍 뗐을 때 상승 속도에 곱하는 값. 낮을수록 짧은 점프가 확실히 낮아진다.")]
         [Range(0f, 1f)][SerializeField] private float jumpCutMultiplier = 0.45f;
         [Tooltip("하강 시 중력 배수. 1보다 크면 붕 뜨는 느낌이 줄고 낙하가 경쾌해진다.")]
@@ -93,6 +93,24 @@ namespace TSWP.Player
         //   게임 성경.md "모든 강력한 능력에는 반드시 위험이 따른다"에 따라 기본은 끔.
         [SerializeField] private bool resetDashCooldownOnHit = false;
 
+        [Header("숨은 보정 (Game Feel)")]
+        // 근거: 숨겨진 보정 설계 원칙 — 실력을 대체하지 않고 입력 의도만 보조한다. 값은 보수적으로,
+        //   플레이어가 보정의 존재를 눈치채지 못할 만큼 자연스럽게 동작해야 한다.
+        [Tooltip("공격 입력을 기억하는 시간(초). 공격 간격·피격 경직 중에 누른 공격이 가능해지는 순간 자동 발동한다.")]
+        [SerializeField] private float attackBufferTime = 0.25f;
+        [Tooltip("대쉬 입력을 기억하는 시간(초). 쿨타임·피격 경직 중에 누른 대쉬가 가능해지는 순간 즉시 발동한다.")]
+        [SerializeField] private float dashBufferTime = 0.15f;
+        [Tooltip("발끝 좌우 추가 판정 폭. 플랫폼 끝에 발끝만 걸쳐도 접지로 인정한다(중앙+좌우 3점 판정). 0 이하면 중앙 1점만 검사.")]
+        [SerializeField] private float groundCheckExtent = 0.18f;
+        [Tooltip("모서리 보정 — 점프가 플랫폼 립(모서리)에 아슬하게 걸렸을 때 위로 소량씩 밀어 올려 자연스럽게 올라서게 한다.")]
+        [SerializeField] private bool enableLedgeCorrection = true;
+        [Tooltip("모서리 보정이 허용하는 립 높이(발 기준). 발 높이엔 벽이 닿고 이 높이엔 안 닿을 때만 보정한다.")]
+        [SerializeField] private float ledgeCorrectionHeight = 0.3f;
+        [Tooltip("모서리 보정의 초당 상승 상한. 낮을수록 티가 안 나고, 높을수록 빠르게 올라선다.")]
+        [SerializeField] private float ledgeCorrectionSpeed = 8f;
+        [Tooltip("이 낙하 속도(초당)보다 빠르게 떨어지는 중에는 모서리 보정을 하지 않는다 — 낙하 의도를 거스르면 티가 난다.")]
+        [SerializeField] private float ledgeCorrectionMaxFall = 2f;
+
         [Header("이동 연출 훅 (Art.VfxSpawner 없으면 조용히 생략)")]
         [Tooltip("이동 관련 이펙트 재생 여부. 끄면 착지/점프/대쉬 이펙트를 전부 생략한다.")]
         [SerializeField] private bool playMovementVfx = true;
@@ -120,6 +138,7 @@ namespace TSWP.Player
         // 조작감 타이머 — Update에서 갱신, FixedUpdate에서 소비
         private float _coyoteTimer;          // 발판을 떠난 뒤 남은 점프 유예
         private float _jumpBufferTimer;      // 착지 전에 누른 점프 기억
+        private float _attackBufferTimer;    // 공격 간격·경직 중에 누른 공격 기억 (Update에서 충전·소비)
         private bool _isJumping;             // 상승 중인 점프가 진행 중인가 (가변 높이 판정용)
 
         /// <summary>접지 판정 버퍼 — 매 프레임 할당을 피한다.</summary>
@@ -141,7 +160,7 @@ namespace TSWP.Player
         private float _dashCooldownTimer;
         private int _airDashesLeft;
         private int _dashDirection = 1;
-        private bool _dashQueued;
+        private float _dashBufferTimer;      // 대쉬 입력 버퍼 — FixedUpdate가 성공할 때까지 재시도 (쿨타임/경직 해제 순간 즉시 발동)
         private float _dashTrailTimer;       // 대쉬 잔상 재생 간격 타이머
 
         // 피격/사망 상태
@@ -203,7 +222,10 @@ namespace TSWP.Player
         }
 
         /// <summary>
-        /// 실제 접지 물리 질의. 자기 콜라이더는 제외하므로, groundMask에 캐릭터 레이어를 포함시켜
+        /// 실제 접지 물리 질의 — 중앙 + 좌우 발끝 3점 판정 (착지 보조).
+        /// 플랫폼 끝에 발끝만 걸쳐도 접지로 인정해 코요테/점프/대쉬 회복이 자연스러워진다.
+        /// 중앙이 닿으면 조기 반환해 추가 물리 질의를 아낀다 (대부분의 프레임은 1회 질의로 끝난다).
+        /// 자기 콜라이더는 제외하므로, groundMask에 캐릭터 레이어를 포함시켜
         /// 적을 밟고 있을 때도 정상적으로 접지로 인식할 수 있다.
         /// </summary>
         private bool ProbeGround()
@@ -212,8 +234,18 @@ namespace TSWP.Player
             _groundFilter.useLayerMask = true;
             _groundFilter.useTriggers = false; // 트리거는 밟을 수 없다
 
-            int count = Physics2D.OverlapCircle(
-                GroundCheckPoint(), groundCheckRadius, _groundFilter, _groundHits);
+            Vector2 center = GroundCheckPoint();
+            if (ProbeGroundAt(center)) return true;          // 중앙 우선 — 조기 반환
+            if (groundCheckExtent <= 0f) return false;
+
+            Vector2 extent = new Vector2(groundCheckExtent, 0f);
+            return ProbeGroundAt(center - extent) || ProbeGroundAt(center + extent);
+        }
+
+        /// <summary>단일 지점 접지 질의. _groundFilter는 ProbeGround가 미리 설정한다.</summary>
+        private bool ProbeGroundAt(Vector2 point)
+        {
+            int count = Physics2D.OverlapCircle(point, groundCheckRadius, _groundFilter, _groundHits);
 
             for (int i = 0; i < count; i++)
             {
@@ -230,16 +262,17 @@ namespace TSWP.Player
         }
 
         /// <summary>
-        /// 벽 밀착 판정 (벽 슬라이드 전용). enableWallSlide가 꺼져 있으면 호출되지 않으므로
-        /// 기본 상태에서는 추가 물리 질의가 발생하지 않는다.
+        /// 벽 밀착 판정 (벽 슬라이드 + 모서리 보정 공용). heightOffset은 판정 지점 y 추가 오프셋
+        /// (모서리 보정이 발 높이/립 높이 두 지점을 검사할 때 사용 — 부호는 호출부가 UpSign으로 조정).
+        /// 두 기능이 모두 꺼져 있으면 호출되지 않으므로 기본 상태에서는 추가 물리 질의가 발생하지 않는다.
         /// </summary>
-        private bool ProbeWall(int dirSign)
+        private bool ProbeWall(int dirSign, float heightOffset = 0f)
         {
             _wallFilter.SetLayerMask(groundMask); // 벽도 지형 — 별도 마스크가 생기면 분리한다
             _wallFilter.useLayerMask = true;
             _wallFilter.useTriggers = false;
 
-            Vector2 point = _body.position + new Vector2(wallCheckOffset.x * dirSign, wallCheckOffset.y);
+            Vector2 point = _body.position + new Vector2(wallCheckOffset.x * dirSign, wallCheckOffset.y + heightOffset);
             int count = Physics2D.OverlapCircle(point, wallCheckRadius, _wallFilter, _wallHits);
 
             for (int i = 0; i < count; i++)
@@ -247,6 +280,12 @@ namespace TSWP.Player
                 var hit = _wallHits[i];
                 if (hit == null) continue;
                 if (hit.transform == transform || hit.transform.IsChildOf(transform)) continue;
+
+                // 적/타 플레이어의 몸통은 벽·립이 아니다 — groundMask가 캐릭터 레이어(Default)를 포함해도
+                // 엔티티 콜라이더는 제외한다. 이게 없으면 공중에서 적 방향으로 밀기만 해도 모서리 보정이
+                // 적의 상단을 '립'으로 오인해 적 머리 위로 밀어 올린다 (접지의 '적 밟기' 지원과는 무관한 경로).
+                if (hit.GetComponentInParent<CombatEntity>() != null) continue;
+
                 return true;
             }
             return false;
@@ -312,6 +351,21 @@ namespace TSWP.Player
                 _runHeld = false;
                 _jumpHeld = false;
                 _jumpBufferTimer = 0f;
+                _attackBufferTimer = 0f; // 스킵 입력이 버퍼에 남아 인트로 종료 직후 발동되면 안 된다
+                _dashBufferTimer = 0f;
+                return;
+            }
+
+            // ── 사망 게이트 (구조부활 대비) ──
+            // 사망 중에는 버퍼·코요테를 충전하지 않는다. 소비는 FixedUpdate에, 부활 정리(OnRevived)는 Update에
+            // 있어 구조부활(E키)이 이 컴포넌트의 Update 이후에 실행되면 다음 프레임 FixedUpdate가 정리보다
+            // 먼저 돌므로, 사망 중 눌린 입력이 부활 즉시 대쉬/점프로 터질 수 있다 — 충전 자체를 막아
+            // 스크립트 실행 순서 의존을 없앤다 (기본값 즉시부활은 사망 프레임이 없어 영향 없음).
+            if (_entity != null && _entity.IsDead)
+            {
+                _moveAxis = 0f;
+                _runHeld = false;
+                _jumpHeld = false;
                 return;
             }
 
@@ -346,10 +400,18 @@ namespace TSWP.Player
                 _isJumping = false;
             }
 
-            // ── 대쉬 타이머 ──
+            // ── 대쉬 타이머 / 입력 버퍼 ──
             if (_dashTimer > 0f) _dashTimer -= dt;
             if (_dashCooldownTimer > 0f) _dashCooldownTimer -= dt;
-            if (_input.DashPressed) _dashQueued = true;
+
+            // 대쉬 버퍼: 쿨타임·경직 중에 누른 대쉬를 기억했다가 가능해지는 순간 발동 (소비는 FixedUpdate).
+            if (_input.DashPressed) _dashBufferTimer = dashBufferTime;
+            else _dashBufferTimer -= dt;
+
+            // 공격 버퍼: 공격 간격·경직 중에 누른 공격을 기억한다 (소비는 아래 전투 입력 구간).
+            // 게이트(사망/경직)에 막힌 프레임에도 충전은 유지된다 — 경직이 풀리는 순간 발동시키기 위함.
+            if (_input.AttackPressed) _attackBufferTimer = attackBufferTime;
+            else _attackBufferTimer -= dt;
 
             // 바라보는 방향 갱신 (변조 전 원 입력 기준 — 혼란 중에도 의도 방향을 바라본다)
             if (_moveAxis > 0.01f) _facingSign = 1;
@@ -360,11 +422,13 @@ namespace TSWP.Player
             if (_entity != null && _entity.IsDead) return;
             if (IsHitstunned) return;
 
-            if (_input.AttackPressed)
-                _attacker?.TryAttack(GetAimDirection()); // 간격/기절·빙결 게이트는 BasicAttacker 소관
+            // 공격 버퍼 소비: TryAttack이 true(실제 발동)를 반환해야 비운다 — 간격/기절·빙결 게이트는 BasicAttacker 소관.
+            // 조준(GetAimDirection)은 발동 시점에 다시 계산해 버퍼 중 바뀐 최신 조준 의도를 반영한다.
+            if (_attackBufferTimer > 0f && _attacker != null && _attacker.TryAttack(GetAimDirection()))
+                _attackBufferTimer = 0f;
 
             if (_input.SkillPressed)
-                _skillCaster?.TryCastSkill();            // 쿨타임/침묵 게이트는 SkillCaster 소관
+                _skillCaster?.TryCastSkill();            // 쿨타임/침묵 게이트는 SkillCaster 소관 — 스킬은 버퍼 대상 아님
         }
 
         private void FixedUpdate()
@@ -375,12 +439,11 @@ namespace TSWP.Player
             _isGrounded = ProbeGround();
             HandleGroundTransition();
 
-            // ── 대쉬 발동 판정 ──
-            if (_dashQueued)
-            {
-                _dashQueued = false;
-                TryStartDash();
-            }
+            // ── 대쉬 발동 판정 (버퍼 소비) ──
+            // 실패(쿨타임/경직/공중 횟수 소진)해도 버퍼가 남아 있는 동안 매 물리 프레임 재시도한다
+            // → 쿨타임이 끝나는 순간·공격 경직이 풀리는 순간 즉시 발동된다.
+            if (_dashBufferTimer > 0f && TryStartDash())
+                _dashBufferTimer = 0f;
 
             // 대쉬 중에는 일반 이동/중력 로직을 건너뛰고 고정 속도로 밀어낸다.
             if (IsDashing)
@@ -441,6 +504,7 @@ namespace TSWP.Player
                 PlayVfx(Art.VfxId.JumpDust, GroundCheckPoint()); // 발밑에서 먼지가 튄다
             }
 
+            ApplyLedgeCorrection(dt);
             ApplyGravityFeel();
             ApplyWallSlide();
             ClampFallSpeed();
@@ -518,6 +582,43 @@ namespace TSWP.Player
         }
 
         /// <summary>
+        /// 모서리 보정 (숨은 보정) — 점프/이동 중 발끝이 플랫폼 립에 아슬하게 걸렸을 때,
+        /// 위로 소량씩 밀어 올려 자연스럽게 올라서게 한다.
+        /// 발 높이에는 벽이 닿고 발+ledgeCorrectionHeight 높이에는 닿지 않으면 립이 그 사이에 있다고 본다.
+        /// 프레임당 이동량을 ledgeCorrectionSpeed * dt로 묶어 순간이동처럼 보이지 않게 한다.
+        /// 보정은 위로만 하며(진동 금지), 접지되거나 립을 넘어서면 조건이 깨져 자연 종료된다.
+        /// </summary>
+        private void ApplyLedgeCorrection(float dt)
+        {
+            if (!enableLedgeCorrection || _isGrounded || IsDashing || !CanControl) return;
+
+            // 빠르게 떨어지는 중에는 개입하지 않는다 — 낙하 의도를 보정으로 거스르면 티가 난다.
+            float verticalSpeed = _body.linearVelocity.y * UpSign; // 음수 = 하강 (중력 반전 대응)
+            if (verticalSpeed <= -Mathf.Abs(ledgeCorrectionMaxFall)) return;
+
+            // 벽 방향으로 미는 수평 입력이 있어야 한다 — 실력을 대체하지 않고 입력 의도만 보조한다.
+            int pressSign = Mathf.Abs(_moveAxis) > 0.01f ? (int)Mathf.Sign(_moveAxis) : 0;
+            if (pressSign == 0) return;
+
+            // 발 높이 벽 질의 지점 — GroundCheckPoint와 동일한 중력 반전 규칙으로 발 쪽 y를 잡는다.
+            float footHeight = groundCheckOffset.y * UpSign;
+            if (!ProbeWall(pressSign, footHeight)) return;                                  // 발이 벽에 막혀 있고
+            if (ProbeWall(pressSign, footHeight + ledgeCorrectionHeight * UpSign)) return;  // 그 위는 뚫려 있어야 립이다
+
+            // 위로 소량씩만 이동 (초당 ledgeCorrectionSpeed 상한). 중력 반전 시 '위'는 아래가 된다.
+            float rise = ledgeCorrectionSpeed * dt;
+
+            // 머리 위 여유 확인 — 립 위에 낮은 천장이 있으면 보정을 포기한다.
+            // (이 이동은 충돌을 무시하므로 천장과 겹치면 솔버가 매 스텝 되밀어 끼임/진동이 생긴다)
+            // 머리 높이는 발 오프셋의 대칭 지점으로 근사하고, dirSign 0으로 수직 지점만 검사한다.
+            if (ProbeWall(0, (Mathf.Abs(groundCheckOffset.y) + rise) * UpSign)) return;
+
+            // _body.position 직접 대입은 그 스텝의 보간(Interpolate)을 리셋해 화면이 한 프레임 튄다 —
+            // MovePosition은 보간을 유지한 채 다음 물리 스텝에 이동을 반영한다 (숨은 보정이 티 나면 안 된다).
+            _body.MovePosition(_body.position + new Vector2(0f, rise * UpSign));
+        }
+
+        /// <summary>
         /// 중력 체감 보정. 하강할 때 중력을 키워 '붕 뜨는' 느낌을 없애고,
         /// 정점 부근에서는 살짝 줄여 공중 제어 여유를 준다.
         /// </summary>
@@ -550,17 +651,18 @@ namespace TSWP.Player
         // ── 대쉬 ──────────────────────────────────────────────────
 
         /// <summary>
-        /// 대쉬 시작 시도. 쿨타임·이동 가능 여부·공중 횟수를 검사한다.
+        /// 대쉬 시작 시도. 쿨타임·이동 가능 여부·공중 횟수를 검사하고, 실제로 발동했으면 true.
+        /// 실패 시 대쉬 버퍼가 남아 있는 동안 FixedUpdate가 재시도한다 (버퍼 소비 판정용 반환값).
         /// 방향은 입력이 있으면 입력 방향, 없으면 바라보는 방향.
         /// </summary>
-        private void TryStartDash()
+        private bool TryStartDash()
         {
-            if (IsDashing || _dashCooldownTimer > 0f) return;
-            if (!CanControl) return; // 기절·빙결·속박·피격 경직 중 대쉬 불가
+            if (IsDashing || _dashCooldownTimer > 0f) return false;
+            if (!CanControl) return false; // 기절·빙결·속박·피격 경직 중 대쉬 불가
 
             if (!_isGrounded)
             {
-                if (_airDashesLeft <= 0) return;
+                if (_airDashesLeft <= 0) return false;
                 _airDashesLeft--;
             }
 
@@ -581,6 +683,7 @@ namespace TSWP.Player
                 _entity?.SetInvincibleFor(dashInvincibility);
 
             // TODO(연출): 대쉬 효과음 — Audio 담당. 잔상은 UpdateDashTrail이 처리한다.
+            return true;
         }
 
         /// <summary>
@@ -650,9 +753,10 @@ namespace TSWP.Player
 
             _moveAxis = 0f;
             _dashTimer = 0f;
-            _dashQueued = false;
+            _dashBufferTimer = 0f;
             _dashTrailTimer = 0f;
             _jumpBufferTimer = 0f;
+            _attackBufferTimer = 0f; // 사망 직전 입력이 부활 직후 터지면 안 된다
             _coyoteTimer = 0f;
             _isJumping = false;
             _hitstunTimer = 0f;
@@ -674,8 +778,9 @@ namespace TSWP.Player
             _hitstunTimer = 0f;
             _dashCooldownTimer = 0f;
             _airDashesLeft = airDashCount;
-            _dashQueued = false;
+            _dashBufferTimer = 0f;
             _jumpBufferTimer = 0f;
+            _attackBufferTimer = 0f; // 사망 중 눌린 입력이 부활 순간 발동되는 것을 막는다
             _isJumping = false;
 
             // 부활 지점으로 순간이동했을 수 있으므로 이동 거리 누적 기준을 다시 잡는다
@@ -716,11 +821,18 @@ namespace TSWP.Player
 #if UNITY_EDITOR
         private void OnDrawGizmosSelected()
         {
-            // 접지 판정 시각화 (중력 반전 상태 반영)
+            // 접지 판정 시각화 — 중앙 + 좌우 발끝 3점 (중력 반전 상태 반영)
             Vector2 offset = groundCheckOffset;
             if (_gravityInverted) offset.y = -offset.y;
             Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere((Vector2)transform.position + offset, groundCheckRadius);
+            Vector2 groundCenter = (Vector2)transform.position + offset;
+            Gizmos.DrawWireSphere(groundCenter, groundCheckRadius);
+            if (groundCheckExtent > 0f)
+            {
+                Vector2 extent = new Vector2(groundCheckExtent, 0f);
+                Gizmos.DrawWireSphere(groundCenter - extent, groundCheckRadius);
+                Gizmos.DrawWireSphere(groundCenter + extent, groundCheckRadius);
+            }
 
             // 벽 판정 시각화 (기능이 켜져 있을 때만)
             if (!enableWallSlide) return;

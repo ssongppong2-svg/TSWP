@@ -1901,8 +1901,8 @@ MonoBehaviour:
   airAcceleration: 55
   airDeceleration: 35
   jumpSpeed: 12
-  coyoteTime: 0.1
-  jumpBufferTime: 0.12
+  coyoteTime: 0.12
+  jumpBufferTime: 0.1
   jumpCutMultiplier: 0.45
   fallGravityMultiplier: 1.9
   apexGravityMultiplier: 0.85

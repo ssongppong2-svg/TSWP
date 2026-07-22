@@ -135,6 +135,26 @@ namespace TSWP.Enemies
             }
         }
 
+        /// <summary>근접 공격 경로인가 — PerformAttack의 발사 분기(isRanged && projectilePrefab)와 동일 기준.</summary>
+        private bool IsMeleeAttack
+        {
+            get
+            {
+                var data = _controller != null ? _controller.Data : null;
+                var attack = data != null ? data.basicAttack : null;
+                return attack == null || !attack.isRanged || attack.projectilePrefab == null;
+            }
+        }
+
+        /// <summary>
+        /// 공격 개시 거리. 근접이면 플레이어 상대 축소 반경(HitForgiveness) — 임팩트 판정과 기준을 맞춘다.
+        /// 개시(원본 사거리)와 명중(축소 사거리)이 어긋나면 그 사이 경계에 선 플레이어에게 영원히
+        /// 헛스윙하는 구간이 생긴다 → 개시를 좁히는 방향으로만 일치시킨다(명중 확대 금지 —
+        /// 넓히면 '피했는데 맞았다'가 되살아난다). 원거리는 투사체가 판정하므로 원본 그대로.
+        /// EnemyAI의 공격 대상은 항상 플레이어(targetPlayer)이므로 무조건 축소해도 안전하다.
+        /// </summary>
+        private float EngageRange => IsMeleeAttack ? HitForgiveness.ShrinkVsPlayers(AttackRange) : AttackRange;
+
         private void Awake()
         {
             _controller = GetComponent<EnemyController>();
@@ -281,10 +301,11 @@ namespace TSWP.Enemies
             _context.hasLineOfSight = !_context.hasObstacleBetween;
 
             // ⑤ 공격 가능 여부 — 쿨타임 + 사거리 + 시야 + 상태이상 미차단
+            // 사거리는 EngageRange — 근접은 임팩트 축소 판정과 같은 기준으로 좁혀 무한 헛스윙을 막는다.
             bool notBlocked = _controller.Status == null || _controller.Status.CanAttack;
 
             _context.canAttack = _attackCooldown <= 0f
-                                 && bestDistance <= AttackRange
+                                 && bestDistance <= EngageRange
                                  && _context.hasLineOfSight
                                  && notBlocked;
         }
@@ -348,7 +369,10 @@ namespace TSWP.Enemies
 
             // 접근을 멈추는 경계와 물러나기 시작하는 경계를 겹치지 않게 띄운다(히스테리시스).
             // 같은 값이면 경계선에서 접근/후퇴를 매 판단마다 번갈아 골라 제자리 떨림이 생긴다.
-            float hold = profile.GetHoldDistance(AttackRange) * KeepDistanceInnerRatio;
+            // 유지 거리는 EngageRange 기준 — AttackRange 기준이면 근접+holdDistanceRatio > 축소 배율(0.92)
+            // 조합에서 hold > Engage가 되어 '접근도 공격도 못 하는' 영구 Idle 사각지대가 생긴다
+            // (원거리는 EngageRange == AttackRange라 동작 변화 없음). ScoreApproach와 같은 기준을 쓴다.
+            float hold = profile.GetHoldDistance(EngageRange) * KeepDistanceInnerRatio;
             if (_context.distanceToPlayer >= hold) return float.MinValue;
 
             return profile.keepDistanceScore;
@@ -368,7 +392,9 @@ namespace TSWP.Enemies
             if (float.IsPositiveInfinity(_context.distanceToPlayer)) return float.MinValue;
 
             // 유지 거리 안쪽이면 더 접근하지 않는다 (원거리 적이 붙는 것을 막는다).
-            if (profile.KeepsDistance && _context.distanceToPlayer <= profile.GetHoldDistance(AttackRange))
+            // EngageRange 기준 환산 — hold ≤ Engage가 항상 성립해, 접근을 멈춘 지점에서 반드시 공격이
+            // 가능하다 (AttackRange 기준이면 근접+높은 holdDistanceRatio에서 영구 Idle 구간이 생긴다).
+            if (profile.KeepsDistance && _context.distanceToPlayer <= profile.GetHoldDistance(EngageRange))
                 return float.MinValue;
 
             return profile.approachScore + Mathf.Min(_context.distanceToPlayer, profile.detectionRange);
@@ -514,43 +540,54 @@ namespace TSWP.Enemies
             Vector2 direction = ((Vector2)target.transform.position - (Vector2)transform.position).normalized;
             FaceToward(target.transform.position);
 
-            // 공격 이펙트
+            // 공격 이펙트 — 명중 여부와 무관하게 재생한다 (헛스윙 모션이 보여야 "피했다!" 체감이 난다).
             if (!string.IsNullOrEmpty(attack.attackVfxId))
             {
                 Vector3 origin = transform.position + (Vector3)(direction * attack.muzzleForward);
                 Art.VfxSpawner.Instance?.Play(attack.attackVfxId, origin, flipX: direction.x < 0f);
             }
 
-            var statusEffects = attack.statusEffects != null && attack.statusEffects.Count > 0
-                ? new List<StatusEffects.StatusEffectData>(attack.statusEffects)
-                : null;
-
-            KnockbackInfo? knockback = null;
-            if (attack.applyKnockback)
-            {
-                KnockbackInfo kb = attack.knockback;
-                kb.Direction = direction;
-                knockback = kb;
-            }
-
             float damage = attack.damage * _controller.AttackMultiplier;
+            bool isRangedShot = attack.isRanged && attack.projectilePrefab != null;
 
-            if (attack.isRanged && attack.projectilePrefab != null)
+            // 근접 임팩트 재확인(숨은 관용 — HitForgiveness): 예고(telegraph) 중 회피에 성공했으면
+            // 데미지·넉백·상태이상만 생략한다. 원거리는 투사체(OnTrigger 판정)가 담당하므로 거르지 않는다.
+            bool connects = isRangedShot ||
+                            HitForgiveness.MeleeConnects(transform.position, target, attack.range);
+
+            if (connects)
             {
-                FireProjectile(attack, direction, damage, statusEffects, knockback);
-            }
-            else
-            {
-                var info = new DamageInfo
+                var statusEffects = attack.statusEffects != null && attack.statusEffects.Count > 0
+                    ? new List<StatusEffects.StatusEffectData>(attack.statusEffects)
+                    : null;
+
+                KnockbackInfo? knockback = null;
+                if (attack.applyKnockback)
                 {
-                    BaseDamage = damage,
-                    IsExplosive = attack.isExplosive,
-                    Source = _combat,
-                    StatusEffects = statusEffects,
-                    Knockback = knockback,
-                };
-                DamageSystem.Apply(target, in info);
+                    KnockbackInfo kb = attack.knockback;
+                    kb.Direction = direction;
+                    knockback = kb;
+                }
+
+                if (isRangedShot)
+                {
+                    FireProjectile(attack, direction, damage, statusEffects, knockback);
+                }
+                else
+                {
+                    var info = new DamageInfo
+                    {
+                        BaseDamage = damage,
+                        IsExplosive = attack.isExplosive,
+                        Source = _combat,
+                        StatusEffects = statusEffects,
+                        Knockback = knockback,
+                    };
+                    DamageSystem.Apply(target, in info);
+                }
             }
+            // else: 헛스윙 — 이펙트는 이미 재생했고 쿨타임도 아래에서 정상 소모한다
+            //   (헛스윙이 공짜면 예고 무시 연타가 되고, 예고 후 취소는 회피 학습을 방해한다).
 
             // 패턴 속도 배율이 높을수록 쿨타임이 짧아진다 (난이도 3종 배율 중 하나)
             float speed = Mathf.Max(0.1f, _controller.PatternSpeedMultiplier);

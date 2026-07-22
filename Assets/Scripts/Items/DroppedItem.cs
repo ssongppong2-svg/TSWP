@@ -4,8 +4,14 @@
 // 근거: 팔레트 시스템.md — 희귀도 색상(회색/초록/파랑/보라/금색/무지개). 색 매핑 원본은 Art.RarityColorConfig이며
 //       여기서는 에셋이 없을 때를 위한 폴백만 갖는다 (ItemRarity 정의는 Items 한 곳 — ARCHITECTURE.md §5).
 // 프로토타입 방침: 스프라이트/콜라이더가 없어도 스스로 만들어 "보이고 만질 수 있게" 한다.
+// 게임 필(숨겨진 보정): 아이템 자석 — 근처의 살아있는 플레이어에게 약하게 빨려가 자동 획득된다 (E키 상호작용은 폴백 유지).
+//       transform.position은 Update의 bob이 매 프레임 덮어쓰므로 자석은 반드시 _basePosition만 움직인다.
+//       스폰 직후 잠깐은 흡입하지 않아 드롭이 흩어지는 연출이 먼저 보인다. 값은 보수적으로, 전부 인스펙터/정적 필드로 노출.
+//       버린 아이템이 버린 사람에게 곧장 되빨려 가 '버리기/팀원 양도'가 무력화되지 않도록,
+//       스폰 순간 겹쳐 있던 플레이어(=버린 사람 추정)는 자석 반경을 한 번 벗어날 때까지 자석 대상에서 제외한다.
 using UnityEngine;
 using TSWP.Art;
+using TSWP.Combat;
 using TSWP.Player;
 
 namespace TSWP.Items
@@ -37,6 +43,36 @@ namespace TSWP.Items
         [Tooltip("픽업 판정 반경. 콜라이더가 없을 때 이 크기로 트리거를 만든다.")]
         [SerializeField] private float pickupRadius = 0.6f;
 
+        [Header("자석 (Game Feel)")]
+        [Tooltip("근처 플레이어에게 빨려가 자동 획득되는 자석 동작을 켠다. 꺼도 E키 픽업은 그대로 된다.")]
+        [SerializeField] private bool magnetEnabled = true;
+
+        [Tooltip("이 반경(월드 유닛) 안의 살아있는 최근접 플레이어에게 빨려간다.")]
+        [SerializeField] private float magnetRadius = 1.8f;
+
+        [Tooltip("흡입 최고 속도(유닛/초).")]
+        [SerializeField] private float magnetMaxSpeed = 7f;
+
+        [Tooltip("흡입 가속도(유닛/초²). 속도를 누적하므로 멀면 천천히 시작해 가까울수록 빨라진다.")]
+        [SerializeField] private float magnetAcceleration = 24f;
+
+        [Tooltip("대상과 이 거리 이하면 E키 없이 자동 획득한다.")]
+        [SerializeField] private float autoPickupRadius = 0.4f;
+
+        [Tooltip("스폰 직후 이 시간(초) 동안은 흡입하지 않는다 — 드롭이 흩어지는 게 눈에 보이게.")]
+        [SerializeField] private float magnetActivationDelay = 0.35f;
+
+        [Tooltip("스폰 순간 이 반경(월드 유닛) 안에 있던 최근접 생존 플레이어(=버린 사람 추정)는 " +
+                 "자석 반경을 한 번 벗어날 때까지 자석·자동 획득 대상에서 제외한다. 0 이하면 제외 없음. " +
+                 "E키 픽업은 제외와 무관하게 항상 가능하다.")]
+        [SerializeField] private float dropperExclusionRadius = 0.8f;
+
+        /// <summary>자석 대상 재탐색 주기(초). 매 프레임 물리 질의를 피한다 (8인×드롭 다수 전제) — 0.1~0.15 권장.</summary>
+        public static float MagnetScanInterval = 0.12f;
+
+        /// <summary>자동 획득 실패(슬롯 가득 등) 후 재시도까지의 쿨다운(초) — 프레임당 재시도 스팸 방지.</summary>
+        public static float AutoPickupRetryCooldown = 1f;
+
         /// <summary>선점 완료 플래그. // SYNC: 호스트 권위, 추후 NGO NetworkVariable</summary>
         private bool _claimed;
 
@@ -45,6 +81,18 @@ namespace TSWP.Items
         private Vector3 _basePosition;
         private float _bobPhase;
         private string _promptCache;
+
+        // 자석 런타임 상태
+        private PlayerController _magnetTarget;   // 주기 스캔으로 캐싱한 최근접 생존 플레이어
+        private CombatEntity _magnetTargetEntity; // 스캔 사이의 사망 확인용 (사망자는 흡입 중단)
+        private PlayerController _magnetExcluded; // 버린 사람 추정 — 자석 반경을 한 번 벗어나면 해제
+        private float _magnetSpeed;               // 누적 흡입 속도 — 대상 상실/반경 이탈 시 리셋
+        private float _magnetDelayRemaining;      // 스폰 직후 흡입 유예 잔여 시간
+        private float _scanTimer;                 // 다음 대상 스캔까지 남은 시간
+        private float _pickupRetryTimer;          // 자동 획득 실패(슬롯 가득) 후 재시도 쿨다운
+
+        /// <summary>자석 스캔용 공용 버퍼 (전 드롭 공유 — 스캔마다 할당 금지). 8인 + 주변 트리거 여유분.</summary>
+        private static readonly Collider2D[] _magnetScanBuffer = new Collider2D[32];
 
         /// <summary>아이콘이 없는 아이템용 공용 흰 사각형 스프라이트 (전 드롭이 공유 — 매번 생성 금지).</summary>
         private static Sprite _placeholderSprite;
@@ -85,6 +133,12 @@ namespace TSWP.Items
             item = definition;
             _claimed = false;
             _promptCache = null;
+            // 자석 상태 초기화 — 버린 아이템(SwapAndDrop)도 유예를 다시 받아 곧바로 되빨려 오지 않는다.
+            _magnetSpeed = 0f;
+            _pickupRetryTimer = 0f;
+            _magnetDelayRemaining = magnetActivationDelay;
+            // 버린 사람 제외 — 유예(0.35초)만으로는 제자리 버리기가 즉시 되빨려 와 버리기·양도가 무력화된다.
+            CaptureMagnetExclusion();
             RefreshVisual();
         }
 
@@ -93,17 +147,184 @@ namespace TSWP.Items
             _basePosition = transform.position;
             // 스폰 시점을 흩어 놓아 여러 드롭이 한 몸처럼 까딱이지 않게 한다.
             _bobPhase = Random.value * Mathf.PI * 2f;
+            // 자석 유예 시작 + 스캔 위상 분산 (드롭 무리가 같은 프레임에 몰려 스캔하지 않게).
+            _magnetDelayRemaining = magnetActivationDelay;
+            _scanTimer = Random.value * MagnetScanInterval;
         }
 
         private void Start() => RefreshVisual();
 
         private void Update()
         {
-            if (bobAmplitude <= 0f || _renderer == null) return;
+            float dt = Time.deltaTime;
 
-            _bobPhase += Time.deltaTime * bobSpeed;
-            float offset = Mathf.Sin(_bobPhase) * bobAmplitude;
-            transform.position = _basePosition + new Vector3(0f, offset, 0f);
+            // 자석은 _basePosition만 움직인다 — transform은 아래 bob이 최종 결정한다 (직접 이동 금지).
+            bool magnetMoved = UpdateMagnet(dt);
+
+            if (bobAmplitude > 0f && _renderer != null)
+            {
+                _bobPhase += dt * bobSpeed;
+                float offset = Mathf.Sin(_bobPhase) * bobAmplitude;
+                transform.position = _basePosition + new Vector3(0f, offset, 0f);
+            }
+            else if (magnetMoved)
+            {
+                // bob이 꺼져 있으면 자석 이동을 여기서 직접 반영한다.
+                transform.position = _basePosition;
+            }
+        }
+
+        // ── 자석 (Game Feel) ─────────────────────────────────────
+
+        /// <summary>흡입/자동 획득 처리. _basePosition을 움직였으면 true (transform 반영은 Update 몫).</summary>
+        private bool UpdateMagnet(float dt)
+        {
+            if (!magnetEnabled || _claimed || item == null) return false;
+
+            // 스폰 직후 유예 — 드롭이 흩어지는 연출이 먼저 보인다.
+            if (_magnetDelayRemaining > 0f)
+            {
+                _magnetDelayRemaining -= dt;
+                return false;
+            }
+
+            // 자동 획득 실패(슬롯 가득 등) 쿨다운 — 흡입·자동 획득만 멈춘다 (E키 픽업은 그대로 가능).
+            if (_pickupRetryTimer > 0f)
+            {
+                _pickupRetryTimer -= dt;
+                return false;
+            }
+
+            // 주기 스캔 — 매 프레임 물리 질의 금지 (8인×드롭 다수 전제).
+            _scanTimer -= dt;
+            if (_scanTimer <= 0f)
+            {
+                _scanTimer += MagnetScanInterval;
+                ScanForMagnetTarget();
+            }
+
+            PlayerController target = _magnetTarget;
+            if (target == null) return StopMagnet();                                     // 대상 없음/파괴됨
+            if (_magnetTargetEntity != null && _magnetTargetEntity.IsDead) return StopMagnet(); // 스캔 사이 사망
+
+            Vector3 targetPos = target.transform.position;
+            float dx = targetPos.x - _basePosition.x;
+            float dy = targetPos.y - _basePosition.y;
+            float sqrDist = dx * dx + dy * dy;
+
+            // 자동 획득 — E키와 같은 조건(item != null && !_claimed, 위에서 확인)으로 픽업 단일 지점만 호출.
+            if (sqrDist <= autoPickupRadius * autoPickupRadius)
+            {
+                Pickup(target.PlayerId);
+                if (_claimed) return false; // 성공 — Destroy 예약됨. 이후 어떤 상태도 만지지 않는다.
+
+                // 실패 (슬롯 가득/중첩 상한) — 쿨다운 동안 재시도를 멈춰 프레임당 스팸을 막는다.
+                _pickupRetryTimer = AutoPickupRetryCooldown;
+                return StopMagnet();
+            }
+
+            // 반경 이탈 — 속도만 리셋하고 그 자리에 멈춘다 (원위치 복귀는 어색해서 금지).
+            if (sqrDist > magnetRadius * magnetRadius) return StopMagnet();
+
+            // 흡입 — 속도를 누적(가속)하므로 멀리서는 천천히, 붙을수록 빨라진다.
+            _magnetSpeed = Mathf.Min(_magnetSpeed + magnetAcceleration * dt, magnetMaxSpeed);
+            _basePosition = Vector3.MoveTowards(
+                _basePosition,
+                new Vector3(targetPos.x, targetPos.y, _basePosition.z), // z 유지 — 2D 평면 이동만
+                _magnetSpeed * dt);
+            return true;
+        }
+
+        /// <summary>흡입 중단 공통 처리 — 속도만 리셋한다. false 반환은 "이번 프레임 이동 없음".</summary>
+        private bool StopMagnet()
+        {
+            _magnetSpeed = 0f;
+            return false;
+        }
+
+        /// <summary>
+        /// 스폰 순간 몸이 겹쳐 있던 최근접 플레이어를 '버린 사람'으로 추정해 자석 대상에서 제외한다.
+        /// 드롭은 버린 사람의 발밑(프리팹 경로: 제자리, 매니저 폴백: +0.63u)에 스폰되므로 이 추정은 안전하고,
+        /// 보스 드롭처럼 아무도 겹치지 않은 스폰에서는 아무도 제외되지 않는다. 제외는 그 플레이어가
+        /// magnetRadius를 한 번 벗어나면 풀린다(ScanForMagnetTarget) — E키 픽업은 제외와 무관하게 가능.
+        /// </summary>
+        private void CaptureMagnetExclusion()
+        {
+            _magnetExcluded = null;
+            if (!magnetEnabled || dropperExclusionRadius <= 0f) return;
+
+            var filter = new ContactFilter2D { useTriggers = true }; // struct — 힙 할당 없음
+            int count = Physics2D.OverlapCircle(
+                (Vector2)transform.position, dropperExclusionRadius, filter, _magnetScanBuffer);
+
+            float nearestSqr = float.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                Collider2D col = _magnetScanBuffer[i];
+                if (col == null) continue;
+
+                PlayerController player = col.GetComponent<PlayerController>();
+                if (player == null) player = col.GetComponentInParent<PlayerController>();
+                if (player == null) continue;
+
+                float dx = player.transform.position.x - transform.position.x;
+                float dy = player.transform.position.y - transform.position.y;
+                float sqr = dx * dx + dy * dy;
+                if (sqr < nearestSqr)
+                {
+                    nearestSqr = sqr;
+                    _magnetExcluded = player;
+                }
+            }
+        }
+
+        /// <summary>반경 안 최근접 '살아있는' 플레이어를 캐싱한다. 할당 없는 질의 (공용 버퍼 + ContactFilter2D).</summary>
+        private void ScanForMagnetTarget()
+        {
+            _magnetTarget = null;
+            _magnetTargetEntity = null;
+
+            // 버린 사람 제외 해제 — 자석 반경을 한 번 벗어났으면 다시 일반 대상이 된다.
+            if (_magnetExcluded != null)
+            {
+                float ex = _magnetExcluded.transform.position.x - _basePosition.x;
+                float ey = _magnetExcluded.transform.position.y - _basePosition.y;
+                if (ex * ex + ey * ey > magnetRadius * magnetRadius) _magnetExcluded = null;
+            }
+
+            // 플레이어 콜라이더 구성(트리거 여부/레이어)이 불명이므로 트리거 포함, 전 레이어로 안전하게 질의한다.
+            var filter = new ContactFilter2D { useTriggers = true }; // struct — 힙 할당 없음
+            int count = Physics2D.OverlapCircle(
+                (Vector2)_basePosition, magnetRadius, filter, _magnetScanBuffer);
+
+            float nearestSqr = float.MaxValue;
+            for (int i = 0; i < count; i++)
+            {
+                Collider2D col = _magnetScanBuffer[i];
+                if (col == null) continue;
+
+                // 콜라이더가 자식(히트박스 등)에 붙어 있을 수 있어 GetComponentInParent로 폴백한다.
+                PlayerController player = col.GetComponent<PlayerController>();
+                if (player == null) player = col.GetComponentInParent<PlayerController>();
+                if (player == null) continue;
+
+                // 버린 사람은 반경을 한 번 벗어날 때까지 자석·자동 획득 대상이 아니다 (버리기·양도 보호).
+                if (player == _magnetExcluded) continue;
+
+                CombatEntity entity = player.GetComponent<CombatEntity>();
+                if (entity == null) entity = player.GetComponentInParent<CombatEntity>();
+                if (entity != null && entity.IsDead) continue; // 사망자는 흡입 대상에서 제외
+
+                float dx = player.transform.position.x - _basePosition.x;
+                float dy = player.transform.position.y - _basePosition.y;
+                float sqr = dx * dx + dy * dy;
+                if (sqr < nearestSqr)
+                {
+                    nearestSqr = sqr;
+                    _magnetTarget = player;
+                    _magnetTargetEntity = entity;
+                }
+            }
         }
 
         /// <summary>

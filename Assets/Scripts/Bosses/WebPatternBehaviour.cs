@@ -156,7 +156,8 @@ namespace TSWP.Bosses
 
             for (int a = 0; a < _anchors.Count; a++)
             {
-                BossCombatUtil.CollectPlayers(_anchors[a], _data.FieldRadius, _hitBuffer);
+                // 데미지 질의 — 숨은 관용(판정을 이펙트보다 약간 작게). 장판 가장자리 스침 무시.
+                BossCombatUtil.CollectPlayersForDamage(_anchors[a], _data.FieldRadius, _hitBuffer);
                 for (int i = 0; i < _hitBuffer.Count; i++)
                 {
                     var target = _hitBuffer[i];

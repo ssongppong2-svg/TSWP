@@ -162,7 +162,8 @@ namespace TSWP.Bosses
 
         private void ApplyContactDamage(BossPatternContext ctx)
         {
-            BossCombatUtil.CollectPlayers(ctx.BossPosition, _data.HitRadius, _hitBuffer);
+            // 데미지 질의 — 숨은 관용(판정을 이펙트보다 약간 작게). 돌진 '스쳤는데 맞았다' 방지의 대표 지점.
+            BossCombatUtil.CollectPlayersForDamage(ctx.BossPosition, _data.HitRadius, _hitBuffer);
 
             for (int i = 0; i < _hitBuffer.Count; i++)
             {

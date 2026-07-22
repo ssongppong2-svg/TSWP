@@ -57,7 +57,9 @@ namespace TSWP.Combat
         private float _trailTimer;
         private Vector3 _lastTrailPosition;
         private bool _despawned;   // 같은 프레임에 착탄이 두 번 들어와도 두 번 반납되지 않게 한다
+                                   // (스침 무시 후 Stay 재검사에서도 이 가드가 이중 타격을 막는다)
         private Rigidbody2D _body;
+        private Collider2D _collider; // HitForgiveness.DeepEnough(관통 깊이) 판정용 — Awake에서 캐시
 
         /// <summary>이 인스턴스가 돌아갈 풀의 원본 프리팹. ProjectilePool이 채운다 (null이면 풀 미사용).</summary>
         public Projectile PoolPrefab { get; internal set; }
@@ -66,8 +68,8 @@ namespace TSWP.Combat
         {
             _body = GetComponent<Rigidbody2D>();
 
-            var col = GetComponent<Collider2D>();
-            if (col != null) col.isTrigger = true;
+            _collider = GetComponent<Collider2D>();
+            if (_collider != null) _collider.isTrigger = true;
         }
 
         /// <summary>
@@ -142,9 +144,17 @@ namespace TSWP.Combat
             Art.VfxSpawner.Instance?.Play(trailVfxId, position);
         }
 
-        private void OnTriggerEnter2D(Collider2D other)
+        private void OnTriggerEnter2D(Collider2D other) => HandleContact(other);
+
+        // 근거: 숨은 관용(HitForgiveness) — Enter 순간엔 관통이 얕아 스침으로 무시되는데,
+        //   그 뒤 같은 콜라이더에는 Enter가 다시 오지 않는다 → 매 물리 프레임 Stay로 재검사해
+        //   '충분히 깊이 들어온 순간' 동일한 명중 처리 경로를 태운다.
+        private void OnTriggerStay2D(Collider2D other) => HandleContact(other);
+
+        /// <summary>Enter/Stay 공용 접촉 처리 — 명중 판정과 소멸은 전부 이 한 경로를 탄다.</summary>
+        private void HandleContact(Collider2D other)
         {
-            if (_despawned) return;
+            if (_despawned) return; // 이미 명중/소멸 처리됨 — Stay로 인한 이중 타격 방지 (Launch에서 초기화)
 
             // 지형에 맞으면 그대로 소멸
             if (((1 << other.gameObject.layer) & obstacleMask) != 0)
@@ -164,6 +174,14 @@ namespace TSWP.Combat
             //   투사체가 아군을 관통할지 맞을지는 문서에 없다. 우선 통과로 두고
             //   폭탄마처럼 아군을 날리는 재미가 필요한 스킬은 별도 설정으로 연다.
             if (target.Team == _sourceTeam) return;
+
+            // 숨은 관용 — 적(비플레이어 진영)이 쏜 투사체가 플레이어를 '스치기만' 하면 무시한다.
+            //   충분히 관통하기 전까지 명중 처리하지 않고 Stay가 매 물리 프레임 재검사하며,
+            //   끝내 얕게 지나가면 소멸 없이 그대로 날아간다("피했다!" 체감).
+            //   플레이어가 쏜 투사체(적 타격)는 원래 판정 그대로 — 관용은 적→플레이어 전용.
+            if (_sourceTeam != TeamType.Players && target.Team == TeamType.Players &&
+                !HitForgiveness.DeepEnough(_collider, other))
+                return;
 
             var info = new DamageInfo
             {

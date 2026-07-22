@@ -53,6 +53,16 @@ namespace TSWP.Bosses
         }
 
         /// <summary>
+        /// '데미지를 주기 위한' 수집 — 반경을 HitForgiveness.ShrinkVsPlayers로 플레이어 상대 축소한다
+        /// (숨은 관용: 판정을 보이는 이펙트보다 약간 작게 — "피했는데 맞았다" 방지).
+        /// 감지(BossController 전투 개시)/조준/게이지 충전(DangerGauge 근접 보너스) 등
+        /// 비데미지 질의는 원본 <see cref="CollectPlayers"/>를 그대로 쓸 것 — AI 행동 거리가 어긋난다.
+        /// 데미지 목적으로 CollectPlayers를 직접 쓰는 패턴(Web/Charge 등)은 이 메서드로 교체한다.
+        /// </summary>
+        public static void CollectPlayersForDamage(Vector2 center, float radius, List<CombatEntity> results)
+            => CollectPlayers(center, HitForgiveness.ShrinkVsPlayers(radius), results);
+
+        /// <summary>
         /// 피해 1회 적용. 반드시 DamageSystem 단일 파이프라인을 탄다
         /// (무적/아군감쇠/넉백면역/상태이상 규칙이 전부 그 안에 있다).
         /// </summary>
@@ -102,8 +112,9 @@ namespace TSWP.Bosses
             List<StatusEffectData> statusEffects = null,
             bool isExplosive = false)
         {
+            // 데미지 질의이므로 축소 수집을 탄다 — 호출부(AreaAttack/DangerGauge Burst)는 수정 불필요.
             var targets = new List<CombatEntity>(8);
-            CollectPlayers(center, radius, targets);
+            CollectPlayersForDamage(center, radius, targets);
 
             for (int i = 0; i < targets.Count; i++)
                 ApplyHit(source, targets[i], damage, center, knockbackForce, stunDuration, statusEffects, isExplosive);
