@@ -68,6 +68,17 @@ namespace TSWP.Bosses
         AllyDisguise,      // 아군처럼 위장
     }
 
+    /// <summary>
+    /// 보스전 시작 트리거. 문서 규정이 아니라 '씬에 놓기만 해도 전투가 굴러가게' 하는 배선 옵션이다.
+    /// 정식 흐름은 방 시스템(RoomInstance.StartContent)이 BeginFight를 호출하는 Manual이다.
+    /// </summary>
+    public enum BossStartTrigger
+    {
+        Manual,          // 외부가 BeginFight()를 호출할 때까지 대기 (방 시스템 연동 시 이 값)
+        PlayerProximity, // 감지 반경 안에 살아있는 플레이어가 들어오면 스스로 시작
+        Immediate,       // 씬 시작 즉시 시작 (보스 단독 테스트 씬용)
+    }
+
     /// <summary>권장 패턴 구성 5종. 모든 보스는 최소 5개의 행동 패턴을 가진다 (BossData.OnValidate로 강제).</summary>
     public enum BossPatternCategory
     {

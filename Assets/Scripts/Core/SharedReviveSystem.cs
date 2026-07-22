@@ -33,6 +33,20 @@ namespace TSWP.Core
             return true;
         }
 
+        /// <summary>
+        /// 남은 부활 횟수를 직접 설정한다 (프로토타입/디버그 전용 — 정식 규칙은 Initialize의 인원×3).
+        /// 게임오버까지 도달하는 데 3회×인원은 너무 길어서 테스트가 어렵기 때문에 둔 창구다.
+        /// </summary>
+        public void SetRemaining(int value)
+        {
+            int clamped = value < 0 ? 0 : value;
+            if (clamped == Remaining) return;
+
+            Remaining = clamped;
+            RemainingChanged?.Invoke(Remaining);
+            GameEvents.RaiseReviveCountChanged(Remaining);
+        }
+
         /// <summary>게임 오버 = 부활 소진 + 전원 사망. (생존자가 있으면 계속 진행)</summary>
         public bool IsGameOver(int alivePlayerCount) => Remaining <= 0 && alivePlayerCount <= 0;
     }

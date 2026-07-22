@@ -47,6 +47,12 @@ namespace TSWP.Puzzles
         public event Action<PuzzleController> Recovered;
         public event Action<PuzzleState> StateChanged;
 
+        /// <summary>
+        /// 재도전 한도를 다 써서 이 퍼즐을 포기했음을 알린다 (소프트락 금지 최후 수단).
+        /// 방 시스템은 이 통지를 받으면 우회 경로를 연다 = 퍼즐을 못 풀어도 문이 열려야 한다.
+        /// </summary>
+        public event Action<PuzzleController> GaveUp;
+
         private readonly HashSet<int> _participants = new HashSet<int>();
         private RecoveryHandler _recovery;
 
@@ -178,13 +184,30 @@ namespace TSWP.Puzzles
             // 재도전 횟수 제한이 있어도 진행을 막지 않는다 — 우회 경로가 열릴 뿐이다.
             if (definition != null && definition.MaxRetryCount > 0 && RetryCount >= definition.MaxRetryCount)
             {
-                // TODO: 우회 경로(OpenAlternatePath) 개방을 방 시스템에 통지 — 소프트락 방지 최후 수단.
-                Debug.Log($"[PuzzleController] '{name}' 재도전 한도 도달 — 우회 경로를 열어야 합니다.", this);
+                // 우회 경로 개방을 방 시스템에 통지한다 (Map.RoomInstance가 구독 → 방 목표 달성 처리 → 문 개방).
+                // 이 통지가 없으면 "퍼즐을 못 풀어서 문이 영영 안 열리는" 소프트락이 된다.
+                PuzzleLog.Record(this, $"{name}: 재도전 한도 도달 — 퍼즐을 포기하고 우회 경로를 연다");
                 SetState(PuzzleState.Idle);
+                GaveUp?.Invoke(this);
                 return;
             }
 
             Begin();
+        }
+
+        /// <summary>
+        /// 디버그 강제 해결 — 어떤 상태에서든 즉시 Solved로 보낸다 (개발용, Map.RoomDebugHud가 호출).
+        /// 퍼즐이 막혀 진행이 불가능할 때의 탈출구다. 정상 플레이 경로에서는 호출되지 않는다.
+        /// </summary>
+        public void DebugForceSolve()
+        {
+            if (State == PuzzleState.Solved) return;
+
+            if (State != PuzzleState.Active) Begin();   // Idle/Failed/Recovering → Active
+            if (State != PuzzleState.Active) return;    // Begin이 거부한 예외 상황 — 조용히 생략
+
+            PuzzleLog.Record(this, $"{name}: 디버그 강제 해결");
+            Solve();
         }
 
         private void SetState(PuzzleState next)

@@ -38,6 +38,16 @@ namespace TSWP.Map
         [Tooltip("잠김 상태에서 통행을 물리적으로 막는 콜라이더 (트리거 아님). 열리면 비활성화된다.")]
         [SerializeField] private Collider2D blocker;
 
+        [Header("프로토타입 색 표시")]
+        [Tooltip("lockedVisual/openVisual을 둘 다 비워 둔 문에 한해, 스프라이트 색으로 잠김/열림을 표시한다. " +
+                 "연출 오브젝트를 지정한 문은 건드리지 않는다.")]
+        [SerializeField] private bool tintSpriteByState = true;
+        [SerializeField] private Color lockedColor = new Color(0.55f, 0.17f, 0.17f, 1f); // 잠김 — 붉은색
+        [SerializeField] private Color openColor = new Color(0.22f, 0.72f, 0.40f, 1f);   // 열림 — 초록색
+
+        private SpriteRenderer[] _renderers;
+        private bool _visualInitialized;
+
         [Header("연타/중복 이동 방지")]
         [SerializeField, Min(0f)] private float travelCooldown = 0.5f; // TODO(밸런스): 문서 미정
 
@@ -60,7 +70,9 @@ namespace TSWP.Map
         private void Awake()
         {
             TargetRoomId = explicitTargetRoomId;
+            _renderers = GetComponentsInChildren<SpriteRenderer>(true);
             ApplyVisualState();
+            _visualInitialized = true;
         }
 
         // ── 배선 API (RoomFlowManager / RoomInstance가 호출) ────────
@@ -78,8 +90,10 @@ namespace TSWP.Map
         public void SetOpen(bool open)
         {
             bool next = alwaysOpen || open;
-            if (IsOpen == next) return;
+            // 첫 호출은 값이 같아도 반드시 반영한다 (Awake 전에 SetOpen이 오는 순서 대비).
+            if (_visualInitialized && IsOpen == next) return;
             IsOpen = next;
+            _visualInitialized = true;
             ApplyVisualState();
         }
 
@@ -89,6 +103,18 @@ namespace TSWP.Map
             if (lockedVisual != null) lockedVisual.SetActive(!IsOpen);
             if (openVisual != null) openVisual.SetActive(IsOpen);
             if (blocker != null) blocker.enabled = !IsOpen;
+
+            // 연출 오브젝트가 아예 없는 문은 색으로라도 상태가 보여야 한다
+            // (잠긴 문은 CanInteract가 false라 UI 프롬프트조차 뜨지 않는다).
+            if (!tintSpriteByState || lockedVisual != null || openVisual != null) return;
+            if (_renderers == null) _renderers = GetComponentsInChildren<SpriteRenderer>(true);
+
+            Color color = IsOpen ? openColor : lockedColor;
+            for (int i = 0; i < _renderers.Length; i++)
+            {
+                var sr = _renderers[i];
+                if (sr != null) sr.color = color;
+            }
         }
 
         // ── IInteractable ─────────────────────────────────────────

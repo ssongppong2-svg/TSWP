@@ -41,7 +41,9 @@ namespace TSWP.Bosses
             if (bossEntity == this) bossEntity = null;
 
             SetTeam(TeamType.Enemies);
-            SetMaxHp(shellHp);
+            // keepRatio를 켜야 현재 체력도 함께 올라간다 — 끄면 인스펙터 기본 체력(예: 100)만 남아
+            // 첫 큰 일격에 약점이 부서져 버린다.
+            SetMaxHp(shellHp, keepRatio: true);
             SetAutoReviveOnDeath(false);
 
             if (bossEntity == null)
@@ -81,8 +83,10 @@ namespace TSWP.Bosses
                 _relaying = false;
             }
 
-            // 약점 껍데기는 체력을 즉시 회복해 파괴되지 않는다.
-            Heal(MaxHp);
+            // 약점 껍데기는 파괴되지 않는다. 다만 매 타격마다 회복하면 회복 숫자/이펙트가 화면을 뒤덮으므로,
+            // 껍데기 체력이 절반 아래로 떨어졌을 때만 되돌린다(실제로는 거의 발생하지 않는다).
+            if (CurrentHp < MaxHp * 0.5f)
+                Heal(MaxHp);
         }
     }
 }

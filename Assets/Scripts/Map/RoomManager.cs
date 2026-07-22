@@ -23,6 +23,12 @@ namespace TSWP.Map
         // NOTE(기획 확인 필요): 문서는 '자유 탐험'을 강조하지만 전투 방 이탈 허용 여부는 미정 — 기본 봉쇄.
         [SerializeField] private bool blockExitUntilCleared = true;
 
+        [Header("퍼즐 연결 (프로토타입 관용 규칙)")]
+        [Tooltip("목표형 방에서 퍼즐 id가 목표 id와 달라도 클리어로 인정한다.\n" +
+                 "PuzzleDefinition.puzzleId와 RoomDefinition.puzzleId/objectiveId를 다르게 적는 배선 실수로 " +
+                 "방이 영영 안 열리는 소프트락을 막는다. 콘텐츠가 굳으면 꺼서 오배선을 드러낸다.")]
+        [SerializeField] private bool acceptAnyPuzzleInObjectiveRoom = true;
+
         /// <summary>현재 스테이지 그래프. SetGraph로 주입 (시드 재생성 — 멀티 동기화).</summary>
         public MapGraph Graph { get; private set; }
         /// <summary>현재 방 (없으면 null). SYNC: 호스트 권위.</summary>
@@ -196,8 +202,57 @@ namespace TSWP.Map
             TryClear();
         }
 
-        /// <summary>퍼즐 성공 이벤트 → 현재 방이 해당 퍼즐의 목표형이면 클리어 연결.</summary>
-        private void OnPuzzleSolved(string puzzleId) => NotifyObjectiveComplete(puzzleId);
+        /// <summary>
+        /// 퍼즐 성공 이벤트 → 현재 방이 목표형이면 클리어로 연결한다.
+        /// id가 정확히 맞으면 그대로 통과하고, 어긋나면 (프로토타입 규칙에 따라) 경고 후 인정한다.
+        /// "퍼즐을 풀었는데 문이 안 열린다"의 원인 1순위가 id 불일치라 여기서 반드시 로그를 남긴다.
+        /// </summary>
+        private void OnPuzzleSolved(string puzzleId)
+        {
+            NotifyObjectiveComplete(puzzleId);
+
+            var condition = CurrentCondition;
+            if (condition == null || condition.ObjectiveDone) return;                        // 이미 처리됨
+            if (condition.clearType != RoomClearType.ObjectiveComplete) return;              // 목표형 방이 아님
+            if (string.IsNullOrEmpty(condition.objectiveId)) return;                         // 위에서 무조건 수용됨
+
+            if (!acceptAnyPuzzleInObjectiveRoom)
+            {
+                Debug.LogWarning(
+                    $"[RoomManager] 퍼즐 '{puzzleId}'을(를) 풀었지만 이 방의 목표 id는 '{condition.objectiveId}'입니다 — " +
+                    "방이 클리어되지 않습니다. PuzzleDefinition.puzzleId와 RoomDefinition의 puzzleId/objectiveId를 맞추세요.", this);
+                return;
+            }
+
+            Debug.LogWarning(
+                $"[RoomManager] 퍼즐 id 불일치(목표 '{condition.objectiveId}' ≠ 퍼즐 '{puzzleId}') — " +
+                "프로토타입 관용 규칙으로 클리어를 인정합니다. 에셋의 id를 맞추는 것이 정답입니다.", this);
+
+            condition.ObjectiveDone = true;
+            TryClear();
+        }
+
+        // ── 디버그: 강제 클리어 ───────────────────────────────────
+        /// <summary>
+        /// 현재 방을 조건과 무관하게 클리어 처리한다 (개발용 — RoomDebugHud/치트).
+        /// 막혀서 진행이 불가능할 때의 탈출구다. 적을 실제로 죽이지는 않는다.
+        /// </summary>
+        /// <returns>클리어를 새로 확정했으면 true.</returns>
+        public bool ForceClearCurrentRoom()
+        {
+            if (CurrentRoom == null || CurrentRoom.IsCleared) return false;
+
+            if (CurrentCondition != null)
+            {
+                CurrentCondition.SpawnFinished = true;
+                CurrentCondition.RemainingEnemies = 0;
+                CurrentCondition.ObjectiveDone = true;
+            }
+
+            Debug.LogWarning($"[RoomManager] 방 {CurrentRoom.RoomId} 강제 클리어 (디버그).", this);
+            HandleRoomCleared();
+            return true;
+        }
 
         // ── 클리어 판정 ───────────────────────────────────────────
         private void TryClear()

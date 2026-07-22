@@ -41,6 +41,13 @@ namespace TSWP.Map
         [Tooltip("이 방의 출구. 비어 있으면 자식 RoomDoor를 자동 수집한다.")]
         [SerializeField] private List<RoomDoor> doors = new List<RoomDoor>();
 
+        [Tooltip("이 방의 퍼즐. 비어 있으면 자식 PuzzleController를 전부 자동 수집한다.")]
+        [SerializeField] private List<PuzzleController> puzzles = new List<PuzzleController>();
+
+        [Header("퍼즐 클리어 규칙")]
+        [Tooltip("퍼즐이 여러 개일 때 전부 풀어야 방이 클리어된다. 끄면 하나만 풀어도 클리어된다(기본).")]
+        [SerializeField] private bool requireAllPuzzlesSolved = false;
+
         [Header("진입 감지")]
         [Tooltip("체크하면 트리거에 플레이어가 닿을 때 콘텐츠(적/퍼즐/보스)가 시작된다. " +
                  "끄면 방 활성화 즉시 시작한다(결정론적 — 기본 권장).")]
@@ -62,6 +69,7 @@ namespace TSWP.Map
         private RoomNode _node;
         private bool _initialized;
         private bool _contentStarted;
+        private bool _puzzleEventsHooked;
 
         /// <summary>이 방에 배정된 방 id (-1 = 미배정).</summary>
         public int RoomId { get; private set; } = -1;
@@ -74,6 +82,7 @@ namespace TSWP.Map
         public Transform PlayerSpawnPoint => playerSpawnPoint;
         public IReadOnlyList<RoomDoor> Doors => doors;
         public IReadOnlyList<SpawnPoint> EnemySpawnPoints => enemySpawnPoints;
+        public IReadOnlyList<PuzzleController> Puzzles => puzzles;
         public IReadOnlyList<EnemyController> SpawnedEnemies => _spawnedEnemies;
 
         /// <summary>현재 활성 방인지.</summary>
@@ -98,6 +107,7 @@ namespace TSWP.Map
 
             if (enemySpawnPoints.Count == 0) GetComponentsInChildren(true, enemySpawnPoints);
             if (doors.Count == 0) GetComponentsInChildren(true, doors);
+            if (puzzles.Count == 0) GetComponentsInChildren(true, puzzles);
         }
 
         // ── 배선 ─────────────────────────────────────────────────
@@ -133,6 +143,7 @@ namespace TSWP.Map
             }
 
             SetDoorsOpen(false);
+            HookPuzzles(true); // 퍼즐 해결 → 이 방의 목표 달성으로 직결시킨다
 
             if (!startContentOnPlayerTrigger)
                 StartContent();
@@ -142,6 +153,7 @@ namespace TSWP.Map
         public void Deactivate()
         {
             IsActive = false;
+            HookPuzzles(false);
 
             // 이전 방의 적이 따라다니지 않도록 정리한다(풀링 도입 전 임시 — 스펙 unityNotes ③).
             for (int i = 0; i < _spawnedEnemies.Count; i++)
@@ -195,7 +207,7 @@ namespace TSWP.Map
                 RoomEncounterSpawner.RegisterForClear(RoomManager.Instance, boss.Entity);
 
             SpawnEnemies();   // 내부에서 반드시 FinishEnemyRegistration까지 수행한다
-            BeginPuzzle();
+            BeginPuzzles();
 
             if (boss != null) boss.BeginFight();
         }
@@ -237,13 +249,120 @@ namespace TSWP.Map
         }
 
         // ── 콘텐츠: 퍼즐 ──────────────────────────────────────────
-        private void BeginPuzzle()
+        /// <summary>
+        /// 이 방의 퍼즐을 전부 시작한다. Idle로 남은 퍼즐은 요소의 CanInteract가 false라
+        /// "버튼을 눌러도 아무 일이 없다"가 되므로, 방에 들어오면 반드시 Active로 만든다.
+        /// </summary>
+        private void BeginPuzzles()
         {
-            var puzzle = GetComponentInChildren<PuzzleController>(true);
-            if (puzzle == null) return; // 퍼즐이 없는 방 — 조용히 생략
-            puzzle.Begin();
-            // 성공 통지는 PuzzleController.Solve → GameEvents.PuzzleSolved →
-            // RoomManager.NotifyObjectiveComplete로 이미 연결되어 있다.
+            if (puzzles.Count == 0) return; // 퍼즐이 없는 방 — 조용히 생략
+
+            bool anySolved = false;
+            for (int i = 0; i < puzzles.Count; i++)
+            {
+                var puzzle = puzzles[i];
+                if (puzzle == null) continue;
+
+                if (puzzle.State == PuzzleState.Solved) { anySolved = true; continue; }
+
+                // 꺼져 있는 퍼즐은 다른 시스템의 소유다(보스 2막 퍼즐 등 — Bosses.BossPhaseTwoDirector가 켠다).
+                // 방이 먼저 시작시키면 보스 연출 순서가 깨진다.
+                if (!puzzle.gameObject.activeInHierarchy) continue;
+
+                puzzle.Begin();
+            }
+
+            // 이미 풀린 퍼즐만 남은 재진입/사전 해결 상황 — 여기서 목표를 확정하지 않으면
+            // 문이 영영 잠긴 채 남는다(소프트락).
+            if (anySolved) TryCompletePuzzleObjective(false);
+        }
+
+        /// <summary>퍼즐의 Solved 이벤트를 구독/해제한다.</summary>
+        private void HookPuzzles(bool hook)
+        {
+            if (hook == _puzzleEventsHooked) return;
+            _puzzleEventsHooked = hook;
+
+            for (int i = 0; i < puzzles.Count; i++)
+            {
+                var puzzle = puzzles[i];
+                if (puzzle == null) continue;
+
+                if (hook)
+                {
+                    puzzle.Solved += OnPuzzleSolved;
+                    puzzle.GaveUp += OnPuzzleGaveUp;
+                }
+                else
+                {
+                    puzzle.Solved -= OnPuzzleSolved;
+                    puzzle.GaveUp -= OnPuzzleGaveUp;
+                }
+            }
+        }
+
+        private void OnPuzzleSolved(PuzzleController puzzle) => TryCompletePuzzleObjective(false);
+
+        /// <summary>
+        /// 퍼즐 포기(재도전 한도 소진) 통지 → 우회 경로 개방 = 방 목표를 달성 처리해 문을 연다.
+        /// 퍼즐 시스템.md의 '소프트락 금지' 불변식을 방 계층에서 마무리하는 지점이다.
+        /// </summary>
+        private void OnPuzzleGaveUp(PuzzleController puzzle)
+        {
+            Debug.LogWarning($"[RoomInstance] 퍼즐 '{puzzle.name}' 포기 — 우회 경로로 방을 개방합니다.", this);
+            TryCompletePuzzleObjective(true);
+        }
+
+        /// <summary>
+        /// 퍼즐 해결 → 이 방의 목표 달성 통지.
+        /// GameEvents.PuzzleSolved 경로(RoomManager가 id를 대조)와 별개로,
+        /// '이 방에 물리적으로 들어 있는 퍼즐'이라는 사실만으로 목표를 확정한다.
+        /// 그래서 PuzzleDefinition.puzzleId와 RoomDefinition.objectiveId가 어긋나도 문이 열린다.
+        /// </summary>
+        /// <param name="force">true면 '전부 해결' 조건을 무시한다 (퍼즐 포기 → 우회 경로).</param>
+        private void TryCompletePuzzleObjective(bool force)
+        {
+            if (IsCleared) return;
+            if (!force && requireAllPuzzlesSolved && !AllPuzzlesSolved()) return;
+
+            var manager = RoomManager.Instance;
+            if (manager == null) return;
+
+            // 다른 방이 활성인데 이 방의 퍼즐이 풀린 경우까지 클리어시키면 안 된다.
+            if (manager.CurrentRoom == null || manager.CurrentRoom.RoomId != RoomId) return;
+
+            var condition = manager.CurrentCondition;
+            if (condition == null || condition.clearType != RoomClearType.ObjectiveComplete) return;
+
+            // 조건이 기대하는 id를 그대로 되돌려 준다 — 항상 일치하므로 반드시 수용된다.
+            manager.NotifyObjectiveComplete(condition.objectiveId);
+        }
+
+        private bool AllPuzzlesSolved()
+        {
+            bool found = false;
+            for (int i = 0; i < puzzles.Count; i++)
+            {
+                var puzzle = puzzles[i];
+                if (puzzle == null) continue;
+                found = true;
+                if (puzzle.State != PuzzleState.Solved) return false;
+            }
+            return found;
+        }
+
+        /// <summary>디버그: 이 방의 퍼즐을 전부 강제로 해결한다 (RoomDebugHud에서 호출).</summary>
+        public int DebugSolveAllPuzzles()
+        {
+            int solved = 0;
+            for (int i = 0; i < puzzles.Count; i++)
+            {
+                var puzzle = puzzles[i];
+                if (puzzle == null || puzzle.State == PuzzleState.Solved) continue;
+                puzzle.DebugForceSolve();
+                solved++;
+            }
+            return solved;
         }
 
         // 보스는 SpawnManager를 거치지 않으므로 StartContent가 전멸형 카운트에 직접 등록한다.

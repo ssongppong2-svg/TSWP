@@ -19,8 +19,10 @@ namespace TSWP.Puzzles
         [SerializeField] private bool latching = true;
 
         [Header("동시 누름")]
-        [Tooltip("눌림이 유지되는 시간(초). 동시 누름 판정 여유 — 0이면 무한 유지.")]
-        [SerializeField, Min(0f)] private float holdSeconds = 2f; // TODO(밸런스): 문서 미정
+        [Tooltip("눌림이 유지되는 시간(초). 동시 누름 판정 여유 — 0이면 무한 유지(래치).\n" +
+                 "기본 0: 혼자서도 버튼을 차례로 눌러 끝까지 진행할 수 있어야 하기 때문(프로토타입 완주 우선).\n" +
+                 "협동을 강제하려면 버튼 사이 이동 시간보다 짧은 값(2~4초)을 넣는다.")]
+        [SerializeField, Min(0f)] private float holdSeconds = 0f; // TODO(밸런스): 문서 미정 — 동시 누름 유예
 
         public bool IsPressed { get; private set; }
 
