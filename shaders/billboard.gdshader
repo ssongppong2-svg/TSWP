@@ -11,7 +11,11 @@ render_mode cull_disabled, depth_draw_opaque;
 global uniform float bb_stretch;
 global uniform vec3 cam_fwd;
 global uniform sampler2D shade_map : filter_nearest;   // 땅에 구운 그늘 (Terrain) — 그늘 속 풀·사람은 어둡게
-global uniform vec4 shade_area;                        // (x0, z0, 폭, 깊이) m          // 화면 카메라가 보는 방향 — 이것과 다르면 그림자(해) 패스
+global uniform vec4 shade_area;                        // (x0, z0, 폭, 깊이) m
+global uniform vec4 cut_plane;      // 측면 시점: 이 평면(n·p > w)보다 카메라 쪽은 걷어 낸다 (단면)
+global uniform float side_amt;
+global uniform vec4 lane_plane;     // 측면 구간 선 (n, 깊이) — 멀리 있는 것일수록 공기 색      // 0 탑다운 … 1 측면
+global uniform vec4 atmo_col;       // 측면에서 멀리 있는 것을 섞을 공기 색          // 화면 카메라가 보는 방향 — 이것과 다르면 그림자(해) 패스
 global uniform float wind_time;
 global uniform vec4 push_a;
 global uniform vec4 push_b;
@@ -34,7 +38,9 @@ uniform bool use_instance = false;                 // 멀티메시: INSTANCE_CUS
 varying vec4 v_region;
 varying float v_flip;
 varying float v_shade;
-varying vec3 v_nrm;                                // 세계 기준 빛 받는 면 (뒷면 뒤집힘 없이 조각에서 다시 넣는다)
+varying vec3 v_nrm;
+varying float v_cut;                               // 단면까지 거리 (+ 면 걷어 낼 쪽)
+varying float v_lane;                              // 구간 선에서 뒤로 얼마나 먼가 (m)                                // 세계 기준 빛 받는 면 (뒷면 뒤집힘 없이 조각에서 다시 넣는다)
 
 void vertex() {
 	vec4 reg = region;
@@ -45,6 +51,8 @@ void vertex() {
 	}
 	v_region = reg;
 	v_shade = 0.0;
+	v_cut = dot(cut_plane.xyz, MODEL_MATRIX[3].xyz) - cut_plane.w;
+	v_lane = lane_plane.w - dot(lane_plane.xyz, MODEL_MATRIX[3].xyz);
 	if (!use_instance && MODEL_MATRIX[0].x < 0.0) {
 		v_flip = 1.0 - v_flip;               // 노드를 좌우로 뒤집어(scale.x < 0) 두면 그림도 뒤집기
 	}
@@ -103,6 +111,13 @@ void fragment() {
 	if (c.a < 0.5) {
 		discard;
 	}
+	// 측면 단면: 앞쪽 물건은 디더로 사라진다
+	ivec2 bp = ivec2(mod(FRAGCOORD.xy, 4.0));
+	float b4[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+	float th = (b4[bp.y * 4 + bp.x] + 0.5) / 16.0;
+	if (v_cut > th * mix(1.2, 0.05, side_amt)) {
+		discard;
+	}
 	// 멀티메시만 인스턴스 색을 쓴다 (일반 메시는 정점 색이 없어서 COLOR 가 엉뚱한 값일 수 있다)
 	vec3 col = c.rgb * tint.rgb * (use_instance ? COLOR.rgb : vec3(1.0));
 	// 땅 그늘 두 단계 (지형과 같은 색)
@@ -111,6 +126,9 @@ void fragment() {
 	} else if (v_shade > 0.22) {
 		col *= vec3(0.50, 0.66, 0.70);
 	}
+	// 측면: 단면 뒤로 멀수록 공기 색으로 (깊이감)
+	float far_k = clamp((v_lane - 2.0) / 26.0, 0.0, 0.6) * side_amt;
+	col = mix(col, atmo_col.rgb, far_k);
 	ALBEDO = mix(col, vec3(1.0), flash);
 	EMISSION = col * emission + vec3(flash) * 0.6;
 	ROUGHNESS = 1.0;

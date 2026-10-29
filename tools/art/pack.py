@@ -29,11 +29,15 @@ def trim_keep_bottom(a):
     return a[ys.min():ys.max() + 1, x0:x1]
 
 
-def pack(items, path, width=512, keep_bottom=True):
-    """items: [(이름, 캔버스)] → path.png + path.json"""
+def pack(items, path, width=512, keep_bottom=True, trim_cells=True):
+    """items: [(이름, 캔버스)] → path.png + path.json
+    trim_cells=False 면 그림 크기를 그대로 둔다 (애니메이션 프레임처럼 발 위치가 같아야 할 때)"""
     cells = []
     for name, a in items:
-        cells.append((name, trim_keep_bottom(a) if keep_bottom else trim(a)))
+        if not trim_cells:
+            cells.append((name, a))
+        else:
+            cells.append((name, trim_keep_bottom(a) if keep_bottom else trim(a)))
     cells.sort(key=lambda it: -it[1].shape[0])
     x = y = rowh = 0
     pos = {}

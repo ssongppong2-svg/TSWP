@@ -7,7 +7,7 @@ extends Node3D
 const PRESETS := {
 	"forest": {"sky": Color("#9cc9b4"), "amb": Color("#dfeef0"), "amb_e": 0.44, "sun": Color("#fff4dc"), "sun_e": 0.62,
 		"fog": Color("#a9d1bd"), "fog_d": 0.010, "vol": 0.018, "vol_col": Color("#d9f0d4")},
-	"camp": {"sky": Color("#f0c49a"), "amb": Color("#d8d0f0"), "amb_e": 0.42, "sun": Color("#ffe0b0"), "sun_e": 0.64,
+	"camp": {"sky": Color("#c89a8a"), "amb": Color("#b0a8d8"), "amb_e": 0.40, "sun": Color("#ffc890"), "sun_e": 0.42,
 		"fog": Color("#e8b88f"), "fog_d": 0.010, "vol": 0.02, "vol_col": Color("#ffd8b0")},
 	"cave": {"sky": Color("#1d2a33"), "amb": Color("#9ab8d0"), "amb_e": 0.42, "sun": Color("#a8c8d8"), "sun_e": 0.25,
 		"fog": Color("#203038"), "fog_d": 0.03, "vol": 0.03, "vol_col": Color("#6aa0b0")},

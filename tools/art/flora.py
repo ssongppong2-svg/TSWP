@@ -29,18 +29,18 @@ def leaf_clump(a, cx, cy, r, cols, seed, bright=0.0, rim_dark=None, tex=1.0, squ
     lam = -(dx * LX + dy * LY)
     n = len(cols)
     # 뭉치 안은 2~3단 평평한 톤 (레퍼런스처럼 깔끔하게) — 잎 결은 작은 노이즈로만 살짝
-    t = 0.42 + lam * 0.26 + bright
+    t = 0.40 + lam * 0.36 + bright
     nz = vnoise(w, h, 3, seed + 3)
-    t += (nz - 0.5) * 0.14 * tex
-    ramp(a, m, cols, t, dither=0.35)
+    t += (nz - 0.5) * 0.07 * tex
+    ramp(a, m, cols, t, dither=0.12)
     # 아래·오른쪽 가장자리 띠 = 그늘 (2~3px)
     sh = m & ~nb(m, 2, 3)
-    t_sh = t - 0.22
-    ramp(a, sh & (lam < 0.35), cols, t_sh, dither=0.3)
+    t_sh = t - 0.3
+    ramp(a, sh & (lam < 0.35), cols, t_sh, dither=0.1)
     # 왼쪽 위 가장자리 = 빛 받는 볼록한 잎 (오돌토돌한 하이라이트)
     hi = m & ~nb(m, -2, -3) & (lam > -0.1)
     jag = vnoise(w, h, 2, seed + 11) > 0.42
-    ramp(a, hi & jag, cols, t + 0.2, dither=0.2)
+    ramp(a, hi & jag, cols, t + 0.28, dither=0.2)
     # 잎 결: 안쪽 윗부분에 밝은 'ㅅ' 모양 잎 끝 몇 개
     R = random.Random(seed + 99)
     ys_, xs_ = np.nonzero(erode(m, 3) & (dy < 0.2))
@@ -102,7 +102,7 @@ def tree_broad(seed, W=112, H=132, cols=None, trunk_h=34, light=False):
             clumps.append((ry, rx, r * sc * R.uniform(0.9, 1.12)))
     clumps.sort()
     for j, (ry, rx, r) in enumerate(clumps):
-        bright = (crown_cy - ry) / 110.0
+        bright = (crown_cy - ry) / 75.0 + 0.03
         leaf_clump(a, rx, ry, r, cols, seed * 31 + j, bright=bright, rim_dark=cols[1])
     # 잎 아래 줄기에 드리운 그늘
     m_leaf = a[..., 3] > 0

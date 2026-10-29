@@ -23,8 +23,9 @@ var yaw_goal := 0.0
 var zoom := 1.0
 var shake_amt := 0.0
 var _shake_t := 0.0
-var lane_z := 0.0                    # 측면 구간의 깊이 (카메라 중심)
-var _lane_w := 0.0
+var lane_z := 0.0                    # 측면 구간 선: 카메라 정면 방향 깊이 (yaw 0 이면 세계 z)
+const CUT_NEAR := 0.6                # 측면에서 단면이 선보다 이만큼 앞에 (선 위의 풀·사람은 남게)
+signal side_changed(on: bool)
 
 
 func setup(v: PixelView) -> void:
@@ -44,10 +45,18 @@ func setup(v: PixelView) -> void:
 
 ## 측면 시점으로 (on=true) · 되돌리기. yaw: 측면에서 카메라가 바라보는 방향(라디안, 0 = 북쪽 -Z)
 func set_side(on: bool, yaw_rad := 0.0, lane := 0.0) -> void:
+	var was := side_goal > 0.5
 	side_goal = 1.0 if on else 0.0
 	if on:
 		yaw_goal = yaw_rad
 		lane_z = lane
+	if was != on:
+		side_changed.emit(on)
+
+
+## 측면 구간 선의 바깥 방향(카메라 쪽, 수평)
+func lane_normal() -> Vector3:
+	return Basis(Vector3.UP, yaw_goal if side_goal > 0.5 else yaw).z
 
 
 func pitch() -> float:
@@ -65,9 +74,10 @@ func _process(dt: float) -> void:
 	# 전환 속도: 0.7초에 걸쳐 돌아간다
 	side_t = move_toward(side_t, side_goal, dt / 0.7)
 	yaw = lerp_angle(yaw, yaw_goal if side_goal > 0.5 else 0.0, 1.0 - exp(-6.0 * dt))
-	_lane_w = move_toward(_lane_w, side_goal, dt / 0.7)
 	if target and is_instance_valid(target):
-		var want := target.global_position + Vector3(0, 0.6, 0) + look_ahead
+		# 측면에선 화면 아래쪽에 땅이 덜 보이게 초점을 위로
+		var k_side := side_t * side_t * (3.0 - 2.0 * side_t)
+		var want := target.global_position + Vector3(0, 0.6 + 2.4 * k_side, 0) + look_ahead
 		focus = focus.lerp(want, 1.0 - exp(-9.0 * dt))
 	var p := pitch()
 	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -p)
@@ -92,6 +102,13 @@ func _process(dt: float) -> void:
 	RenderingServer.global_shader_parameter_set("bb_stretch", 1.0 / maxf(0.2, cos(p)))
 	RenderingServer.global_shader_parameter_set("cam_pitch", p)
 	RenderingServer.global_shader_parameter_set("cam_fwd", -basis.z)
+	# 단면: 측면으로 갈수록 멀리서부터 선 앞(CUT_NEAR)까지 다가온다
+	var k := side_t * side_t * (3.0 - 2.0 * side_t)
+	var n := lane_normal()
+	var dist := lerpf(80.0, CUT_NEAR, k) if k > 0.001 else 100000.0
+	RenderingServer.global_shader_parameter_set("cut_plane", Vector4(n.x, n.y, n.z, lane_z + dist))
+	RenderingServer.global_shader_parameter_set("side_amt", k)
+	RenderingServer.global_shader_parameter_set("lane_plane", Vector4(n.x, n.y, n.z, lane_z))
 
 
 ## 화면(창) 좌표 → 높이 plane_y 평면 위 세계 좌표

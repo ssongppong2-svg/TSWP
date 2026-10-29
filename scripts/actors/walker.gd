@@ -11,8 +11,9 @@ const GRAV := 26.0
 const JUMP := 8.6
 
 var rig: CamRig
-var sprite: MeshInstance3D
+var spr: CharSprite
 var shadow: MeshInstance3D
+var who := "warrior"
 var auto_dir := Vector3.ZERO          # 자동 걷기 (영상용)
 var roll_t := 0.0
 var roll_dir := Vector3.ZERO
@@ -31,9 +32,16 @@ func _ready() -> void:
 	cs.shape = cap
 	cs.position.y = 0.45
 	add_child(cs)
-	if ResourceLoader.exists("res://assets/sprites/chars.png"):
-		sprite = BB.make("res://assets/sprites/chars.png", "hero_s0", {"unique": true, "up_normal": 0.5})
-		add_child(sprite)
+	spr = CharSprite.new(who)
+	add_child(spr.mesh)
+	shadow = BB.blob(0.42, 0.2, 0.9)
+	add_child(shadow)
+
+
+func jump() -> void:
+	if is_on_floor():
+		velocity.y = JUMP
+		Audio.play("jump", global_position)
 
 
 func _physics_process(dt: float) -> void:
@@ -63,15 +71,31 @@ func _physics_process(dt: float) -> void:
 		velocity.z = move_toward(velocity.z, want.z, acc * dt)
 		if Input.is_action_just_pressed("roll"):
 			if side:
-				if is_on_floor():
-					velocity.y = JUMP
-					Audio.play("jump", global_position)
+				jump()
 			elif dir != Vector3.ZERO:
 				roll_t = 0.32
 				roll_dir = dir.normalized()
 				Audio.play("dash", global_position)
 	if dir != Vector3.ZERO:
 		facing = dir.normalized()
+	# 그림
+	if spr:
+		spr.face(facing, yaw)
+		if roll_t > 0.0:
+			spr.play("roll")
+		elif not is_on_floor():
+			spr.play("jump" if velocity.y > 0.0 else "fall")
+		elif Vector2(velocity.x, velocity.z).length() > 0.4:
+			spr.play("run" if spd > WALK + 0.1 else "walk")
+		else:
+			spr.play("idle")
+		spr.update(dt)
+	if side and rig:
+		# 측면: 구간 선에 붙는다 (앞뒤로는 못 움직인다)
+		var n := rig.lane_normal()
+		var off := global_position.dot(n) - rig.lane_z
+		velocity -= n * velocity.dot(n)
+		velocity -= n * off * 8.0
 	if Input.is_action_just_pressed("debug_side") and rig:
 		rig.set_side(rig.side_goal < 0.5, 0.0, global_position.z)
 	move_and_slide()

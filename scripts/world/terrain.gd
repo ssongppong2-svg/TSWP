@@ -70,6 +70,46 @@ func build(hts: Array, ms: Array, ground_tex: Texture2D, wall_tex: Texture2D, n_
 	add_child(body)
 
 
+## 측면 단면 뚜껑: 구간 선(z = lane, 카메라 쪽 면)을 따라 땅 속을 막는 벽.
+## 지형과 같은 재질이라 꼭대기 잔디·바위 무늬가 그대로 이어진다. yaw 0 (세계 z) 구간만.
+var cut_mesh: MeshInstance3D
+
+
+func make_cut(lane: float) -> void:
+	clear_cut()
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var gz := clampi(int(floor(lane / CELL)), 0, h - 1)
+	var zf := lane - 0.005
+	for x in w:
+		var top := level(x, gz) * LEVEL_H
+		var x0 := x * CELL
+		var x1 := x0 + CELL
+		var a := Vector3(x0, -12.0, zf)
+		var b := Vector3(x1, -12.0, zf)
+		var c := Vector3(x1, top, zf)
+		var e := Vector3(x0, top, zf)
+		st.set_uv2(Vector2(-12.0, top))
+		st.set_normal(Vector3(0, 0, 1))
+		st.add_vertex(a)
+		st.add_vertex(c)
+		st.add_vertex(b)
+		st.add_vertex(a)
+		st.add_vertex(e)
+		st.add_vertex(c)
+	cut_mesh = MeshInstance3D.new()
+	cut_mesh.mesh = st.commit()
+	cut_mesh.material_override = material
+	cut_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(cut_mesh)
+
+
+func clear_cut() -> void:
+	if cut_mesh and is_instance_valid(cut_mesh):
+		cut_mesh.queue_free()
+	cut_mesh = null
+
+
 ## 그늘 한 덩이 (타원). p: 세계 위치(가운데), rx·rz: 반지름(m), k: 진하기 0~1. 가장자리는 부드럽게.
 func blob(p: Vector3, rx: float, rz: float, k := 0.8) -> void:
 	var cx := p.x * SHADE_PX

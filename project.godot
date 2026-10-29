@@ -53,6 +53,22 @@ shade_area={
 "type": "vec4",
 "value": Vector4(0, 0, 64, 64)
 }
+cut_plane={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 10000)
+}
+lane_plane={
+"type": "vec4",
+"value": Vector4(0, 0, 1, 0)
+}
+side_amt={
+"type": "float",
+"value": 0.0
+}
+atmo_col={
+"type": "color",
+"value": Color(0.61, 0.79, 0.71, 1)
+}
 wind_time={
 "type": "float",
 "value": 0.0

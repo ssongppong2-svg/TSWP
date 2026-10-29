@@ -10,6 +10,10 @@ render_mode cull_back;
 #include "res://shaders/inc/toon.gdshaderinc"
 
 global uniform float cam_pitch;
+global uniform vec4 cut_plane;
+global uniform float side_amt;
+global uniform vec4 lane_plane;     // 측면 구간 선 (n, 깊이) — 멀리 있는 것일수록 공기 색
+global uniform vec4 atmo_col;
 
 uniform sampler2D ground : source_color, filter_nearest, repeat_enable;   // 세로로 재질 N장 (각 128x128)
 uniform sampler2D wall_tex : source_color, filter_nearest, repeat_enable; // 절벽 64x64
@@ -62,6 +66,11 @@ float lvl_of(vec2 c) {
 }
 
 void fragment() {
+	// 측면 단면: 카메라 쪽은 걷어 낸다 (단면 뚜껑은 Terrain.make_cut 이 따로 세운다)
+	float cut_d = dot(cut_plane.xyz, wpos) - cut_plane.w;
+	if (cut_d > 0.0) {
+		discard;
+	}
 	float sp = max(sin(cam_pitch), 0.12);
 	float cp = max(cos(cam_pitch), 0.2);
 	vec3 col;
@@ -118,9 +127,15 @@ void fragment() {
 		} else if (from_top < fl + 1.0) {
 			col *= 0.62;                                   // 잔디 밑 그늘 한 줄
 		}
-		// 밑동 그늘
-		col = mix(col, wall_shadow, (1.0 - smoothstep(0.0, 5.0, from_bot)) * 0.55);
+		// 밑동 그늘 (단면 뚜껑·지도 끝 벽은 아래로 갈수록 땅속처럼 어둡게)
+		if (wall_span.x > -2.5) {
+			col = mix(col, wall_shadow, (1.0 - smoothstep(0.0, 5.0, from_bot)) * 0.55);
+		} else {
+			col = mix(col, wall_shadow, clamp(-wpos.y / 7.0, 0.0, 0.75));
+		}
 	}
+	float lane_d = lane_plane.w - dot(lane_plane.xyz, wpos);
+	col = mix(col, atmo_col.rgb, clamp((lane_d - 2.0) / 26.0, 0.0, 0.6) * side_amt);
 	ALBEDO = col;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
