@@ -14,6 +14,7 @@ func _init() -> void:
 	HM = 32.0
 	spawn = Vector3(20.0, 0, 19.5)
 	env_preset = "camp"
+	exits = [[Rect2(16.0, -0.6, 8.0, 1.0), "forest", Vector3(29.0, 0, 49.0)]]
 	music = "camp"
 	ambience = "camp"
 

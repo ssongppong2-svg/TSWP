@@ -60,6 +60,7 @@ static func make(path: String, name: String, opts := {}) -> MeshInstance3D:
 		m.set_shader_parameter("up_normal", float(opts.get("up_normal", 0.85)))
 		m.set_shader_parameter("emission", float(opts.get("emission", 0.0)))
 		m.set_shader_parameter("receive_shade", bool(opts.get("receive_shade", true)))
+		m.set_shader_parameter("see_through", bool(opts.get("see_through", false)))
 		if opts.has("tint"):
 			m.set_shader_parameter("tint", opts["tint"])
 		if not opts.get("unique", false):

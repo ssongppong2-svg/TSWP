@@ -61,6 +61,10 @@ lane_plane={
 "type": "vec4",
 "value": Vector4(0, 0, 1, 0)
 }
+focus_screen={
+"type": "vec4",
+"value": Vector4(-1000, -1000, 0, 0)
+}
 side_amt={
 "type": "float",
 "value": 0.0

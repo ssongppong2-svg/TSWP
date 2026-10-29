@@ -15,7 +15,8 @@ global uniform vec4 shade_area;                        // (x0, z0, 폭, 깊이) 
 global uniform vec4 cut_plane;      // 측면 시점: 이 평면(n·p > w)보다 카메라 쪽은 걷어 낸다 (단면)
 global uniform float side_amt;
 global uniform vec4 lane_plane;     // 측면 구간 선 (n, 깊이) — 멀리 있는 것일수록 공기 색      // 0 탑다운 … 1 측면
-global uniform vec4 atmo_col;       // 측면에서 멀리 있는 것을 섞을 공기 색          // 화면 카메라가 보는 방향 — 이것과 다르면 그림자(해) 패스
+global uniform vec4 atmo_col;       // 측면에서 멀리 있는 것을 섞을 공기 색
+global uniform vec4 focus_screen;   // (화면 x, y, 깊이 기준값, 반지름) — 주인공을 가리는 큰 물건은 그 둘레를 비춰 보이게          // 화면 카메라가 보는 방향 — 이것과 다르면 그림자(해) 패스
 global uniform float wind_time;
 global uniform vec4 push_a;
 global uniform vec4 push_b;
@@ -33,6 +34,7 @@ uniform float up_normal = 0.85;                    // 빛 받는 방향: 1 = 땅
 uniform float emission = 0.0;
 uniform float shadow_h = 0.5;                      // 그림자 키 (1 = 실제 키)
 uniform bool receive_shade = true;                 // 나무·덤불처럼 그늘을 만드는 쪽은 끈다
+uniform bool see_through = false;                  // 나무·천막처럼 주인공을 가릴 수 있는 것
 uniform bool use_instance = false;                 // 멀티메시: INSTANCE_CUSTOM = (region.x, region.y, region.w, region.h)
 
 varying vec4 v_region;
@@ -40,7 +42,8 @@ varying float v_flip;
 varying float v_shade;
 varying vec3 v_nrm;
 varying float v_cut;                               // 단면까지 거리 (+ 면 걷어 낼 쪽)
-varying float v_lane;                              // 구간 선에서 뒤로 얼마나 먼가 (m)                                // 세계 기준 빛 받는 면 (뒷면 뒤집힘 없이 조각에서 다시 넣는다)
+varying float v_lane;                              // 구간 선에서 뒤로 얼마나 먼가 (m)
+varying float v_front;                             // 주인공보다 카메라 쪽에 있는가 (+)                                // 세계 기준 빛 받는 면 (뒷면 뒤집힘 없이 조각에서 다시 넣는다)
 
 void vertex() {
 	vec4 reg = region;
@@ -53,6 +56,8 @@ void vertex() {
 	v_shade = 0.0;
 	v_cut = dot(cut_plane.xyz, MODEL_MATRIX[3].xyz) - cut_plane.w;
 	v_lane = lane_plane.w - dot(lane_plane.xyz, MODEL_MATRIX[3].xyz);
+	vec3 hz = normalize(vec3(cam_fwd.x, 0.0, cam_fwd.z) + vec3(0.0, 0.0, 0.0001));
+	v_front = focus_screen.z - dot(hz, MODEL_MATRIX[3].xyz);
 	if (!use_instance && MODEL_MATRIX[0].x < 0.0) {
 		v_flip = 1.0 - v_flip;               // 노드를 좌우로 뒤집어(scale.x < 0) 두면 그림도 뒤집기
 	}
@@ -117,6 +122,13 @@ void fragment() {
 	float th = (b4[bp.y * 4 + bp.x] + 0.5) / 16.0;
 	if (v_cut > th * mix(1.2, 0.05, side_amt)) {
 		discard;
+	}
+	// 주인공 둘레 비춰 보기: 주인공보다 앞에 있는 큰 물건만, 둘레는 디더로 부드럽게
+	if (see_through && v_front > 0.15) {
+		float d = length(FRAGCOORD.xy - focus_screen.xy) / focus_screen.w;
+		if (d < 1.0 && th > 0.25 + smoothstep(0.55, 1.0, d) * 0.75) {
+			discard;
+		}
 	}
 	// 멀티메시만 인스턴스 색을 쓴다 (일반 메시는 정점 색이 없어서 COLOR 가 엉뚱한 값일 수 있다)
 	vec3 col = c.rgb * tint.rgb * (use_instance ? COLOR.rgb : vec3(1.0));

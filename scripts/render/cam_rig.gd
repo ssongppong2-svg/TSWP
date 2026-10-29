@@ -21,6 +21,7 @@ var side_goal := 0.0
 var yaw := 0.0                       # 측면일 때 바라보는 방향 (구간마다 다를 수 있음)
 var yaw_goal := 0.0
 var zoom := 1.0
+var bounds := Rect2()                # 지역 크기 (x, z) — 화면이 지역 밖을 보이지 않게 초점을 묶는다
 var shake_amt := 0.0
 var _shake_t := 0.0
 var lane_z := 0.0                    # 측면 구간 선: 카메라 정면 방향 깊이 (yaw 0 이면 세계 z)
@@ -79,6 +80,7 @@ func _process(dt: float) -> void:
 		var k_side := side_t * side_t * (3.0 - 2.0 * side_t)
 		var want := target.global_position + Vector3(0, 0.6 + 2.4 * k_side, 0) + look_ahead
 		focus = focus.lerp(want, 1.0 - exp(-9.0 * dt))
+	var fc := _clamped(focus)
 	var p := pitch()
 	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -p)
 	# 흔들림
@@ -88,7 +90,7 @@ func _process(dt: float) -> void:
 	var back := basis.z
 	var right := basis.x
 	var up := basis.y
-	var c := focus + back * DIST + right * sh.x + up * sh.y
+	var c := fc + back * DIST + right * sh.x + up * sh.y
 	# 픽셀 끊기: 카메라 평면의 오른쪽·위 성분만
 	var cr := c.dot(right)
 	var cu := c.dot(up)
@@ -97,6 +99,12 @@ func _process(dt: float) -> void:
 	var su := roundf(cu * PPU) / PPU
 	cam.global_transform = Transform3D(basis, right * sr + up * su + back * cb)
 	ear.global_transform = Transform3D(Basis(Vector3.UP, yaw), focus)
+	# 주인공 화면 위치 (가리는 나무 비춰 보기)
+	if target and is_instance_valid(target):
+		var tp := target.global_position + Vector3(0, 0.7, 0)
+		var sp := cam.unproject_position(tp)
+		var hz := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
+		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 22.0))
 	view.sub_offset = Vector2((cr - sr) * PPU, -(cu - su) * PPU)
 	cam.size = float(PixelView.GH + PixelView.MARGIN * 2) / PPU / zoom
 	RenderingServer.global_shader_parameter_set("bb_stretch", 1.0 / maxf(0.2, cos(p)))
@@ -109,6 +117,23 @@ func _process(dt: float) -> void:
 	RenderingServer.global_shader_parameter_set("cut_plane", Vector4(n.x, n.y, n.z, lane_z + dist))
 	RenderingServer.global_shader_parameter_set("side_amt", k)
 	RenderingServer.global_shader_parameter_set("lane_plane", Vector4(n.x, n.y, n.z, lane_z))
+
+
+## 초점을 지역 안으로: 화면 가장자리가 지역 밖(빈 하늘)을 보이지 않게
+func _clamped(f: Vector3) -> Vector3:
+	if bounds.size == Vector2.ZERO:
+		return f
+	var hw := PixelView.GW * 0.5 / PPU / zoom
+	var hh := PixelView.GH * 0.5 / PPU / zoom
+	var p := pitch()
+	var out := f
+	if bounds.size.x > hw * 2.0:
+		out.x = clampf(f.x, bounds.position.x + hw, bounds.end.x - hw)
+	# 탑다운에서 세로: 화면 위·아래가 땅에 닿는 깊이 (높이는 대충 초점 높이 기준)
+	var depth_h := hh / maxf(sin(p), 0.2)
+	if side_t < 0.5 and bounds.size.y > depth_h * 2.0:
+		out.z = clampf(f.z, bounds.position.y + depth_h, bounds.end.y - depth_h + 0.6)
+	return out
 
 
 ## 화면(창) 좌표 → 높이 plane_y 평면 위 세계 좌표

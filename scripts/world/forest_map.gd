@@ -5,10 +5,17 @@ extends Region
 ##  · 가장자리는 빽빽한 숲, 가운데는 트인 풀밭과 꽃, 돌바닥 공터
 
 
+## 측면 구간: 절벽 앞 바위 능선 (x 42~62, 구간 선 z 26). 1m 마다 층 — 점프로 오르내리고 가운데 웅덩이 하나
+const RIDGE := Rect2(42.0, 24.5, 20.0, 3.0)
+const RIDGE_LV := [0, 1, 1, 2, 2, 1, 1, 0, 0, 1, 2, 3, 3, 2, 2, 1, 1, 2, 2, 1]
+
+
 func _init() -> void:
 	WM = 64.0
 	HM = 52.0
-	spawn = Vector3(32, 0, 44)
+	spawn = Vector3(29, 0, 49)
+	side_zones = [[Rect2(41.6, 23.6, 21.0, 4.8), 26.0]]
+	exits = [[Rect2(22.0, 51.2, 14.0, 1.0), "camp", Vector3(20.0, 0, 1.6)]]
 
 
 func _path_x(z: float) -> float:
@@ -17,6 +24,8 @@ func _path_x(z: float) -> float:
 
 ## 세계 위치(m)의 층
 func _level_at(x: float, z: float) -> int:
+	if RIDGE.has_point(Vector2(x, z)):
+		return RIDGE_LV[clampi(int(x - RIDGE.position.x), 0, RIDGE_LV.size() - 1)]
 	var n := noise.get_noise_2d(x, z)
 	var lvl := 0
 	var edge := 17.0 + n * 6.0 + noise.get_noise_2d(x * 3.0, 50) * 1.2
@@ -64,6 +73,10 @@ func _post_cells() -> void:
 
 
 func _decorate() -> void:
+	# 능선 둘레는 비워 둔다 (측면에서 앞을 가리지 않게)
+	for gz in range(int((RIDGE.position.y - 2.0) / C), int((RIDGE.end.y + 2.5) / C)):
+		for gx in range(int((RIDGE.position.x - 1.0) / C), mini(gw, int((RIDGE.end.x + 1.0) / C))):
+			blocked[Vector2i(gx, gz)] = true
 	scatter_trees(2600)
 	scatter_props([["rock0", 6], ["rock1", 10], ["rock2", 4], ["stump0", 4], ["log0", 3], ["bush_light", 6], ["bush1", 6]])
 	scatter_grass()

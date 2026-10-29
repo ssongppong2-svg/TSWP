@@ -24,6 +24,8 @@ var env_preset := "forest"
 var music := "forest"
 var ambience := "forest"
 var lights: Array = []           # [OmniLight3D, 기본 세기, 흔들림] — 모닥불·등불 깜빡임
+var side_zones: Array = []       # [Rect2(x, z, 폭, 깊이), 구간 선 z] — 들어가면 측면 시점
+var exits: Array = []            # [Rect2, 다음 지역 이름, 도착 위치 Vector3]
 
 
 func build(seed_: int = 7) -> void:
@@ -55,6 +57,20 @@ func build(seed_: int = 7) -> void:
 				blocked[Vector2i(gx, gz)] = true
 	_decorate()
 	terrain.commit_shade()
+	_bounds()
+
+
+## 지역 가장자리 보이지 않는 벽 (출구는 벽 안쪽에 있어서 먼저 닿는다)
+func _bounds() -> void:
+	for r in [Rect2(-1, -1, WM + 2, 1), Rect2(-1, HM, WM + 2, 1), Rect2(-1, 0, 1, HM), Rect2(WM, 0, 1, HM)]:
+		var b := StaticBody3D.new()
+		var cs := CollisionShape3D.new()
+		var bx := BoxShape3D.new()
+		bx.size = Vector3(r.size.x, 30.0, r.size.y)
+		cs.shape = bx
+		b.add_child(cs)
+		b.position = Vector3(r.position.x + r.size.x * 0.5, 10.0, r.position.y + r.size.y * 0.5)
+		add_child(b)
 
 
 # ---- 지역마다 채우는 것
@@ -181,7 +197,7 @@ func solid_box(p: Vector3, size: Vector3) -> void:
 
 ## 나무 한 그루 (그늘·충돌 포함)
 func tree(p: Vector3, name: String, flip := false) -> MeshInstance3D:
-	var t := BB.make(FLORA, name, {"sway": 0.06, "receive_shade": false})
+	var t := BB.make(FLORA, name, {"sway": 0.06, "receive_shade": false, "see_through": true})
 	t.position = p
 	if flip:
 		t.scale.x = -1.0
@@ -211,7 +227,8 @@ func prop(c: Vector2i, nm: String) -> MeshInstance3D:
 func camp_prop(x: float, z: float, nm: String, opts := {}) -> MeshInstance3D:
 	var p := Vector3(x, 0, z)
 	p.y = terrain.height_at(p)
-	var s := BB.make(CAMP, nm, {"receive_shade": false, "emission": float(opts.get("emission", 0.0)), "unique": opts.has("frames")})
+	var big := BB.px_size(CAMP, nm).y > 28.0
+	var s := BB.make(CAMP, nm, {"receive_shade": false, "emission": float(opts.get("emission", 0.0)), "unique": opts.has("frames"), "see_through": big})
 	s.position = p
 	if opts.get("flip", false):
 		s.scale.x = -1.0
