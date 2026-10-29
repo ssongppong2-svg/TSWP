@@ -16,6 +16,16 @@ func _init() -> void:
 	spawn = Vector3(29, 0, 49)
 	side_zones = [[Rect2(41.6, 23.6, 21.0, 4.8), 26.0]]
 	exits = [[Rect2(22.0, 51.2, 14.0, 1.0), "camp", Vector3(20.0, 0, 1.6)]]
+	# 적 무리 (적 시스템.md: 역할을 섞는다 — 근접 + 원거리, 빠른 것 + 느린 것)
+	groups = [
+		{"at": Vector3(24, 0, 38), "kinds": ["acorn", "acorn", "acorn"], "r": 9.0, "done": false},
+		{"at": Vector3(40, 0, 33), "kinds": ["acorn", "shroom", "acorn"], "r": 9.0, "done": false},
+		{"at": Vector3(14, 0, 44), "kinds": ["spider", "spider"], "r": 8.0, "done": false},
+		{"at": Vector3(52, 0, 40), "kinds": ["shroom", "shroom", "acorn", "spider"], "r": 10.0, "done": false},
+		{"at": Vector3(50, 0, 26), "kinds": ["acorn", "spider"], "r": 7.0, "done": false},
+		{"at": Vector3(20, 0, 28), "kinds": ["spider", "shroom", "acorn", "acorn"], "r": 9.0, "done": false},
+		{"at": Vector3(30, 4, 10), "kinds": ["acorn", "shroom", "shroom", "spider", "acorn"], "r": 10.0, "done": false},
+	]
 
 
 func _path_x(z: float) -> float:

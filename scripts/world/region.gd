@@ -26,6 +26,9 @@ var ambience := "forest"
 var lights: Array = []           # [OmniLight3D, 기본 세기, 흔들림] — 모닥불·등불 깜빡임
 var side_zones: Array = []       # [Rect2(x, z, 폭, 깊이), 구간 선 z] — 들어가면 측면 시점
 var exits: Array = []            # [Rect2, 다음 지역 이름, 도착 위치 Vector3]
+var groups: Array = []           # 적 무리: {"at": Vector3, "kinds": [...], "r": 깨어나는 거리, "done": false}
+var rig: CamRig
+signal enemy_spawned(e: Enemy)
 
 
 func build(seed_: int = 7) -> void:
@@ -88,6 +91,27 @@ func _post_cells() -> void:
 
 func _decorate() -> void:
 	pass
+
+
+## 적 무리: 플레이어가 가까이 오면 나타난다 (화면 가장자리 쪽에서 — 갑자기 코앞에 생기지 않게)
+func spawn_check(players: Array) -> void:
+	for g in groups:
+		if g["done"]:
+			continue
+		for p in players:
+			var pl := p as Node3D
+			if pl.global_position.distance_to(g["at"]) < float(g["r"]):
+				g["done"] = true
+				var i := 0
+				for k in g["kinds"]:
+					var ang := TAU * i / float((g["kinds"] as Array).size()) + rng.randf() * 0.5
+					var pos: Vector3 = g["at"] + Vector3(cos(ang), 0, sin(ang)) * rng.randf_range(1.0, 2.6)
+					pos.y = terrain.height_at(pos) + 0.2
+					var e := Enemy.spawn(self, k, pos, terrain, rig)
+					enemy_spawned.emit(e)
+					i += 1
+				Audio.play("spawn", g["at"])
+				break
 
 
 func _process(_dt: float) -> void:

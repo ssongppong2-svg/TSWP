@@ -32,6 +32,7 @@ uniform vec4 tint : source_color = vec4(1.0);
 uniform float flip = 0.0;                          // 1 = 좌우 뒤집기
 uniform float up_normal = 0.85;                    // 빛 받는 방향: 1 = 땅처럼 위, 0 = 카메라 쪽
 uniform float emission = 0.0;
+uniform float spin = 0.0;                          // 화면에서 돌리기 (라디안) — 날아가는 화살·주사
 uniform float shadow_h = 0.5;                      // 그림자 키 (1 = 실제 키)
 uniform bool receive_shade = true;                 // 나무·덤불처럼 그늘을 만드는 쪽은 끈다
 uniform bool see_through = false;                  // 나무·천막처럼 주인공을 가릴 수 있는 것
@@ -72,6 +73,11 @@ void vertex() {
 	vec3 view_fwd = -INV_VIEW_MATRIX[2].xyz;
 	bool shadow_pass = dot(view_fwd, cam_fwd) < 0.995;
 	vec3 local = VERTEX;
+	if (spin != 0.0) {
+		float cs = cos(spin);
+		float sn = sin(spin);
+		local.xy = vec2(local.x * cs - local.y * sn, local.x * sn + local.y * cs);
+	}
 	local.x *= sx;
 	local.y *= sy * (shadow_pass ? shadow_h : bb_stretch);
 	// 바람: 꼭대기일수록, 자리마다 다른 박자로

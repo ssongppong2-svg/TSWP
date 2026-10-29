@@ -11,13 +11,15 @@ const DEFAULT := {
 	"roll": [KEY_SPACE],          # 탑다운: 구르기 · 측면: 점프
 	"run": [KEY_SHIFT],
 	"interact": [KEY_E],
-	"emote": [KEY_Q],
+	"emote": [KEY_T],
 	"ping": [KEY_F],
 	"menu": [KEY_ESCAPE],
 	"debug_side": [KEY_F2],
+	"skill": [KEY_Q],
+	"switch_job": [KEY_TAB],
 }
-const MOUSE := {"attack": MOUSE_BUTTON_LEFT, "throw": MOUSE_BUTTON_RIGHT}
-const PAD_BTN := {"roll": JOY_BUTTON_A, "attack": JOY_BUTTON_X, "throw": JOY_BUTTON_Y, "interact": JOY_BUTTON_B,
+const MOUSE := {"attack": MOUSE_BUTTON_LEFT, "skill": MOUSE_BUTTON_RIGHT, "ping": MOUSE_BUTTON_MIDDLE}
+const PAD_BTN := {"roll": JOY_BUTTON_A, "attack": JOY_BUTTON_X, "skill": JOY_BUTTON_Y, "interact": JOY_BUTTON_B,
 	"run": JOY_BUTTON_LEFT_SHOULDER, "menu": JOY_BUTTON_START, "emote": JOY_BUTTON_DPAD_UP, "ping": JOY_BUTTON_RIGHT_SHOULDER}
 const PAD_AXIS := {"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
 	"move_up": [JOY_AXIS_LEFT_Y, -1.0], "move_down": [JOY_AXIS_LEFT_Y, 1.0]}

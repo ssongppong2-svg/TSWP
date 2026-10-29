@@ -8,6 +8,8 @@ extends Node
 ##    --tour              정해진 길을 걸으며 중간에 측면 전환 (godot --write-movie 와 함께 영상 만들기용)
 ##    --at=x,z            시작 위치
 ##    --map=camp|forest   지역 (기본: 캠프)
+##    --bot[=job]         자동 플레이 (가까운 적에게 가서 싸우고 스킬도 쓴다 — 시험·영상용)
+##    --quit=초           몇 초 뒤 끝내기
 
 const MAPS := {"camp": "캠프", "forest": "속삭이는 숲"}
 
@@ -17,9 +19,13 @@ var rig: CamRig
 var env: StageEnv
 var map: Region
 var map_name := ""
-var walker: Walker
+var walker: Player
+var party: Party
+var hud: Hud
+var job := "warrior"
 var args := {}
 var _frame := 0
+var _game_t := 0.0
 var _switching := false
 var _manual_side := false
 # UI
@@ -36,6 +42,9 @@ func _ready() -> void:
 	Controls.ensure()
 	pv = PixelView.new()
 	add_child(pv)
+	party = Party.new()
+	add_child(party)
+	party.setup(1)
 	_build_ui()
 	var at: Variant = null
 	if args.has("at"):
@@ -67,12 +76,16 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	world.add_child(map)
 	map.build(7)
 	env.apply(map.env_preset, true)
-	walker = Walker.new()
+	walker = Player.new()
+	walker.job = job
 	walker.terrain = map.terrain
 	world.add_child(walker)
+	walker.job_changed.connect(func(pl: Player): job = pl.job)
 	var p: Vector3 = at if at != null else map.spawn
 	p.y = map.terrain.height_at(p) + 0.1
 	walker.position = p
+	walker.spawn_point = p
+	hud.player = walker
 	rig = CamRig.new()
 	world.add_child(rig)
 	rig.setup(pv)
@@ -80,6 +93,8 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	rig.target = walker
 	rig.focus = walker.position + Vector3(0, 0.6, 0)
 	walker.rig = rig
+	map.rig = rig
+	map.enemy_spawned.connect(func(e: Enemy): e.killed.connect(party.on_enemy_killed))
 	rig.side_changed.connect(func(on: bool):
 		if on:
 			map.terrain.make_cut(rig.lane_z + CamRig.CUT_NEAR)
@@ -106,7 +121,10 @@ func _go(name_: String, at: Vector3) -> void:
 # ------------------------------------------------------------------ UI
 func _build_ui() -> void:
 	var ui := pv.ui
-	help = PixelFont.label("WASD 이동  Shift 달리기  Space 구르기/점프  클릭 베기  F2 시점  1·2 지역", "small", Color(1, 1, 1, 0.85))
+	hud = Hud.new()
+	hud.party = party
+	ui.add_child(hud)
+	help = PixelFont.label("WASD 이동 Shift 달리기 Space 구르기/점프 클릭 공격 Q 스킬 Tab 직업 F2 시점 1·2 지역", "small", Color(1, 1, 1, 0.8))
 	help.position = Vector2(6, PixelView.GH - 15)
 	ui.add_child(help)
 	title = PixelFont.label("", "big", Color("#fff4d6"))
@@ -148,13 +166,17 @@ func _process(dt: float) -> void:
 		var wp := walker.global_position
 		RenderingServer.global_shader_parameter_set("push_a", Vector4(wp.x, wp.y, wp.z, clampf(Vector2(walker.velocity.x, walker.velocity.z).length(), 0.3, 1.0)))
 		_check_zones(wp)
+		map.spawn_check([walker])
 	# 도트 조준점
 	var mp := pv.to_ui(get_tree().root.get_mouse_position())
 	cursor.position = (mp - Vector2(5, 5)).round()
-	cursor.visible = Input.mouse_mode == Input.MOUSE_MODE_HIDDEN
+	cursor.visible = Input.mouse_mode == Input.MOUSE_MODE_HIDDEN and not args.has("bot")
 	if Input.is_action_just_pressed("debug_side"):
 		_manual_side = rig.side_goal < 0.5
-	if Input.is_key_pressed(KEY_1) and map_name != "camp":
+	if Input.is_key_pressed(KEY_1) and (map_name != "camp" or party.over):
+		if party.over:
+			party.over = false
+			party.setup(1)
 		_go("camp", Vector3(20, 0, 19.5))
 	if Input.is_key_pressed(KEY_2) and map_name != "forest":
 		_go("forest", Vector3(32, 0, 44))
@@ -165,6 +187,63 @@ func _process(dt: float) -> void:
 		get_tree().quit()
 	if args.has("tour"):
 		_tour(dt)
+	if args.has("bot"):
+		_bot(dt)
+	_game_t += dt
+	if args.has("quit") and _game_t > float(args["quit"]):
+		get_tree().quit()
+
+
+## 자동 플레이: 가까운 적에게 다가가 공격, 가끔 스킬, 적이 없으면 다음 무리 쪽으로
+var _bot_t := 0.0
+var _bot_jobs := 0
+func _bot(dt: float) -> void:
+	if walker == null or walker.dead:
+		return
+	walker.local = false
+	var c := walker.ctrl
+	c.clear()
+	_bot_t += dt
+	if args["bot"] == "cycle":
+		var want_job: String = DB.JOB_ORDER[int(_bot_t / 6.0) % DB.JOB_ORDER.size()]
+		if walker.job != want_job:
+			walker.set_job(want_job)
+	elif args["bot"] != "1" and walker.job != args["bot"]:
+		walker.set_job(String(args["bot"]))
+	var best: Node3D = null
+	var bd := 1e9
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if (e as Fighter).dead:
+			continue
+		var d := (e as Node3D).global_position.distance_to(walker.global_position)
+		if d < bd:
+			bd = d
+			best = e
+	var goal: Vector3
+	if best:
+		goal = best.global_position
+	else:
+		goal = walker.global_position
+		for g in map.groups:
+			if not g["done"]:
+				goal = g["at"]
+				break
+	var to := goal - walker.global_position
+	to.y = 0.0
+	var want_d := 1.0 if walker.job == "warrior" else 4.5
+	if best and to.length() > want_d:
+		c.move = Vector2(to.x, to.z).normalized()
+	elif best and to.length() < want_d - 1.5:
+		c.move = -Vector2(to.x, to.z).normalized()
+	elif not best and to.length() > 1.0:
+		c.move = Vector2(to.x, to.z).normalized()
+	c.run = not best
+	if best:
+		c.has_aim = true
+		c.aim_world = best.global_position
+		c.attack_held = to.length() < want_d + 3.5
+		c.skill = to.length() < 3.5 and fmod(_bot_t, 3.0) < dt
+		c.roll = fmod(_bot_t, 2.3) < dt and walker.hp < walker.max_hp() * 0.5
 
 
 ## 측면 구간 · 출구
