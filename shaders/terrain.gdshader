@@ -1,5 +1,7 @@
 shader_type spatial;
 // 높이 칸 지형: 윗면은 땅 재질(잔디·짙은 잔디·흙길·돌바닥…)을 세계 좌표로, 벽은 절벽 바위로.
+//  · 화면 1픽셀 = 텍스처 1텍셀이 되도록 기울기만큼 세로 밀도를 맞춘다
+//    (윗면 z: 16·sin(기울기) 텍셀/m, 벽 y: 16·cos(기울기) 텍셀/m) → 도트가 찌그러지거나 줄이 빠지지 않는다
 //  · 재질 경계는 픽셀마다 흔들어(노이즈) 자연스러운 들쭉날쭉 경계 — 칸 모양이 보이지 않게
 //  · 큰 노이즈로 색을 살짝 출렁여 반복 무늬가 안 보이게
 //  · 절벽 꼭대기엔 잔디가 늘어지고, 밑동은 그늘
@@ -7,16 +9,24 @@ render_mode cull_back;
 
 #include "res://shaders/inc/toon.gdshaderinc"
 
+global uniform float cam_pitch;
+
 uniform sampler2D ground : source_color, filter_nearest, repeat_enable;   // 세로로 재질 N장 (각 128x128)
 uniform sampler2D wall_tex : source_color, filter_nearest, repeat_enable; // 절벽 64x64
-uniform sampler2D map : filter_nearest;                                   // 칸별 재질 (R = id/255)
-uniform vec2 map_size = vec2(64.0, 64.0);
+uniform sampler2D map : filter_nearest;                                   // 칸별 R = 재질 id/255, G = 높이(층)/255
+uniform vec2 grid_size = vec2(64.0, 64.0);                                // 칸 수
+uniform float cell = 0.5;                                                 // 칸 한 변 (m)
+uniform vec3 rim_hi : source_color = vec3(0.62, 0.84, 0.62);              // 절벽 윗가장자리 밝은 테두리
+uniform vec3 rim_dark : source_color = vec3(0.17, 0.27, 0.24);            // 뒤·옆 가장자리 짙은 테두리
 uniform float n_mats = 4.0;
 uniform float tex_px = 128.0;
 uniform vec3 fringe_dark : source_color = vec3(0.24, 0.40, 0.33);
 uniform vec3 fringe_mid : source_color = vec3(0.36, 0.58, 0.45);
 uniform vec3 fringe_hi : source_color = vec3(0.49, 0.76, 0.54);
 uniform vec3 wall_shadow : source_color = vec3(0.16, 0.20, 0.21);
+uniform sampler2D shade_map : filter_nearest;                             // 구워 둔 그늘 (1m = 16칸)
+uniform vec3 shade_col : source_color = vec3(0.50, 0.66, 0.70);          // 그늘 곱하기 색 (청록)
+uniform vec3 shade_deep : source_color = vec3(0.36, 0.50, 0.56);
 
 varying vec3 wpos;
 varying vec3 wnrm;
@@ -40,33 +50,69 @@ void vertex() {
 }
 
 float mat_at(vec2 xz) {
-	vec2 uv = (floor(xz) + 0.5) / map_size;
+	vec2 uv = (floor(xz / cell) + 0.5) / grid_size;
 	return floor(texture(map, uv).r * 255.0 + 0.5);
 }
 
+float lvl_of(vec2 c) {
+	if (c.x < 0.0 || c.y < 0.0 || c.x >= grid_size.x || c.y >= grid_size.y) {
+		return -2.0;
+	}
+	return floor(texture(map, (c + 0.5) / grid_size).g * 255.0 + 0.5);
+}
+
 void fragment() {
-	vec3 p = floor(wpos * 16.0 + 0.001) / 16.0;      // 텍셀 단위로 끊기
+	float sp = max(sin(cam_pitch), 0.12);
+	float cp = max(cos(cam_pitch), 0.2);
 	vec3 col;
 	if (wnrm.y > 0.5) {
-		// ---- 윗면: 재질 경계를 흔든다
-		vec2 xz = p.xz;
+		// ---- 윗면 (텍셀 좌표: x 16/m, z 16·sin/m)
+		vec2 tx = floor(vec2(wpos.x * 16.0, wpos.z * 16.0 * sp) + 0.001);
+		vec2 xz = vec2(tx.x / 16.0, tx.y / (16.0 * sp));          // 끊은 세계 좌표 (경계 흔들기용)
 		vec2 j = vec2(vnoise(xz * 1.7), vnoise(xz * 1.7 + 19.3)) - 0.5;
-		j += (vec2(hash(xz * 16.0), hash(xz * 16.0 + 7.1)) - 0.5) * 0.18;
+		j += (vec2(hash(tx), hash(tx + 7.1)) - 0.5) * 0.18;
 		float m = mat_at(xz + j * 0.8);
-		vec2 tuv = fract(xz * 16.0 / tex_px);
+		vec2 tuv = fract((tx + 0.5) / tex_px);
 		col = texture(ground, vec2(tuv.x, (tuv.y + m) / n_mats)).rgb;
 		// 큰 출렁임 (반복 감추기)
 		float big = vnoise(xz * 0.12) * 0.6 + vnoise(xz * 0.31 + 4.0) * 0.4;
 		col *= mix(0.92, 1.07, big);
+		// 구운 그늘: 두 단계 + 경계는 4x4 디더 (부드럽지만 도트답게)
+		float sh = texture(shade_map, wpos.xz / (grid_size * cell)).r;
+		ivec2 bi = ivec2(mod(tx, 4.0));
+		float b4[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+		float th = (b4[bi.y * 4 + bi.x] + 0.5) / 16.0;
+		if (sh > 0.62 + (th - 0.5) * 0.25) {
+			col *= shade_deep;
+		} else if (sh > 0.22 + (th - 0.5) * 0.3) {
+			col *= shade_col;
+		}
+		// 절벽 가장자리 테두리: 앞(남)쪽이 낮으면 밝은 줄, 뒤·옆이 낮으면 짙은 줄 (높이가 또렷하게 읽히게)
+		vec2 c = floor(wpos.xz / cell);
+		float me = lvl_of(c);
+		vec2 f = wpos.xz - c * cell;                             // 칸 안 위치 (m)
+		float px_s = (cell - f.y) * 16.0 * sp;                   // 남쪽 가장자리까지 화면 픽셀
+		float px_n = f.y * 16.0 * sp;
+		float px_w = f.x * 16.0;
+		float px_e = (cell - f.x) * 16.0;
+		if (lvl_of(c + vec2(0.0, 1.0)) < me && px_s < 1.0) {
+			col = rim_hi;
+		} else if (lvl_of(c + vec2(0.0, -1.0)) < me && px_n < 1.0) {
+			col = rim_dark;
+		} else if ((lvl_of(c + vec2(-1.0, 0.0)) < me && px_w < 1.0) || (lvl_of(c + vec2(1.0, 0.0)) < me && px_e < 1.0)) {
+			col = rim_dark;
+		}
 	} else {
-		// ---- 벽: 절벽 바위
-		float along = (abs(wnrm.x) > 0.5) ? p.z : p.x;
-		vec2 wuv = vec2(along * 16.0 / 64.0, -p.y * 16.0 / 64.0);
+		// ---- 벽: 절벽 바위 (텍셀 좌표: 가로 16/m, 세로 16·cos/m)
+		float along = (abs(wnrm.x) > 0.5) ? wpos.z : wpos.x;
+		float ty = floor((wall_span.y - wpos.y) * 16.0 * cp + 0.001);   // 위에서 몇 픽셀
+		float tx = floor(along * 16.0 + 0.001);
+		vec2 wuv = vec2(tx, ty + floor(wall_span.y * 16.0 * cp)) / 64.0;
 		col = texture(wall_tex, wuv).rgb;
-		float from_top = (wall_span.y - p.y) * 16.0;      // 위에서 몇 픽셀
-		float from_bot = (p.y - wall_span.x) * 16.0;
+		float from_top = ty;
+		float from_bot = (wpos.y - wall_span.x) * 16.0 * cp;
 		// 늘어진 잔디
-		float fl = 2.0 + floor(vnoise(vec2(along * 3.1, wall_span.y)) * 4.0) + floor(hash(vec2(floor(along * 16.0), wall_span.y)) * 2.0);
+		float fl = 2.0 + floor(vnoise(vec2(tx * 0.2, wall_span.y)) * 4.0) + floor(hash(vec2(tx, wall_span.y)) * 2.0);
 		if (from_top < fl) {
 			col = from_top < 1.0 ? fringe_hi : (from_top < fl - 1.0 ? fringe_mid : fringe_dark);
 		} else if (from_top < fl + 1.0) {

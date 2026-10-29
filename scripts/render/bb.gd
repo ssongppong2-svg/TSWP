@@ -38,7 +38,7 @@ static func px_size(path: String, name: String) -> Vector2:
 	return Vector2(r[2], r[3])
 
 
-## 그림 하나 세우기. opts: sway, push, shadow, tint, up_normal, emission, unique(재질 따로)
+## 그림 하나 세우기. opts: sway, push, shadow, tint, up_normal, emission, receive_shade, unique(재질 따로)
 static func make(path: String, name: String, opts := {}) -> MeshInstance3D:
 	var sz := px_size(path, name)
 	var q := QuadMesh.new()
@@ -57,16 +57,35 @@ static func make(path: String, name: String, opts := {}) -> MeshInstance3D:
 		m.set_shader_parameter("region", region_uv(path, name))
 		m.set_shader_parameter("sway", float(opts.get("sway", 0.0)))
 		m.set_shader_parameter("push_k", float(opts.get("push", 0.0)))
-		m.set_shader_parameter("up_normal", float(opts.get("up_normal", 0.65)))
+		m.set_shader_parameter("up_normal", float(opts.get("up_normal", 0.85)))
 		m.set_shader_parameter("emission", float(opts.get("emission", 0.0)))
+		m.set_shader_parameter("receive_shade", bool(opts.get("receive_shade", true)))
 		if opts.has("tint"):
 			m.set_shader_parameter("tint", opts["tint"])
 		if not opts.get("unique", false):
 			_mats[key] = m
 	mi.material_override = m
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if opts.get("shadow", true) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# 그림자는 기본으로 끈다: 빌보드가 해 쪽으로 돌아 드리우는 그림자는 길고 어색하다 → 땅에 구운 그늘(Terrain.blob)·발밑 그늘(BB.blob)로 대신
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if opts.get("shadow", false) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# 빌보드는 셰이더가 세로로 늘리므로 컬링 상자를 넉넉히
 	mi.extra_cull_margin = 4.0
+	return mi
+
+
+## 움직이는 것(캐릭터·던진 물건) 발밑 그늘: 땅에 눕힌 타원. rx·rz 는 m.
+static func blob(rx: float, rz: float, k := 1.0) -> MeshInstance3D:
+	var q := QuadMesh.new()
+	q.size = Vector2(rx * 2.0, rz * 2.0)
+	q.orientation = PlaneMesh.FACE_Y
+	var mi := MeshInstance3D.new()
+	mi.mesh = q
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/blob.gdshader")
+	m.set_shader_parameter("size_px", Vector2(rx, rz) * 2.0 * PPU)
+	m.set_shader_parameter("strength", k)
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position.y = 0.02
 	return mi
 
 
@@ -99,7 +118,7 @@ static func multi(path: String, items: Array, opts := {}) -> MultiMeshInstance3D
 	m.set_shader_parameter("use_instance", true)
 	m.set_shader_parameter("sway", float(opts.get("sway", 0.0)))
 	m.set_shader_parameter("push_k", float(opts.get("push", 0.0)))
-	m.set_shader_parameter("up_normal", float(opts.get("up_normal", 0.8)))
+	m.set_shader_parameter("up_normal", float(opts.get("up_normal", 0.9)))
 	mmi.material_override = m
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if opts.get("shadow", false) else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mmi.extra_cull_margin = 4.0

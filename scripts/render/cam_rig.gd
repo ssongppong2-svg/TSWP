@@ -11,6 +11,7 @@ const SIDE_PITCH := deg_to_rad(7.0)  # 측면: 거의 수평 (땅 윗면이 살�
 const DIST := 60.0
 
 var cam: Camera3D
+var ear: AudioListener3D              # 소리 귀: 카메라(60m 뒤)가 아니라 초점 자리
 var view: PixelView
 var target: Node3D
 var focus := Vector3.ZERO
@@ -36,6 +37,9 @@ func setup(v: PixelView) -> void:
 	cam.far = 200.0
 	add_child(cam)
 	cam.make_current()
+	ear = AudioListener3D.new()
+	add_child(ear)
+	ear.make_current()
 
 
 ## 측면 시점으로 (on=true) · 되돌리기. yaw: 측면에서 카메라가 바라보는 방향(라디안, 0 = 북쪽 -Z)
@@ -82,10 +86,12 @@ func _process(dt: float) -> void:
 	var sr := roundf(cr * PPU) / PPU
 	var su := roundf(cu * PPU) / PPU
 	cam.global_transform = Transform3D(basis, right * sr + up * su + back * cb)
+	ear.global_transform = Transform3D(Basis(Vector3.UP, yaw), focus)
 	view.sub_offset = Vector2((cr - sr) * PPU, -(cu - su) * PPU)
 	cam.size = float(PixelView.GH + PixelView.MARGIN * 2) / PPU / zoom
 	RenderingServer.global_shader_parameter_set("bb_stretch", 1.0 / maxf(0.2, cos(p)))
 	RenderingServer.global_shader_parameter_set("cam_pitch", p)
+	RenderingServer.global_shader_parameter_set("cam_fwd", -basis.z)
 
 
 ## 화면(창) 좌표 → 높이 plane_y 평면 위 세계 좌표
