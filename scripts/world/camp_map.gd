@@ -84,6 +84,15 @@ func _decorate() -> void:
 	camp_prop(17.8, 6.2, "flag0", {"frames": ["flag0", "flag1", "flag2", "flag3"], "fps": 6.0, "solid": 0.15, "shade": 0.4})
 	camp_prop(22.4, 6.0, "flag0", {"frames": ["flag0", "flag1", "flag2", "flag3"], "fps": 6.0, "solid": 0.15, "shade": 0.4, "flip": true})
 	camp_prop(23.6, 4.4, "sign", {"solid": 0.2, "shade": 0.5})
+	# ---- 직업 표지 (광장 남서쪽 잔디)
+	for k in DB.JOB_ORDER.size():
+		var js := JobStand.new()
+		js.job = DB.JOB_ORDER[k]
+		add_child(js)
+		var p := Vector3(10.0 + k * 2.4, 0, 26.0)
+		p.y = terrain.height_at(p)
+		js.position = p
+		_mark(terrain.cell_of(p), 2)
 	# ---- 숲·풀
 	scatter_trees(1600, 0.02)
 	scatter_props([["rock1", 5], ["stump0", 3], ["bush_light", 4], ["bush1", 3], ["log0", 2]])

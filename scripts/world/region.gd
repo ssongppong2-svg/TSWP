@@ -93,6 +93,11 @@ func _decorate() -> void:
 	pass
 
 
+## 지역마다 매 프레임 할 일 (보스방 진행 등)
+func tick(_players: Array) -> void:
+	pass
+
+
 ## 적 무리: 플레이어가 가까이 오면 나타난다 (화면 가장자리 쪽에서 — 갑자기 코앞에 생기지 않게)
 func spawn_check(players: Array) -> void:
 	for g in groups:

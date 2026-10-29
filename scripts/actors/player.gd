@@ -148,6 +148,11 @@ func _physics_process(dt: float) -> void:
 		_basic()
 	if ctrl.skill and skill_cd <= 0.0 and roll_t <= 0.0:
 		_skill()
+	if ctrl.interact:
+		for n in get_tree().get_nodes_in_group("interact"):
+			if (n as Node3D).global_position.distance_to(global_position) < float(n.get("reach")):
+				n.interact(self)
+				break
 	if ctrl.switch_job:
 		var i := DB.JOB_ORDER.find(job)
 		set_job(DB.JOB_ORDER[(i + 1) % DB.JOB_ORDER.size()])
@@ -227,6 +232,14 @@ func _after_move(dt: float) -> void:
 	else:
 		spr.play("idle")
 	spr.update(dt)
+
+
+## 튀어 오르기 (점프 발판·폭발 등): v 는 위로, h 는 수평 밀기
+func launch(v: Vector3, h: Vector3) -> void:
+	velocity.y = v.y
+	kv += h
+	_coyote = 0.0
+	Audio.play("double_jump", global_position)
 
 
 func jump() -> void:

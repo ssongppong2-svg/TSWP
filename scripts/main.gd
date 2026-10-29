@@ -11,7 +11,7 @@ extends Node
 ##    --bot[=job]         자동 플레이 (가까운 적에게 가서 싸우고 스킬도 쓴다 — 시험·영상용)
 ##    --quit=초           몇 초 뒤 끝내기
 
-const MAPS := {"camp": "캠프", "forest": "속삭이는 숲"}
+const MAPS := {"camp": "캠프", "forest": "속삭이는 숲", "nest": "거미 여왕의 둥지"}
 
 var pv: PixelView
 var world: Node3D
@@ -72,7 +72,13 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	env = StageEnv.new()
 	world.add_child(env)
 	env.setup(Prefs.quality)
-	map = ForestMap.new() if name_ == "forest" else CampMap.new()
+	match name_:
+		"forest":
+			map = ForestMap.new()
+		"nest":
+			map = NestMap.new()
+		_:
+			map = CampMap.new()
 	world.add_child(map)
 	map.build(7)
 	env.apply(map.env_preset, true)
@@ -95,6 +101,15 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	walker.rig = rig
 	map.rig = rig
 	map.enemy_spawned.connect(func(e: Enemy): e.killed.connect(party.on_enemy_killed))
+	hud.boss = null
+	if map is NestMap:
+		(map as NestMap).boss_started.connect(func(q: Queen):
+			hud.boss = q
+			_show_title("부화의 여왕"))
+		(map as NestMap).victory.connect(func():
+			hud.banner("부화의 여왕을 쓰러뜨렸다!", 6.0)
+			if args.has("bot"):
+				args["quit"] = str(_game_t + 4.0))
 	rig.side_changed.connect(func(on: bool):
 		if on:
 			map.terrain.make_cut(rig.lane_z + CamRig.CUT_NEAR)
@@ -124,7 +139,7 @@ func _build_ui() -> void:
 	hud = Hud.new()
 	hud.party = party
 	ui.add_child(hud)
-	help = PixelFont.label("WASD 이동 Shift 달리기 Space 구르기/점프 클릭 공격 Q 스킬 Tab 직업 F2 시점 1·2 지역", "small", Color(1, 1, 1, 0.8))
+	help = PixelFont.label("WASD 이동 Shift 달리기 Space 구르기/점프 클릭 공격 Q 스킬 Tab 직업 F2 시점 1·2·3 지역", "small", Color(1, 1, 1, 0.8))
 	help.position = Vector2(6, PixelView.GH - 15)
 	ui.add_child(help)
 	title = PixelFont.label("", "big", Color("#fff4d6"))
@@ -167,6 +182,7 @@ func _process(dt: float) -> void:
 		RenderingServer.global_shader_parameter_set("push_a", Vector4(wp.x, wp.y, wp.z, clampf(Vector2(walker.velocity.x, walker.velocity.z).length(), 0.3, 1.0)))
 		_check_zones(wp)
 		map.spawn_check([walker])
+		map.tick([walker])
 	# 도트 조준점
 	var mp := pv.to_ui(get_tree().root.get_mouse_position())
 	cursor.position = (mp - Vector2(5, 5)).round()
@@ -180,6 +196,8 @@ func _process(dt: float) -> void:
 		_go("camp", Vector3(20, 0, 19.5))
 	if Input.is_key_pressed(KEY_2) and map_name != "forest":
 		_go("forest", Vector3(32, 0, 44))
+	if Input.is_key_pressed(KEY_3) and map_name != "nest":
+		_go("nest", Vector3(18, 0, 30.5))
 	if args.has("shot") and _frame == int(args.get("frames", "45")):
 		var img := get_viewport().get_texture().get_image()
 		img.save_png(String(args["shot"]))
@@ -219,8 +237,28 @@ func _bot(dt: float) -> void:
 		if d < bd:
 			bd = d
 			best = e
+	var nest := map as NestMap
+	if nest and nest.queen and not nest.queen.dead and best == null:
+		best = nest.queen
 	var goal: Vector3
-	if best:
+	var no_stop := false
+	if nest and nest.queen and nest.queen.shell and walker.global_position.y < 1.0:
+		# 껍질: 가까운 기둥 점프 발판으로
+		var pd := 1e9
+		for pl in nest.pillars:
+			var pp: Vector3 = (pl as Pillar).pad_pos
+			if (pl as Pillar).up and pp.distance_to(walker.global_position) < pd:
+				pd = pp.distance_to(walker.global_position)
+				goal = pp
+		no_stop = true
+	elif nest and nest.act2 and not nest.won and best == null:
+		for l in nest.levers:
+			if not (l as Lever).on:
+				goal = (l as Node3D).global_position
+				c.interact = goal.distance_to(walker.global_position) < 1.2
+				break
+		no_stop = true
+	elif best:
 		goal = best.global_position
 	else:
 		goal = walker.global_position
@@ -228,9 +266,27 @@ func _bot(dt: float) -> void:
 			if not g["done"]:
 				goal = g["at"]
 				break
+		if nest and not nest.started:
+			goal = Vector3(NestMap.CENTER.x, 0, NestMap.CENTER.y)
 	var to := goal - walker.global_position
 	to.y = 0.0
 	var want_d := 1.0 if walker.job == "warrior" else 4.5
+	if best is Queen:
+		want_d += 2.2
+	if no_stop:
+		if to.length() > 0.3:
+			c.move = Vector2(to.x, to.z).normalized()
+		if best:
+			c.has_aim = true
+			c.aim_world = best.global_position
+			c.attack_held = true
+		return
+	if walker.global_position.y > 1.5 and best:
+		c.has_aim = true
+		c.aim_world = best.global_position
+		c.attack_held = true
+		c.skill = fmod(_bot_t, 3.0) < dt
+		return
 	if best and to.length() > want_d:
 		c.move = Vector2(to.x, to.z).normalized()
 	elif best and to.length() < want_d - 1.5:

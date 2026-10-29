@@ -58,3 +58,9 @@ func on_enemy_killed(e: Enemy, by: Node) -> void:
 	add_gold(int(e.E.get("gold", 1)))
 	if by is Player:
 		_stat(by, "kills", 1)
+
+
+## 무리 밖에서 생긴 적(고치에서 부화 등)도 처치 보상 연결
+func on_spawn(e: Enemy) -> void:
+	if not e.killed.is_connected(on_enemy_killed):
+		e.killed.connect(on_enemy_killed)

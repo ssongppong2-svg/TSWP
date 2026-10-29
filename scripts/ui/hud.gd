@@ -6,6 +6,16 @@ extends Control
 
 var player: Player
 var party: Party
+var boss: Queen
+var boss_panel: Control
+var boss_name: Label
+var boss_fill: ColorRect
+var boss_ghost: ColorRect
+var danger_fill: ColorRect
+var danger_l: Label
+var _bghost := 1.0
+var _banner_t := 0.0
+const BOSS_W := 220
 var name_l: Label
 var hp_back: ColorRect
 var hp_ghost: ColorRect
@@ -66,11 +76,49 @@ func _ready() -> void:
 	gold_l.size = Vector2(86, 14)
 	gold_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(gold_l)
+	_build_boss()
 	center_l = PixelFont.label("", "big", Color("#fff4d6"))
 	center_l.position = Vector2(0, 110)
 	center_l.size = Vector2(PixelView.GW, 30)
 	center_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(center_l)
+
+
+## 보스 체력바 (아래 가운데) + 위험 게이지
+func _build_boss() -> void:
+	boss_panel = Control.new()
+	boss_panel.position = Vector2((PixelView.GW - BOSS_W) / 2.0, PixelView.GH - 46)
+	boss_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(boss_panel)
+	boss_name = PixelFont.label("", "big", Color("#f0d8ff"))
+	boss_name.size = Vector2(BOSS_W, 14)
+	boss_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	boss_panel.add_child(boss_name)
+	_rect_in(boss_panel, Vector2(0, 15), Vector2(BOSS_W + 2, 8), Color("#140e1a"))
+	boss_ghost = _rect_in(boss_panel, Vector2(1, 16), Vector2(BOSS_W, 6), Color("#fff2d8"))
+	boss_fill = _rect_in(boss_panel, Vector2(1, 16), Vector2(BOSS_W, 6), Color("#b04ae0"))
+	_rect_in(boss_panel, Vector2(1, 16), Vector2(BOSS_W, 1), Color(1, 1, 1, 0.25))
+	_rect_in(boss_panel, Vector2(40, 25), Vector2(BOSS_W - 78, 4), Color("#140e1a"))
+	danger_fill = _rect_in(boss_panel, Vector2(41, 26), Vector2(0, 2), Color("#9aff5a"))
+	danger_l = PixelFont.label("위험", "small", Color("#c8ff9a"))
+	danger_l.position = Vector2(14, 21)
+	boss_panel.add_child(danger_l)
+	boss_panel.visible = false
+
+
+func _rect_in(parent: Control, p: Vector2, s: Vector2, c: Color) -> ColorRect:
+	var r := ColorRect.new()
+	r.position = p
+	r.size = s
+	r.color = c
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(r)
+	return r
+
+
+func banner(text: String, t: float) -> void:
+	center_l.text = text
+	_banner_t = t
 
 
 func _rect(p: Vector2, s: Vector2, c: Color) -> ColorRect:
@@ -100,9 +148,30 @@ func _process(dt: float) -> void:
 	q_text.modulate = Color(1, 1, 1, 0.45 if cd > 0.0 else 1.0)
 	q_name.text = "Q·우클릭  %s%s" % [s["name"], ("  %.1f" % player.skill_cd) if player.skill_cd > 0.0 else ""]
 	passive_l.text = "◆ %s" % J["passive"]["name"]
+	# 보스
+	boss_panel.visible = boss != null and is_instance_valid(boss) and not boss.dead
+	if boss_panel.visible:
+		var br := boss.ratio()
+		_bghost = move_toward(_bghost, br, dt * 0.5) if _bghost > br else br
+		boss_fill.size.x = roundf(BOSS_W * br)
+		boss_ghost.size.x = roundf(BOSS_W * _bghost)
+		boss_fill.color = Color("#8a8a9a") if boss.shell else (Color("#e04a6a") if boss.enraged else Color("#b04ae0"))
+		var tag := "  [껍질 — 기둥 위에서 등을 쳐라!]" if boss.shell else ("  [광폭화]" if boss.enraged else "")
+		if boss.state == "stun":
+			tag = "  [기절!]"
+		boss_name.text = "부화의 여왕" + tag
+		danger_fill.size.x = roundf((BOSS_W - 80) * boss.danger)
+		var blink := boss.danger > 0.8 and int(Time.get_ticks_msec() / 150) % 2 == 0
+		danger_fill.color = Color("#ffffff") if blink else Color("#9aff5a")
 	if party:
 		lives_l.text = "♥ %d" % party.lives
 		gold_l.text = "● %d" % party.gold
+	if _banner_t > 0.0:
+		_banner_t -= dt
+		if _banner_t <= 0.0:
+			center_l.text = ""
+		return
+	if party:
 		if party.over:
 			center_l.text = "전멸...  (1 키: 캠프로)"
 		elif player.dead:
