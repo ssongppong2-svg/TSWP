@@ -69,8 +69,8 @@ func _decorate() -> void:
 	camp_prop(29.0, 28.5, "tent_red", {"box": Vector3(3.2, 2.0, 1.4), "shade": 0.85, "block": 6, "flip": true})
 	# ---- 짐: 수레·상자·통·장작
 	camp_prop(26.5, 24.5, "cart", {"box": Vector3(2.6, 1.4, 1.0), "shade": 0.8, "block": 4})
-	camp_prop(24.4, 23.2, "crate", {"box": Vector3(1.0, 1.0, 0.8)})
-	camp_prop(23.6, 24.4, "crate", {"box": Vector3(1.0, 1.0, 0.8)})
+	camp_prop(28.4, 26.0, "crate", {"box": Vector3(1.0, 1.0, 0.8)})
+	camp_prop(27.4, 27.0, "crate", {"box": Vector3(1.0, 1.0, 0.8)})
 	camp_prop(29.6, 22.6, "barrel", {"solid": 0.45})
 	camp_prop(30.4, 23.6, "barrel", {"solid": 0.45})
 	camp_prop(13.2, 23.0, "woodpile", {"box": Vector3(1.8, 1.0, 0.8)})
@@ -84,15 +84,19 @@ func _decorate() -> void:
 	camp_prop(17.8, 6.2, "flag0", {"frames": ["flag0", "flag1", "flag2", "flag3"], "fps": 6.0, "solid": 0.15, "shade": 0.4})
 	camp_prop(22.4, 6.0, "flag0", {"frames": ["flag0", "flag1", "flag2", "flag3"], "fps": 6.0, "solid": 0.15, "shade": 0.4, "flip": true})
 	camp_prop(23.6, 4.4, "sign", {"solid": 0.2, "shade": 0.5})
-	# ---- 직업 표지 (광장 남서쪽 잔디)
+	# ---- 직업 표지 (광장 남쪽 가장자리, 한 줄)
 	for k in DB.JOB_ORDER.size():
 		var js := JobStand.new()
 		js.job = DB.JOB_ORDER[k]
 		add_child(js)
-		var p := Vector3(10.0 + k * 2.4, 0, 26.0)
+		var p := Vector3(15.5 + k * 3.0, 0, 22.6)
 		p.y = terrain.height_at(p)
 		js.position = p
-		_mark(terrain.cell_of(p), 2)
+		var c := terrain.cell_of(p)
+		for dz in range(0, 14):
+			for dx in range(-4, 5):
+				blocked[c + Vector2i(dx, dz)] = true
+		_mark(c, 3)
 	# ---- 숲·풀
 	scatter_trees(1600, 0.02)
 	scatter_props([["rock1", 5], ["stump0", 3], ["bush_light", 4], ["bush1", 3], ["log0", 2]])

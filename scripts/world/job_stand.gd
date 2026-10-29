@@ -17,10 +17,10 @@ func _ready() -> void:
 	spr = BB.make(CharSprite.ATLAS, "%s_idle_s0" % J["sprite"], {"unique": true, "up_normal": 0.6})
 	add_child(spr)
 	add_child(BB.blob(0.42, 0.2, 0.8))
-	name_l = _label(String(J["name"]), "big", Color("#fff4d6"))
-	name_l.position.y = 2.6
-	desc_l = _label("E: %s  ·  %s" % [J["name"], J["desc"]], "small", Color(1, 1, 1, 0.9))
-	desc_l.position.y = 3.3
+	name_l = _label(String(J["name"]), "small", Color("#fff4d6"))
+	name_l.position.y = 2.4
+	desc_l = _label("[E] %s\n%s" % [J["name"], J["desc"]], "small", Color(1, 1, 1, 0.95))
+	desc_l.position.y = 3.9
 	desc_l.visible = false
 
 
@@ -47,10 +47,11 @@ func _process(dt: float) -> void:
 	(spr.material_override as ShaderMaterial).set_shader_parameter("region", BB.region_uv(CharSprite.ATLAS, "%s_idle_s%d" % [J["sprite"], int(_t * 2.5) % 2]))
 	var near := false
 	for f in get_tree().get_nodes_in_group("fighters"):
-		if f is Player and (f as Node3D).global_position.distance_to(global_position) < reach + 1.0:
+		if f is Player and (f as Node3D).global_position.distance_to(global_position) < reach + 0.2:
 			near = true
 			name_l.modulate = Color("#9aff9a") if (f as Player).job == job else Color("#fff4d6")
 	desc_l.visible = near
+	name_l.visible = not near
 
 
 func interact(p: Node) -> void:
