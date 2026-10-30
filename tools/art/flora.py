@@ -9,6 +9,12 @@ from pack import pack
 LX, LY = -0.62, -0.78       # 빛: 왼쪽 위
 
 
+def darker(c, k=0.5):
+    v = hx(c).astype(float)
+    v[:3] *= k
+    return v.astype(np.uint8)
+
+
 def blob_mask(w, h, cx, cy, r, seed, bump=0.12, squash=0.9):
     """가장자리가 오돌토돌한 잎 뭉치 모양"""
     xs, ys = grid(w, h)
@@ -73,7 +79,7 @@ def tree_broad(seed, W=112, H=132, cols=None, trunk_h=34, light=False):
     cx = W / 2
     base = H - 2
     # ---- 줄기 + 뿌리
-    tw = 9 + R.randint(0, 3)
+    tw = int((9 + R.randint(0, 3)) * max(1.0, W0 / 112.0) ** 1.6)
     xs, ys = grid(W, H)
     top = base - trunk_h - 26
     trunk = (np.abs(xs + 0.5 - cx - np.sin((ys - top) * 0.07) * 1.5) < tw / 2 + np.clip((ys - (base - 10)) * 0.55, 0, 7)) & (ys >= top) & (ys <= base)
@@ -117,8 +123,8 @@ def tree_broad(seed, W=112, H=132, cols=None, trunk_h=34, light=False):
     # 실루엣 테두리 (짙은 청록) — 아래쪽만 진하게
     m = a[..., 3] > 0
     e = edge_out(m)
-    a[e & (ys > crown_cy - 10)] = hx(INK_G)
-    a[e & (ys <= crown_cy - 10)] = hx(cols[1])
+    # 윤곽선은 모든 식생에서 같은 규칙: 잎 색의 가장 어두운 쪽을 더 어둡게 (한 덩어리로 읽히게)
+    a[e] = darker(cols[0])
     return a
 
 
@@ -131,7 +137,7 @@ def tree_pine(seed, W=56, H=104):
     trunk = (np.abs(xs + 0.5 - cx) < 3.5) & (ys > base - 18) & (ys <= base)
     trunk |= ell(W, H, cx - 4, base - 1, 2.4, 1.6) | ell(W, H, cx + 4, base - 1, 2.4, 1.6)
     ramp(a, trunk, BARK[1:6], 0.7 - (xs - cx + 4) / 9.0, 0.4)
-    cols = ["#1f3a33", "#284a40", "#33584a", "#3e6a52", "#4d7d5c", "#5f9466", "#78ad78"]
+    cols = ["#14261f", "#1d3429", "#284534", "#335640", "#41684c", "#527c58", "#6a9466"]
     tiers = 6
     for i in range(tiers):
         k = i / (tiers - 1)                         # 0 꼭대기 … 1 아래
@@ -143,8 +149,8 @@ def tree_pine(seed, W=56, H=104):
         saw = ((xs.astype(int) + i * 2) % 5) < 2
         m &= ~((ys > ty + hgt - 2) & saw)
         lam = -((xs - cx) / (half + 1)) * 0.55 - ((ys - ty) / hgt - 0.5) * 0.3
-        t = 0.55 + lam * 0.45 - k * 0.12 + (vnoise(W, H, 2, seed + i) - 0.5) * 0.25
-        ramp(a, m, cols, t, 0.8)
+        t = 0.55 + lam * 0.5 - k * 0.12 + (vnoise(W, H, 3, seed + i) - 0.5) * 0.1
+        ramp(a, m, cols, t, 0.2)
         under = m & ~nb(m, 0, 1)
         paint(a, under, cols[0])
     outline(a, INK_G)
@@ -182,14 +188,14 @@ def bush(seed, W=40, H=30, cols=None, flowers=None):
 
 def grass_tuft(seed, W=16, H=14, cols=None):
     """분수처럼 솟았다 바깥으로 휘어 떨어지는 풀 다발 (레퍼런스)"""
-    cols = cols or [GRASS[3], GRASS[5], GRASS[6], GRASS[7], GRASS[8]]
+    cols = cols or [GRASS[1], GRASS[2], GRASS[3], GRASS[5], GRASS[6]]
     a = canvas(W, H)
     R = random.Random(seed)
     base = H - 1
     cx = W / 2
     # 뿌리 쪽 짙은 덩어리
     paint(a, ell(W, H, cx, base, W * 0.22, 2.2) & (grid(W, H)[1] <= base), cols[0])
-    n = R.randint(6, 8)
+    n = R.randint(4, 6)
     blades = []
     for i in range(n):
         f = (i / (n - 1) - 0.5) * 2                      # -1 … 1
@@ -212,29 +218,29 @@ def grass_tuft(seed, W=16, H=14, cols=None):
             prev = (xi, yi)
             k = min(len(cols) - 1, 1 + int(u * (len(cols) - 1)))
             a[yi, xi] = hx(cols[k])
-            if u < 0.45:                                 # 아래쪽은 2px 굵기
+            if u < 0.85:                                 # 2px 굵기 (나무·캐릭터와 픽셀 밀도 맞춤)
                 xo = xi - (1 if f > 0 else -1) if abs(f) > 0.1 else xi + 1
                 if 0 <= xo < W:
                     a[yi, xo] = hx(cols[max(1, k - 1)])
     return a
 
 
-def flower_patch(seed, W=14, H=10, col=None):
+def flower_patch(seed, W=18, H=12, col=None):
+    """꽃 무리: 잎 몇 장 + 꽃 3~5송이 (꽃잎 십자 + 가운데 노랑/흰)"""
     col = col or FLOWER_W
     a = canvas(W, H)
     R = random.Random(seed)
-    # 잎 몇 장
-    for _ in range(3):
+    for _ in range(4):
         x = R.randrange(2, W - 2)
-        a[H - 1, x] = hx(GRASS[5])
-        a[H - 2, x] = hx(GRASS[6])
-    for _ in range(R.randint(2, 3)):
+        a[H - 2:H, x] = hx(GRASS[2])
+        a[H - 3, x + (1 if R.random() < 0.5 else -1)] = hx(GRASS[3])
+    for _ in range(R.randint(3, 5)):
         x, y = R.randrange(2, W - 2), R.randrange(2, H - 3)
         for (ddx, ddy) in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             a[y + ddy, x + ddx] = hx(col[1])
         a[y - 1, x - 1] = hx(col[2])
         a[y + 1, x + 1] = hx(col[0])
-        a[y, x] = hx(FLOWER_Y[1])
+        a[y, x] = hx(FLOWER_Y[1] if col is not FLOWER_Y else "#fff8e0")
     return a
 
 
@@ -293,7 +299,7 @@ def log(seed, W=40, H=16):
 
 def rock(seed, W=24, H=16, cols=None, flat=True):
     """납작한 크림색 바위 (레퍼런스)"""
-    cols = cols or TAN[3:9]
+    cols = cols or ["#4a4440", "#625a52", "#7a7064", "#948876", "#ac9f8a", "#c4b8a0"]   # 바위: 중간 명도 (아이템처럼 튀지 않게)
     a = canvas(W, H)
     R = random.Random(seed)
     m, dx, dy = blob_mask(W, H, W / 2, H / 2 + 1, W * 0.42, seed, bump=0.08, squash=(0.55 if flat else 0.85))
@@ -325,7 +331,6 @@ def mushroom_patch(seed, W=16, H=12):
         cap &= grid(W, H)[1] <= y - hgt + 0.5
         paint(a, cap, "#c8524c")
         a[int(y - hgt - 1), x - 1] = hx("#f0c0b0")
-    outline(a, INK_B)
     return a
 
 
@@ -335,6 +340,8 @@ def main():
     items.append(("tree1", tree_broad(7, W=96, H=118, trunk_h=28)))
     items.append(("tree2", tree_broad(11, W=120, H=140, trunk_h=38)))
     items.append(("tree_light0", tree_broad(17, W=100, H=124, cols=LEAF_LIGHT, trunk_h=30)))
+    items.append(("tree_bloom0", tree_broad(23, W=104, H=126, cols=BLOOM, trunk_h=30)))
+    items.append(("tree_bloom1", tree_broad(29, W=88, H=110, cols=BLOOM, trunk_h=26)))
     items.append(("pine0", tree_pine(5)))
     items.append(("pine1", tree_pine(9, W=48, H=88)))
     for i in range(3):
@@ -347,6 +354,8 @@ def main():
     for i in range(3):
         items.append((f"flower{i}", flower_patch(70 + i)))
     items.append(("flower_y", flower_patch(75, col=FLOWER_Y)))
+    items.append(("flower_p", flower_patch(76, col=FLOWER_P)))
+    items.append(("flower_b", flower_patch(77, col=FLOWER_B)))
     for i in range(2):
         items.append((f"fern{i}", fern(80 + i)))
     items.append(("stump0", stump(90)))

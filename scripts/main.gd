@@ -136,6 +136,7 @@ func _go(name_: String, at: Vector3) -> void:
 # ------------------------------------------------------------------ UI
 func _build_ui() -> void:
 	var ui := pv.ui
+	ui.add_child(_vignette())
 	hud = Hud.new()
 	hud.party = party
 	ui.add_child(hud)
@@ -161,6 +162,29 @@ func _build_ui() -> void:
 	cursor.texture = at
 	cursor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(cursor)
+
+
+## 화면 가장자리를 도트 디더로 살짝 어둡게 — 시선이 가운데(내 캐릭터)로 모이고 가장자리 정보가 덜 시끄럽게
+func _vignette() -> TextureRect:
+	var w := PixelView.GW
+	var h := PixelView.GH
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var bayer := [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+	for y in h:
+		for x in w:
+			var dx := (x + 0.5 - w * 0.5) / (w * 0.5)
+			var dy := (y + 0.5 - h * 0.5) / (h * 0.5)
+			var d := sqrt(dx * dx * 0.8 + dy * dy * 1.1)
+			var k := clampf((d - 0.72) / 0.55, 0.0, 1.0)
+			var th: float = (float(bayer[(y % 4) * 4 + (x % 4)]) + 0.5) / 16.0
+			if k > th:
+				img.set_pixel(x, y, Color(0.05, 0.06, 0.09, 0.22 + k * 0.18))
+	var tr := TextureRect.new()
+	tr.texture = ImageTexture.create_from_image(img)
+	tr.size = Vector2(w, h)
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	return tr
 
 
 func _show_title(text: String) -> void:

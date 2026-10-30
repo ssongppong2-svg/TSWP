@@ -5,6 +5,7 @@ extends Node3D
 
 const FLORA := "res://assets/sprites/flora.png"
 const CAMP := "res://assets/sprites/camp.png"
+const LANDMARKS := "res://assets/sprites/landmarks.png"
 const C := Terrain.CELL
 
 enum G { GRASS, LUSH, DIRT, STONE, FOREST, SAND }
@@ -179,6 +180,15 @@ func _flat(c: Vector2i, r := 1) -> bool:
 	return true
 
 
+func _near_mat(c: Vector2i, ms: Array, r: int) -> bool:
+	for dz in range(-r, r + 1, 2):
+		for dx in range(-r, r + 1, 2):
+			var n := c + Vector2i(dx, dz)
+			if terrain.inside(n.x, n.y) and int(mats[n.y][n.x]) in ms:
+				return true
+	return false
+
+
 func _rand_cell(margin := 1) -> Vector2i:
 	return Vector2i(rng.randi_range(margin, gw - 1 - margin), rng.randi_range(margin, gh - 1 - margin))
 
@@ -225,15 +235,32 @@ func solid_box(p: Vector3, size: Vector3) -> void:
 
 
 ## 나무 한 그루 (그늘·충돌 포함)
-func tree(p: Vector3, name: String, flip := false) -> MeshInstance3D:
-	var t := BB.make(FLORA, name, {"sway": 0.06, "receive_shade": false, "see_through": true})
+func tree(p: Vector3, name: String, flip := false, atlas := FLORA) -> MeshInstance3D:
+	var t := BB.make(atlas, name, {"sway": 0.06, "receive_shade": false, "see_through": true, "unique": atlas != FLORA})
 	t.position = p
 	if flip:
 		t.scale.x = -1.0
 	add_child(t)
-	shade_under(FLORA, p, name, 0.85)
-	solid(p, 0.35)
+	shade_under(atlas, p, name, 0.85)
+	solid(p, 0.35 if atlas == FLORA else 0.9)
 	return t
+
+
+## 랜드마크 그림 하나 (세계 위치). solid_: 막힘 여부 (box 가 있으면 상자 충돌)
+func land(p: Vector3, nm: String, solid_: bool, box := Vector3.ZERO) -> MeshInstance3D:
+	p.y = terrain.height_at(p)
+	var big := BB.px_size(LANDMARKS, nm).y > 30.0
+	var s := BB.make(LANDMARKS, nm, {"receive_shade": not solid_, "see_through": big})
+	s.position = p
+	add_child(s)
+	if solid_:
+		shade_under(LANDMARKS, p, nm, 0.8)
+		if box != Vector3.ZERO:
+			solid_box(p, box)
+		else:
+			solid(p, BB.px_size(LANDMARKS, nm).x / BB.PPU * 0.4)
+	_mark(terrain.cell_of(p), 2)
+	return s
 
 
 ## 소품 하나 (식물 아틀라스). 덤불·바위는 자리를 막는다
@@ -247,8 +274,14 @@ func prop(c: Vector2i, nm: String) -> MeshInstance3D:
 	add_child(s)
 	if casts:
 		shade_under(FLORA, s.position, nm, 0.75)
+	# 규칙: 윤곽선·그늘이 있는 것(덤불·바위·그루터기·통나무)은 막히고, 없는 것(풀·꽃·고사리·버섯)은 지나간다
 	if nm.begins_with("bush") or nm.begins_with("rock") or nm.begins_with("stump") or nm.begins_with("log"):
 		_mark(c, 1)
+		var w := BB.px_size(FLORA, nm).x / BB.PPU
+		if nm.begins_with("log"):
+			solid_box(s.position, Vector3(w * 0.8, 0.8, 0.6))
+		else:
+			solid(s.position, w * 0.36, 1.2)
 	return s
 
 
@@ -301,9 +334,13 @@ func scatter_grass(density := 1.0, flower_k := 0.25) -> void:
 			var m: int = mats[c.y][c.x]
 			if m == G.DIRT or m == G.STONE:
 				continue
+			# 풀 다발은 무리 지어서만 (노이즈 높은 곳) — 나머지는 비워 둬서 눈이 쉴 자리를 만든다
+			var clump := noise.get_noise_2d(x * 0.9 + 300, z * 0.9)
+			if clump < 0.05 and m != G.FOREST:
+				continue
 			var n_t := 3 if m == G.LUSH else (2 if m == G.GRASS else 1)
 			for k in n_t:
-				if rng.randf() < 0.55 * density:
+				if rng.randf() < 0.45 * density:
 					var nm := "tuft%d" % rng.randi_range(0, 5) if m != G.FOREST else "tuft_dark%d" % rng.randi_range(0, 1)
 					var p := Vector3(x + rng.randf(), 0, z + rng.randf())
 					if terrain.mat_at(p) in [G.DIRT, G.STONE]:
@@ -316,7 +353,9 @@ func scatter_grass(density := 1.0, flower_k := 0.25) -> void:
 				if terrain.mat_at(p2) in [G.DIRT, G.STONE]:
 					continue
 				p2.y = terrain.height_at(p2)
-				var fn := "flower%d" % rng.randi_range(0, 2) if rng.randf() > 0.15 else "flower_y"
+				# 꽃 색은 무리마다 하나로 (흰·노랑·분홍·파랑) — 색이 섞여 지저분하지 않게
+				var hue := int(floor((noise.get_noise_2d(x * 0.4 + 900, z * 0.4) + 1.0) * 2.0)) % 4
+				var fn: String = ["flower%d" % rng.randi_range(0, 2), "flower_y", "flower_p", "flower_b"][hue]
 				flowers.append([fn, p2, rng.randf() < 0.5])
 	if not tufts.is_empty():
 		add_child(BB.multi(FLORA, tufts, {"sway": 0.05, "push": 0.3}))
@@ -326,7 +365,6 @@ func scatter_grass(density := 1.0, flower_k := 0.25) -> void:
 
 ## 숲: 숲 바닥 칸에 빽빽하게, 풀밭엔 드문드문 + 나무 둘레 덤불·고사리
 func scatter_trees(tries: int, sparse_k := 0.05) -> void:
-	var names := ["tree0", "tree1", "tree2", "tree_light0", "pine0", "pine1"]
 	var spots: Array = []
 	for i in tries:
 		var c := _rand_cell(2)
@@ -336,7 +374,20 @@ func scatter_trees(tries: int, sparse_k := 0.05) -> void:
 			continue
 		if not _flat(c, 2) or not _free(c, 5 if dense else 7):
 			continue
-		var nm: String = names[rng.randi_range(0, 3)] if rng.randf() > 0.22 else names[rng.randi_range(4, 5)]
+		# 길·광장 둘레 3m 안에는 나무를 두지 않는다 (길을 가리지 않게)
+		if _near_mat(c, [G.DIRT, G.STONE], 6):
+			continue
+		# 대부분 짙은 활엽수, 가끔 연두·꽃나무 포인트 (풀밭 쪽 외톨이 나무일수록 포인트 확률↑)
+		var roll := rng.randf()
+		var nm: String
+		if roll < (0.10 if dense else 0.25):
+			nm = "tree_bloom%d" % rng.randi_range(0, 1)
+		elif roll < (0.18 if dense else 0.4):
+			nm = "tree_light0"
+		elif roll < 0.4:
+			nm = "pine%d" % rng.randi_range(0, 1)
+		else:
+			nm = "tree%d" % rng.randi_range(0, 2)
 		tree(_spot(c), nm, rng.randf() < 0.5)
 		_mark(c, 2)
 		spots.append(c)

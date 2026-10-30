@@ -24,6 +24,8 @@ var job := "warrior"
 var J: Dictionary
 var spr: CharSprite
 var shadow: MeshInstance3D
+var ring: MeshInstance3D                # 발밑 팀색 고리 + 조준 표시
+var team_color := Color("#ffe066")
 var auto_dir := Vector3.ZERO          # 자동 걷기 (영상용)
 var roll_t := 0.0
 var roll_dir := Vector3.ZERO
@@ -61,8 +63,21 @@ func _ready() -> void:
 	cs.shape = cap
 	cs.position.y = 0.45
 	add_child(cs)
-	shadow = BB.blob(0.42, 0.2, 0.9)
+	shadow = BB.blob(0.46, 0.24, 1.0)
 	add_child(shadow)
+	var q := QuadMesh.new()
+	q.size = Vector2(1.5, 1.5)
+	q.orientation = PlaneMesh.FACE_Y
+	ring = MeshInstance3D.new()
+	ring.mesh = q
+	var rm := ShaderMaterial.new()
+	rm.shader = load("res://shaders/foot_ring.gdshader")
+	rm.set_shader_parameter("size_px", Vector2(24, 24))
+	rm.set_shader_parameter("col", team_color)
+	ring.material_override = rm
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.position.y = 0.03
+	add_child(ring)
 	set_job(job)
 	damaged.connect(_on_damaged)
 
@@ -219,6 +234,8 @@ func _after_move(dt: float) -> void:
 		_die()
 		return
 	spr.face(aim if attack_t > 0.0 else facing, rig.yaw if rig else 0.0)
+	(ring.material_override as ShaderMaterial).set_shader_parameter("aim", atan2(aim.z, aim.x))
+	ring.visible = not side()
 	if flash > 0.08:
 		spr.play("hurt")
 	elif attack_t > 0.0:

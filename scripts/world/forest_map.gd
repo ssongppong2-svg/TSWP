@@ -1,8 +1,9 @@
 class_name ForestMap
 extends Region
 ## 숲 지역 (캠프 앞 숲길).
-##  · 남쪽 낮은 풀밭 → 흙길이 굽이쳐 북쪽 언덕(4층 절벽)으로 계단을 타고 올라간다
-##  · 가장자리는 빽빽한 숲, 가운데는 트인 풀밭과 꽃, 돌바닥 공터
+##  · 남쪽 낮은 풀밭 → 흙길이 굽이쳐 북쪽 언덕(4층 절벽)으로 돌계단을 타고 올라간다
+##  · 기억할 자리(랜드마크): 서쪽 둔덕의 고대 나무 · 동쪽 돌 유적 공터(아치·기둥·수호상) · 남동쪽 연못 · 갈림길 표지판
+##  · 길가 돌무더기가 진행 방향을 안내하고, 적 무리는 둘레가 트인 빈터에서 나온다
 
 
 ## 측면 구간: 절벽 앞 바위 능선 (x 42~62, 구간 선 z 26). 1m 마다 층 — 점프로 오르내리고 가운데 웅덩이 하나
@@ -21,12 +22,17 @@ func _init() -> void:
 	groups = [
 		{"at": Vector3(24, 0, 38), "kinds": ["acorn", "acorn", "acorn"], "r": 9.0, "done": false},
 		{"at": Vector3(40, 0, 33), "kinds": ["acorn", "shroom", "acorn"], "r": 9.0, "done": false},
-		{"at": Vector3(14, 0, 44), "kinds": ["spider", "spider"], "r": 8.0, "done": false},
-		{"at": Vector3(52, 0, 40), "kinds": ["shroom", "shroom", "acorn", "spider"], "r": 10.0, "done": false},
+		{"at": Vector3(14, 0, 45), "kinds": ["spider", "spider"], "r": 8.0, "done": false},
+		{"at": Vector3(46, 0, 41), "kinds": ["shroom", "shroom", "acorn", "spider"], "r": 10.0, "done": false},
 		{"at": Vector3(50, 0, 26), "kinds": ["acorn", "spider"], "r": 7.0, "done": false},
 		{"at": Vector3(20, 0, 28), "kinds": ["spider", "shroom", "acorn", "acorn"], "r": 9.0, "done": false},
 		{"at": Vector3(30, 4, 10), "kinds": ["acorn", "shroom", "shroom", "spider", "acorn"], "r": 10.0, "done": false},
 	]
+
+
+const RUINS := Vector2(40.0, 32.0)
+const POND := Vector2(54.0, 45.0)
+const GIANT := Vector2(10.0, 34.0)
 
 
 func _path_x(z: float) -> float:
@@ -61,14 +67,26 @@ func _mat_at(x: float, z: float) -> int:
 		m = G.FOREST
 	if absf(x - _path_x(z)) < 1.6 + noise.get_noise_2d(x * 3.0, z * 3.0) * 0.8:
 		m = G.DIRT
-	if Vector2(x - 40, z - 32).length() < 4.6 + n * 1.5:
+	if Vector2(x - RUINS.x, z - RUINS.y).length() < 4.6 + n * 1.5:
 		m = G.STONE
+	# 연못 둘레 모래
+	var pd := Vector2((x - POND.x) / 1.35, z - POND.y).length()
+	if pd < 3.4 + n * 0.6:
+		m = G.SAND
+	# 적 무리 빈터: 둘레를 맨풀밭으로 (숲 바닥 칠 하지 않음)
+	for g in groups:
+		var ga: Vector3 = g["at"]
+		if Vector2(x - ga.x, z - ga.z).length() < 4.5 and m == G.FOREST:
+			m = G.GRASS
 	return m
 
 
 func _post_cells() -> void:
 	# 흙길이 절벽을 지나는 곳은 계단으로: 남→북으로 갈수록 한 층씩만 오르게 (계단 한 단 = 1m 깊이)
 	var step_cells := int(1.0 / C)
+	var orig: Array = []
+	for row in heights:
+		orig.append((row as Array).duplicate())
 	for pass_ in 8:
 		for gz in range(gh - 2, -1, -1):
 			var px := int(round(_path_x((gz + 0.5) * C) / C))
@@ -81,6 +99,11 @@ func _post_cells() -> void:
 				# 계단 한 단 안은 같은 높이
 				if (heights[gz][gx] as int) > (heights[gz + 1][gx] as int) and gz % step_cells != 0:
 					heights[gz][gx] = heights[gz + 1][gx]
+	# 깎아 낸 칸 = 돌계단 (흙길과 다른 재질로 — 오를 수 있는 길이 한눈에 보이게)
+	for gz in gh:
+		for gx in gw:
+			if int(heights[gz][gx]) != int(orig[gz][gx]):
+				mats[gz][gx] = G.STONE
 
 
 func _decorate() -> void:
@@ -88,6 +111,74 @@ func _decorate() -> void:
 	for gz in range(int((RIDGE.position.y - 2.0) / C), int((RIDGE.end.y + 2.5) / C)):
 		for gx in range(int((RIDGE.position.x - 1.0) / C), mini(gw, int((RIDGE.end.x + 1.0) / C))):
 			blocked[Vector2i(gx, gz)] = true
+	_landmarks()
+	# 적 무리 빈터: 나무·소품을 두지 않아 싸울 자리(회피 공간)가 트여 보이게
+	for g in groups:
+		var ga: Vector3 = g["at"]
+		_clear(Vector2(ga.x, ga.z), 5.0)
 	scatter_trees(2600)
-	scatter_props([["rock0", 6], ["rock1", 10], ["rock2", 4], ["stump0", 4], ["log0", 3], ["bush_light", 6], ["bush1", 6]])
+	scatter_props([["rock0", 4], ["rock1", 6], ["rock2", 3], ["stump0", 3], ["log0", 2], ["bush_light", 4], ["bush1", 5]])
 	scatter_grass()
+
+
+## 자리를 비워 둔다 (나무·소품 안 놓음)
+func _clear(at: Vector2, r: float) -> void:
+	for gz in range(int((at.y - r) / C), int((at.y + r) / C) + 1):
+		for gx in range(int((at.x - r) / C), int((at.x + r) / C) + 1):
+			if Vector2((gx + 0.5) * C - at.x, (gz + 0.5) * C - at.y).length() < r:
+				blocked[Vector2i(gx, gz)] = true
+
+
+func _landmarks() -> void:
+	# ---- 고대 나무 (서쪽 둔덕 꼭대기 — 멀리서도 보이는 기준점)
+	var gp := Vector3(GIANT.x, 0, GIANT.y)
+	gp.y = terrain.height_at(gp)
+	var gt := tree(gp, "giant_tree", false, LANDMARKS)
+	gt.material_override.set_shader_parameter("sway", 0.03)
+	_clear(GIANT, 4.0)
+	# ---- 돌 유적 공터 (동쪽 돌바닥): 무너진 아치 · 부서진 기둥 · 수호상
+	# 아치: 가운데는 지나갈 수 있고 두 기둥만 막힌다
+	var ap := Vector3(RUINS.x, 0, RUINS.y - 4.4)
+	land(ap, "arch", false)
+	shade_under(LANDMARKS, ap, "arch", 0.7)
+	solid_box(Vector3(ap.x - 1.45, terrain.height_at(ap), ap.z), Vector3(0.8, 3.0, 0.6))
+	solid_box(Vector3(ap.x + 1.45, terrain.height_at(ap), ap.z), Vector3(0.8, 3.0, 0.6))
+	land(Vector3(RUINS.x - 5.0, 0, RUINS.y - 1.0), "pillar0", true)
+	land(Vector3(RUINS.x + 5.2, 0, RUINS.y + 1.2), "pillar1", true)
+	land(Vector3(RUINS.x + 0.2, 0, RUINS.y + 0.6), "statue", true)
+	_clear(RUINS, 6.5)
+	# ---- 연못 (남동쪽): 물 + 갈대
+	var q := QuadMesh.new()
+	q.size = Vector2(7.6, 5.2)
+	q.orientation = PlaneMesh.FACE_Y
+	var w := MeshInstance3D.new()
+	w.mesh = q
+	var wm := ShaderMaterial.new()
+	wm.shader = load("res://shaders/water.gdshader")
+	wm.set_shader_parameter("size_px", Vector2(7.6, 5.2) * 16.0)
+	w.material_override = wm
+	w.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	w.position = Vector3(POND.x, terrain.height_at(Vector3(POND.x, 0, POND.y)) + 0.03, POND.y)
+	add_child(w)
+	solid_box(w.position - Vector3(0, 0.03, 0), Vector3(6.4, 1.0, 4.0))
+	for k in 7:
+		var a := k * TAU / 7.0 + 0.3
+		land(Vector3(POND.x + cos(a) * 4.2, 0, POND.y + sin(a) * 2.9), "reeds%d" % (k % 2), false)
+	_clear(POND, 5.0)
+	Audio.loop_at(w, "water_loop")
+	# ---- 갈림길 표지판 (공터로 가는 길과 북쪽 계단 사이)
+	var sz := 30.0
+	land(Vector3(_path_x(sz) - 2.2, 0, sz), "sign2", true)
+	# ---- 길가 돌무더기: 6m 마다 길 양옆 번갈아 (어디로 가야 하는지)
+	var side := 1.0
+	var z := 47.0
+	while z > 2.0:
+		var p := Vector3(_path_x(z) + side * 2.3, 0, z)
+		var c := terrain.cell_of(p)
+		if terrain.inside(c.x, c.y) and _flat(c) and not int(mats[c.y][c.x]) in [G.DIRT, G.STONE]:
+			land(p, "cairn%d" % (int(z) % 3), false)
+		side = -side
+		z -= 9.0
+	# ---- 북쪽 출구(둥지 쪽) 양옆 부서진 기둥 — 길 끝이 어딘지 보이게
+	land(Vector3(_path_x(1.5) - 2.6, 0, 2.0), "pillar0", true)
+	land(Vector3(_path_x(1.5) + 2.6, 0, 2.0), "pillar1", true)

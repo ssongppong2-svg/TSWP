@@ -51,12 +51,25 @@ def blade(col_hi, col_lo, kind):
     return s
 
 
+def big_blade(col, shade, kind):
+    """나무·캐릭터와 픽셀 밀도를 맞춘 굵은 풀 표시 (두 줄기 'ㅅ', 2px 굵기)"""
+    s = canvas(7, 6)
+    pts = {0: ((0, 0), (1, 1), (2, 2), (3, 3), (6, 0), (5, 1), (4, 2)),
+           1: ((1, 0), (2, 1), (3, 2), (3, 3), (5, 1), (4, 2)),
+           2: ((0, 1), (1, 2), (2, 3), (5, 0), (5, 1), (4, 2), (4, 3))}[kind]
+    for (x, y) in pts:
+        s[y, x] = hx(col)
+        if y + 1 < 6:
+            s[y + 1, x] = hx(shade)
+    return s
+
+
 def grass(seed, cols, hi, lo, n_blades=70, specks=None):
     a = tones(cols, seed)
     r = rnd(seed)
     for _ in range(n_blades):
         x, y = r.randrange(S), r.randrange(S)
-        wrap_put(a, blade(hi if r.random() < 0.7 else cols[-1], lo, r.randrange(3)), x, y)
+        wrap_put(a, big_blade(lo, hi, r.randrange(3)), x, y)
     if specks:
         for _ in range(40):
             x, y = r.randrange(S), r.randrange(S)
@@ -119,16 +132,16 @@ def stone_floor(seed):
 
 
 def forest_floor(seed):
-    a = tones(["#2f4a40", "#3e5e54", "#476f5d"], seed, cell=32, levels=(0.34, 0.7))
+    a = tones(["#3c5634", "#4a663a", "#587442"], seed, cell=32, levels=(0.34, 0.7))
     r = rnd(seed)
-    cols = ["#634c34", "#7c5f42", "#5d9374", "#8f5a3a"]
+    cols = ["#6e5236", "#8a6844", "#9a7a4e", "#7a4e34"]
     for _ in range(90):
         x, y = r.randrange(S), r.randrange(S)
         c = r.choice(cols)
         a[y % S, x % S] = hx(c)
         a[y % S, (x + 1) % S] = hx(c)
         if r.random() < 0.4:
-            a[(y + 1) % S, x % S] = hx(LEAF[1])
+            a[(y + 1) % S, x % S] = hx("#2c3e28")
     return a
 
 
@@ -176,16 +189,16 @@ def wall(seed):
     # 틈 바로 옆: 아래·오른쪽 판은 밝은 모서리, 위·왼쪽은 그늘
     t = np.where((gap < 2.6) & (lx < 0), t - 0.14, t)
     t = np.where((gap < 2.6) & (lx >= 0), t + 0.12, t)
-    ramp(a, np.ones((W, W), bool), TAN[1:7], t, 0.55)
-    paint(a, edge, TAN[0])
+    ramp(a, np.ones((W, W), bool), WALL[1:7], t, 0.55)
+    paint(a, edge, WALL[0])
     moss = (vnoise(W, W, 9, seed + 7, (W, W)) > 0.8) & ~edge & (BAYER4[ys.astype(int) % 4, xs.astype(int) % 4] > 0.3)
     paint(a, moss, GRASS[2])
     return a
 
 
 GROUND = [
-    ("grass", lambda: grass(11, GRASS[3:6], GRASS[6], GRASS[2], 70, [GRASS[7]])),
-    ("grass_lush", lambda: grass(23, GRASS[2:5], GRASS[5], GRASS[1], 60)),
+    ("grass", lambda: grass(11, GRASS[4:7], GRASS[3], GRASS[2], 14, [GRASS[7]])),
+    ("grass_lush", lambda: grass(23, GRASS[3:6], GRASS[2], GRASS[1], 16)),
     ("dirt", lambda: dirt(31)),
     ("stone", lambda: stone_floor(41)),
     ("forest", lambda: forest_floor(51)),

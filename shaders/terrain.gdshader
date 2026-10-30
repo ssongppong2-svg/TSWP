@@ -20,14 +20,14 @@ uniform sampler2D wall_tex : source_color, filter_nearest, repeat_enable; // 절
 uniform sampler2D map : filter_nearest;                                   // 칸별 R = 재질 id/255, G = 높이(층)/255
 uniform vec2 grid_size = vec2(64.0, 64.0);                                // 칸 수
 uniform float cell = 0.5;                                                 // 칸 한 변 (m)
-uniform vec3 rim_hi : source_color = vec3(0.62, 0.84, 0.62);              // 절벽 윗가장자리 밝은 테두리
-uniform vec3 rim_dark : source_color = vec3(0.17, 0.27, 0.24);            // 뒤·옆 가장자리 짙은 테두리
+uniform vec3 rim_hi : source_color = vec3(0.776, 0.878, 0.557);              // 절벽 윗가장자리 밝은 테두리
+uniform vec3 rim_dark : source_color = vec3(0.16, 0.13, 0.12);            // 뒤·옆 가장자리 짙은 테두리
 uniform float n_mats = 4.0;
 uniform float tex_px = 128.0;
-uniform vec3 fringe_dark : source_color = vec3(0.24, 0.40, 0.33);
-uniform vec3 fringe_mid : source_color = vec3(0.36, 0.58, 0.45);
-uniform vec3 fringe_hi : source_color = vec3(0.49, 0.76, 0.54);
-uniform vec3 wall_shadow : source_color = vec3(0.16, 0.20, 0.21);
+uniform vec3 fringe_dark : source_color = vec3(0.298, 0.455, 0.251);
+uniform vec3 fringe_mid : source_color = vec3(0.443, 0.620, 0.314);
+uniform vec3 fringe_hi : source_color = vec3(0.604, 0.761, 0.400);
+uniform vec3 wall_shadow : source_color = vec3(0.10, 0.08, 0.10);
 uniform sampler2D shade_map : filter_nearest;                             // 구워 둔 그늘 (1m = 16칸)
 uniform vec3 shade_col : source_color = vec3(0.50, 0.66, 0.70);          // 그늘 곱하기 색 (청록)
 uniform vec3 shade_deep : source_color = vec3(0.36, 0.50, 0.56);
@@ -86,6 +86,10 @@ void fragment() {
 		// 큰 출렁임 (반복 감추기)
 		float big = vnoise(xz * 0.12) * 0.6 + vnoise(xz * 0.31 + 4.0) * 0.4;
 		col *= mix(0.92, 1.07, big);
+		// 높이별 명도: 높은 곳은 밝고 따뜻하게, 낮은 곳은 살짝 어둡게 — 층이 한눈에 읽히게
+		float lv = floor(wpos.y + 0.01);
+		col *= mix(0.9, 1.12, clamp(lv / 6.0, 0.0, 1.0));
+		col += vec3(0.02, 0.015, 0.0) * clamp(lv / 6.0, 0.0, 1.0);
 		// 구운 그늘: 두 단계 + 경계는 4x4 디더 (부드럽지만 도트답게)
 		float sh = texture(shade_map, wpos.xz / (grid_size * cell)).r;
 		ivec2 bi = ivec2(mod(tx, 4.0));

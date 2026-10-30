@@ -104,7 +104,7 @@ func _process(dt: float) -> void:
 		var tp := target.global_position + Vector3(0, 0.7, 0)
 		var sp := cam.unproject_position(tp)
 		var hz := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
-		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 22.0))
+		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 34.0))
 	view.sub_offset = Vector2((cr - sr) * PPU, -(cu - su) * PPU)
 	cam.size = float(PixelView.GH + PixelView.MARGIN * 2) / PPU / zoom
 	RenderingServer.global_shader_parameter_set("bb_stretch", 1.0 / maxf(0.2, cos(p)))

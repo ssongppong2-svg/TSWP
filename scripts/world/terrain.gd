@@ -148,11 +148,12 @@ func _bake_cliff_shade() -> void:
 					continue
 				# 이 칸(낮은 쪽)의 그 방향 가장자리를 따라 어둡게
 				var cp := int(CELL * SHADE_PX)            # 칸 한 변의 그늘 칸 수
-				var width := mini(cp, int(clampf(0.16 + dl * 0.08, 0.18, 0.5) * SHADE_PX))
+				# 절벽이 높을수록 넓고 진한 접지 그늘 (절벽 밑이 바닥에 붙어 보이게)
+				var width := mini(cp, int(clampf(0.22 + dl * 0.1, 0.25, 0.5) * SHADE_PX))
 				for i in cp:
 					for j in width:
 						var u: float = float(j) / float(width)
-						var v := (1.0 - u) * 0.75
+						var v := (1.0 - u * u) * 0.9
 						var px: int
 						var pz: int
 						match d:
