@@ -2,12 +2,23 @@ shader_type spatial;
 // 공격 예고 장판 (땅에 눕힘): 원 또는 직사각형. 도트 단위 테두리 + 안쪽은 시간이 갈수록 차오른다
 render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled;
 
+global uniform vec4 cut_plane;
+
 uniform vec2 size_px = vec2(64.0, 64.0);
 uniform int shape = 0;                      // 0 원 · 1 사각
 uniform float fill = 0.0;                   // 0 → 1 (터지는 순간 1)
 uniform vec4 col : source_color = vec4(1.0, 0.25, 0.2, 1.0);
 
+varying vec3 cut_wpos;
+
+void vertex() {
+	cut_wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
 void fragment() {
+	if (dot(cut_plane.xyz, cut_wpos) > cut_plane.w) {
+		discard;
+	}
 	vec2 p = (floor(UV * size_px) + 0.5) / size_px * 2.0 - 1.0;
 	float d = shape == 0 ? length(p) : max(abs(p.x), abs(p.y));
 	float px = 2.0 / min(size_px.x, size_px.y);

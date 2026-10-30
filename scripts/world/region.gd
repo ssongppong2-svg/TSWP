@@ -60,6 +60,7 @@ func build(seed_: int = 7) -> void:
 			if m == G.DIRT or m == G.STONE:
 				blocked[Vector2i(gx, gz)] = true
 	_decorate()
+	scatter_decals(int(WM * HM * 0.24))
 	terrain.commit_shade()
 	_bounds()
 
@@ -310,6 +311,28 @@ func camp_prop(x: float, z: float, nm: String, opts := {}) -> MeshInstance3D:
 	return s
 
 
+## 빛나는 버섯 무리 (광원). kind: 0 청록 · 1 보라
+func glow_patch(p: Vector3, kind := 0) -> void:
+	p.y = terrain.height_at(p)
+	var nm := "glow%d" % kind
+	var s := BB.make(FLORA, nm, {"emission": 1.4, "receive_shade": false})
+	s.position = p
+	add_child(s)
+	var col := Color("#60e0f0") if kind == 0 else Color("#c080ff")
+	warm_light(p + Vector3(0, 0.6, 0.2), 1.2, 3.4, col, 0.06)
+
+
+## 반딧불 n 마리 (area 안 아무 데나, 숲 바닥·물가를 좋아함)
+func fireflies(n: int, area: Rect2, col := Color("#d8ff80")) -> void:
+	for i in n:
+		var f := Firefly.new()
+		f.col = col
+		var p := Vector3(rng.randf_range(area.position.x, area.end.x), 0, rng.randf_range(area.position.y, area.end.y))
+		p.y = terrain.height_at(p)
+		f.position = p
+		add_child(f)
+
+
 ## 따뜻한 불빛 (모닥불·등불)
 func warm_light(p: Vector3, energy: float, rng_m: float, col := Color("#ffb060"), flicker := 0.12) -> OmniLight3D:
 	var o := OmniLight3D.new()
@@ -332,7 +355,7 @@ func scatter_grass(density := 1.0, flower_k := 0.25) -> void:
 		for x in int(WM):
 			var c := terrain.cell_of(Vector3(x + 0.5, 0, z + 0.5))
 			var m: int = mats[c.y][c.x]
-			if m == G.DIRT or m == G.STONE:
+			if m == G.DIRT or m == G.STONE or m == G.SAND:
 				continue
 			# 풀 다발은 무리 지어서만 (노이즈 높은 곳) — 나머지는 비워 둬서 눈이 쉴 자리를 만든다
 			var clump := noise.get_noise_2d(x * 0.9 + 300, z * 0.9)
@@ -343,14 +366,14 @@ func scatter_grass(density := 1.0, flower_k := 0.25) -> void:
 				if rng.randf() < 0.45 * density:
 					var nm := "tuft%d" % rng.randi_range(0, 5) if m != G.FOREST else "tuft_dark%d" % rng.randi_range(0, 1)
 					var p := Vector3(x + rng.randf(), 0, z + rng.randf())
-					if terrain.mat_at(p) in [G.DIRT, G.STONE]:
+					if terrain.mat_at(p) in [G.DIRT, G.STONE, G.SAND]:
 						continue
 					p.y = terrain.height_at(p)
 					tufts.append([nm, p, rng.randf() < 0.5])
 			# 꽃 무리 (노이즈가 높은 곳에 몰리게)
 			if m != G.FOREST and noise.get_noise_2d(x * 1.3 + 500, z * 1.3) > flower_k and rng.randf() < 0.6:
 				var p2 := Vector3(x + rng.randf(), 0, z + rng.randf())
-				if terrain.mat_at(p2) in [G.DIRT, G.STONE]:
+				if terrain.mat_at(p2) in [G.DIRT, G.STONE, G.SAND]:
 					continue
 				p2.y = terrain.height_at(p2)
 				# 꽃 색은 무리마다 하나로 (흰·노랑·분홍·파랑) — 색이 섞여 지저분하지 않게
@@ -361,6 +384,39 @@ func scatter_grass(density := 1.0, flower_k := 0.25) -> void:
 		add_child(BB.multi(FLORA, tufts, {"sway": 0.05, "push": 0.3}))
 	if not flowers.is_empty():
 		add_child(BB.multi(FLORA, flowers, {"sway": 0.03, "push": 0.2}))
+
+
+## 땅 무늬 흩뿌리기: 재질·주변에 맞춰 (길엔 흙 자국·자갈, 숲 바닥엔 낙엽·잔가지, 풀밭엔 이끼·꽃잎, 돌바닥엔 금)
+func scatter_decals(n: int) -> void:
+	for i in n:
+		var p := Vector3(rng.randf_range(1.0, WM - 1.0), 0, rng.randf_range(1.0, HM - 1.0))
+		var m := terrain.mat_at(p)
+		var nm := ""
+		var r := rng.randf()
+		match m:
+			G.DIRT:
+				nm = "mud%d" % rng.randi_range(0, 1) if r < 0.45 else "pebbles%d" % rng.randi_range(0, 2)
+			G.FOREST:
+				nm = "leaves%d" % rng.randi_range(0, 2) if r < 0.6 else ("twig%d" % rng.randi_range(0, 1) if r < 0.85 else "moss%d" % rng.randi_range(0, 2))
+			G.STONE:
+				nm = "crack%d" % rng.randi_range(0, 1) if r < 0.6 else "moss%d" % rng.randi_range(0, 2)
+			G.SAND:
+				nm = "pebbles%d" % rng.randi_range(0, 2)
+			_:
+				if r < 0.22:
+					nm = "moss%d" % rng.randi_range(0, 2)
+				elif r < 0.3:
+					nm = "twig%d" % rng.randi_range(0, 1)
+				elif r < 0.38:
+					nm = "pebbles%d" % rng.randi_range(0, 2)
+		if nm != "":
+			terrain.stamp(nm, p, rng.randf() < 0.5)
+
+
+## 꽃나무 밑 꽃잎 (나무를 심은 뒤 부른다)
+func petals_under(p: Vector3) -> void:
+	for k in 5:
+		terrain.stamp("petals%d" % (k % 2), p + Vector3(rng.randf_range(-2.0, 2.0), 0, rng.randf_range(-0.6, 1.8)), rng.randf() < 0.5)
 
 
 ## 숲: 숲 바닥 칸에 빽빽하게, 풀밭엔 드문드문 + 나무 둘레 덤불·고사리
@@ -388,7 +444,10 @@ func scatter_trees(tries: int, sparse_k := 0.05) -> void:
 			nm = "pine%d" % rng.randi_range(0, 1)
 		else:
 			nm = "tree%d" % rng.randi_range(0, 2)
-		tree(_spot(c), nm, rng.randf() < 0.5)
+		var tp := _spot(c)
+		tree(tp, nm, rng.randf() < 0.5)
+		if nm.begins_with("tree_bloom"):
+			petals_under(tp)
 		_mark(c, 2)
 		spots.append(c)
 	for tc in spots:

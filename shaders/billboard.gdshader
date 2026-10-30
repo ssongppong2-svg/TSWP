@@ -24,6 +24,8 @@ global uniform vec4 push_c;
 global uniform vec4 push_d;
 
 uniform sampler2D tex : source_color, filter_nearest, repeat_disable;
+uniform sampler2D ntex : hint_normal, filter_nearest, repeat_disable;   // 같은 배치의 노멀맵 (2.5D 조명)
+uniform float normal_k = 0.75;                                            // 0 = 납작한 판, 1 = 노멀맵 그대로
 uniform vec4 region = vec4(0.0, 0.0, 1.0, 1.0);   // 아틀라스 안 사각형 (uv)
 uniform float sway = 0.0;                          // 바람에 흔들리는 정도 (꼭대기 기준 m)
 uniform float push_k = 0.0;                        // 사람에 밀리는 정도
@@ -33,6 +35,8 @@ uniform float flip = 0.0;                          // 1 = 좌우 뒤집기
 uniform float up_normal = 0.85;                    // 빛 받는 방향: 1 = 땅처럼 위, 0 = 카메라 쪽
 uniform float emission = 0.0;
 uniform float spin = 0.0;                          // 화면에서 돌리기 (라디안) — 날아가는 화살·주사
+uniform float skew = 0.0;                          // 가상 뼈: 높이 1m 당 옆으로 휘는 양 (기울기·흔들림)
+uniform vec2 squash = vec2(1.0, 1.0);              // 가상 뼈: 가로·세로 늘림 (발밑 기준)
 uniform float shadow_h = 0.5;                      // 그림자 키 (1 = 실제 키)
 uniform bool receive_shade = true;                 // 나무·덤불처럼 그늘을 만드는 쪽은 끈다
 uniform bool see_through = false;                  // 나무·천막처럼 주인공을 가릴 수 있는 것
@@ -42,6 +46,7 @@ varying vec4 v_region;
 varying float v_flip;
 varying float v_shade;
 varying vec3 v_nrm;
+varying vec3 v_tan;
 varying float v_cut;                               // 단면까지 거리 (+ 면 걷어 낼 쪽)
 varying float v_lane;                              // 구간 선에서 뒤로 얼마나 먼가 (m)
 varying float v_front;                             // 주인공보다 카메라 쪽에 있는가 (+)                                // 세계 기준 빛 받는 면 (뒷면 뒤집힘 없이 조각에서 다시 넣는다)
@@ -78,8 +83,9 @@ void vertex() {
 		float sn = sin(spin);
 		local.xy = vec2(local.x * cs - local.y * sn, local.x * sn + local.y * cs);
 	}
-	local.x *= sx;
-	local.y *= sy * (shadow_pass ? shadow_h : bb_stretch);
+	local.x *= sx * squash.x;
+	local.y *= sy * squash.y * (shadow_pass ? shadow_h : bb_stretch);
+	local.x += skew * (local.y / max(sy * bb_stretch, 0.01));
 	// 바람: 꼭대기일수록, 자리마다 다른 박자로
 	float ph = origin.x * 0.37 + origin.z * 0.61;
 	float w = sin(wind_time * 1.7 + ph) * 0.6 + sin(wind_time * 3.1 + ph * 1.7) * 0.25;
@@ -108,6 +114,7 @@ void vertex() {
 	}
 	// 빛 받는 면: 위쪽 + 카메라 쪽(fwd = 화면 앞) 섞기. 그림에 이미 명암이 있으니 대부분 위를 향하게
 	v_nrm = normalize(mix(fwd, vec3(0.0, 1.0, 0.0), up_normal));
+	v_tan = right;
 	if (use_instance) {
 		COLOR.a = 1.0;
 	}
@@ -151,5 +158,13 @@ void fragment() {
 	EMISSION = col * emission + vec3(flash) * 0.6;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
-	NORMAL = normalize((VIEW_MATRIX * vec4(v_nrm, 0.0)).xyz);
+	// 노멀맵: 그림의 오른쪽 = 화면 오른쪽, 그림의 위 = 기울어진 판의 위, 그림 밖 = 판의 앞
+	vec3 nt = texture(ntex, v_region.xy + uv * v_region.zw).rgb * 2.0 - 1.0;
+	if (v_flip > 0.5) {
+		nt.x = -nt.x;
+	}
+	vec3 B = normalize(vec3(0.0, 1.0, 0.0) - v_nrm * v_nrm.y);
+	vec3 nw = normalize(v_tan * nt.x + B * nt.y + v_nrm * max(nt.z, 0.2));
+	nw = normalize(mix(v_nrm, nw, normal_k));
+	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
 }

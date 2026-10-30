@@ -33,6 +33,7 @@ func _init() -> void:
 const RUINS := Vector2(40.0, 32.0)
 const POND := Vector2(54.0, 45.0)
 const GIANT := Vector2(10.0, 34.0)
+var pond: PondSim
 
 
 func _path_x(z: float) -> float:
@@ -119,6 +120,19 @@ func _decorate() -> void:
 	scatter_trees(2600)
 	scatter_props([["rock0", 4], ["rock1", 6], ["rock2", 3], ["stump0", 3], ["log0", 2], ["bush_light", 4], ["bush1", 5]])
 	scatter_grass()
+	# 광원: 짙은 숲 바닥의 빛나는 버섯 · 연못가와 유적의 반딧불
+	var placed := 0
+	for i in 400:
+		if placed >= 14:
+			break
+		var c := _rand_cell(4)
+		if int(mats[c.y][c.x]) == G.FOREST and _flat(c) and not blocked.has(c):
+			glow_patch(_spot(c), 0 if rng.randf() < 0.7 else 1)
+			_mark(c, 3)
+			placed += 1
+	fireflies(8, Rect2(POND.x - 6, POND.y - 5, 12, 9))
+	fireflies(6, Rect2(RUINS.x - 6, RUINS.y - 5, 12, 10))
+	fireflies(6, Rect2(GIANT.x - 5, GIANT.y - 5, 10, 10))
 
 
 ## 자리를 비워 둔다 (나무·소품 안 놓음)
@@ -166,6 +180,11 @@ func _landmarks() -> void:
 		land(Vector3(POND.x + cos(a) * 4.2, 0, POND.y + sin(a) * 2.9), "reeds%d" % (k % 2), false)
 	_clear(POND, 5.0)
 	Audio.loop_at(w, "water_loop")
+	if Prefs.quality >= 1:
+		pond = PondSim.new()
+		add_child(pond)
+		pond.setup(wm, Rect2(POND.x - 3.8, POND.y - 2.6, 7.6, 5.2))
+		wm.set_shader_parameter("has_ripple", true)
 	# ---- 갈림길 표지판 (공터로 가는 길과 북쪽 계단 사이)
 	var sz := 30.0
 	land(Vector3(_path_x(sz) - 2.2, 0, sz), "sign2", true)

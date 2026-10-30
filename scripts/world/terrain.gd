@@ -47,6 +47,11 @@ func build(hts: Array, ms: Array, ground_tex: Texture2D, wall_tex: Texture2D, n_
 	material.shader = preload("res://shaders/terrain.gdshader")
 	material.set_shader_parameter("ground", ground_tex)
 	material.set_shader_parameter("wall_tex", wall_tex)
+	# 노멀맵 (같은 이름 _n.png)
+	for pair in [["ground_n", ground_tex], ["wall_n", wall_tex]]:
+		var np_: String = (pair[1] as Texture2D).resource_path.get_basename() + "_n.png"
+		if ResourceLoader.exists(np_):
+			material.set_shader_parameter(pair[0], load(np_))
 	material.set_shader_parameter("n_mats", float(n_mats))
 	material.set_shader_parameter("grid_size", Vector2(w, h))
 	material.set_shader_parameter("cell", CELL)
@@ -173,7 +178,45 @@ func _bake_cliff_shade() -> void:
 							shade_img.set_pixel(px, pz, Color(v, v, v))
 
 
+## 땅 무늬 굽기 (데칼): 화면 1픽셀 = 1텍셀이 되도록 x 16/m · z 16·sin(탑다운 기울기)/m
+const DECAL_SP := 0.788             # sin(52°) — CamRig.TOP_PITCH
+var decal_img: Image
+var decal_tex: ImageTexture
+var _decal_src: Image
+var _decal_rects := {}
+
+
+func stamp(name_: String, p: Vector3, flip := false) -> void:
+	if decal_img == null:
+		decal_img = Image.create(int(w * CELL * 16.0), int(h * CELL * 16.0 * DECAL_SP) + 1, false, Image.FORMAT_RGBA8)
+		_decal_src = (load("res://assets/sprites/decals.png") as Texture2D).get_image()
+		_decal_src.convert(Image.FORMAT_RGBA8)
+		_decal_rects = JSON.parse_string(FileAccess.get_file_as_string("res://assets/sprites/decals.json"))
+	var r: Array = _decal_rects.get(name_, [])
+	if r.is_empty():
+		return
+	var ox := int(p.x * 16.0 - r[2] * 0.5)
+	var oy := int(p.z * 16.0 * DECAL_SP - r[3] * 0.5)
+	for y in int(r[3]):
+		for x in int(r[2]):
+			var sx: int = int(r[0]) + (int(r[2]) - 1 - x if flip else x)
+			var c := _decal_src.get_pixel(sx, int(r[1]) + y)
+			if c.a < 0.5:
+				continue
+			var dx := ox + x
+			var dy := oy + y
+			if dx >= 0 and dy >= 0 and dx < decal_img.get_width() and dy < decal_img.get_height():
+				decal_img.set_pixel(dx, dy, c)
+
+
 func commit_shade() -> void:
+	if decal_img:
+		if decal_tex == null:
+			decal_tex = ImageTexture.create_from_image(decal_img)
+		else:
+			decal_tex.update(decal_img)
+		material.set_shader_parameter("decal_map", decal_tex)
+		material.set_shader_parameter("decal_size", Vector2(decal_img.get_size()))
 	if shade_tex == null:
 		shade_tex = ImageTexture.create_from_image(shade_img)
 	else:

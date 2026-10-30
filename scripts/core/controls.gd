@@ -17,6 +17,7 @@ const DEFAULT := {
 	"debug_side": [KEY_F2],
 	"skill": [KEY_Q],
 	"switch_job": [KEY_TAB],
+	"quality": [KEY_F10],
 }
 const MOUSE := {"attack": MOUSE_BUTTON_LEFT, "skill": MOUSE_BUTTON_RIGHT, "ping": MOUSE_BUTTON_MIDDLE}
 const PAD_BTN := {"roll": JOY_BUTTON_A, "attack": JOY_BUTTON_X, "skill": JOY_BUTTON_Y, "interact": JOY_BUTTON_B,

@@ -10,6 +10,8 @@ render_mode cull_back;
 #include "res://shaders/inc/toon.gdshaderinc"
 
 global uniform float cam_pitch;
+global uniform float wind_time;
+global uniform float leaf_k;       // 흘러가는 나뭇잎 그림자 세기
 global uniform vec4 cut_plane;
 global uniform float side_amt;
 global uniform vec4 lane_plane;     // 측면 구간 선 (n, 깊이) — 멀리 있는 것일수록 공기 색
@@ -17,6 +19,11 @@ global uniform vec4 atmo_col;
 
 uniform sampler2D ground : source_color, filter_nearest, repeat_enable;   // 세로로 재질 N장 (각 128x128)
 uniform sampler2D wall_tex : source_color, filter_nearest, repeat_enable; // 절벽 64x64
+uniform sampler2D ground_n : hint_normal, filter_nearest, repeat_enable;   // 땅 노멀맵 (같은 배치)
+uniform sampler2D wall_n : hint_normal, filter_nearest, repeat_enable;
+uniform float normal_k = 0.35;
+uniform sampler2D decal_map : source_color, filter_nearest;               // 구워 넣은 땅 무늬 (낙엽·자갈·이끼…)
+uniform vec2 decal_size = vec2(1.0);
 uniform sampler2D map : filter_nearest;                                   // 칸별 R = 재질 id/255, G = 높이(층)/255
 uniform vec2 grid_size = vec2(64.0, 64.0);                                // 칸 수
 uniform float cell = 0.5;                                                 // 칸 한 변 (m)
@@ -72,6 +79,7 @@ void fragment() {
 		discard;
 	}
 	float sp = max(sin(cam_pitch), 0.12);
+	vec3 nw = wnrm;
 	float cp = max(cos(cam_pitch), 0.2);
 	vec3 col;
 	if (wnrm.y > 0.5) {
@@ -81,8 +89,22 @@ void fragment() {
 		vec2 j = vec2(vnoise(xz * 1.7), vnoise(xz * 1.7 + 19.3)) - 0.5;
 		j += (vec2(hash(tx), hash(tx + 7.1)) - 0.5) * 0.18;
 		float m = mat_at(xz + j * 0.8);
-		vec2 tuv = fract((tx + 0.5) / tex_px);
+		// 반복 깨기: 6m 덩어리마다 텍스처를 다른 자리에서 가져오고 좌우를 뒤집는다 (경계는 노이즈로 흔들어 직선 이음새가 안 보이게)
+		vec2 bc = floor((xz + (vec2(vnoise(xz * 0.5), vnoise(xz * 0.5 + 11.0)) - 0.5) * 2.4) / 6.0);
+		vec2 boff = floor(vec2(hash(bc), hash(bc + 3.7)) * tex_px);
+		vec2 btx = tx + boff;
+		if (hash(bc + 9.1) > 0.5) {
+			btx.x = -btx.x - 1.0;
+		}
+		vec2 tuv = fract((btx + 0.5) / tex_px);
 		col = texture(ground, vec2(tuv.x, (tuv.y + m) / n_mats)).rgb;
+		vec3 gn = texture(ground_n, vec2(tuv.x, (tuv.y + m) / n_mats)).rgb * 2.0 - 1.0;
+		nw = normalize(mix(vec3(0.0, 1.0, 0.0), normalize(vec3(gn.x, max(gn.z, 0.2), -gn.y)), normal_k));
+		// 구운 땅 무늬 (데칼)
+		vec4 dc = texture(decal_map, (tx + 0.5) / decal_size);
+		if (dc.a > 0.5 && decal_size.x > 1.0) {
+			col = dc.rgb;
+		}
 		// 큰 출렁임 (반복 감추기)
 		float big = vnoise(xz * 0.12) * 0.6 + vnoise(xz * 0.31 + 4.0) * 0.4;
 		col *= mix(0.92, 1.07, big);
@@ -99,6 +121,14 @@ void fragment() {
 			col *= shade_deep;
 		} else if (sh > 0.22 + (th - 0.5) * 0.3) {
 			col *= shade_col;
+		}
+		// 흘러가는 나뭇잎·구름 그림자 (세계에 붙어 천천히 흐름, 2단계 디더)
+		if (leaf_k > 0.0) {
+			vec2 lp = xz * 0.22 + vec2(wind_time * 0.035, wind_time * 0.02);
+			float lv2 = vnoise(lp) * 0.6 + vnoise(lp * 2.7 + 3.0) * 0.4;
+			if (lv2 > 0.62 + (th - 0.5) * 0.12) {
+				col *= mix(vec3(1.0), shade_col, leaf_k * 0.8);
+			}
 		}
 		// 절벽 가장자리 테두리: 앞(남)쪽이 낮으면 밝은 줄, 뒤·옆이 낮으면 짙은 줄 (높이가 또렷하게 읽히게)
 		vec2 c = floor(wpos.xz / cell);
@@ -122,6 +152,9 @@ void fragment() {
 		float tx = floor(along * 16.0 + 0.001);
 		vec2 wuv = vec2(tx, ty + floor(wall_span.y * 16.0 * cp)) / 64.0;
 		col = texture(wall_tex, wuv).rgb;
+		vec3 wn = texture(wall_n, wuv).rgb * 2.0 - 1.0;
+		vec3 T = normalize(cross(vec3(0.0, 1.0, 0.0), wnrm));
+		nw = normalize(mix(wnrm, normalize(T * wn.x + vec3(0.0, 1.0, 0.0) * wn.y + wnrm * max(wn.z, 0.2)), normal_k));
 		float from_top = ty;
 		float from_bot = (wpos.y - wall_span.x) * 16.0 * cp;
 		// 늘어진 잔디
@@ -143,4 +176,5 @@ void fragment() {
 	ALBEDO = col;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
+	NORMAL = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
 }

@@ -56,6 +56,8 @@ func _decorate() -> void:
 	# ---- 모닥불 + 불빛
 	camp_prop(fx, fz, "fire0", {"frames": ["fire0", "fire1", "fire2", "fire3"], "fps": 9.0, "emission": 0.9, "shade": 0.0, "solid": 0.5})
 	warm_light(Vector3(fx, 1.0, fz + 0.2), 3.2, 9.0, Color("#ffa850"), 0.14)
+	if Prefs.quality >= 1:
+		Particles.embers(self, Vector3(fx, terrain.height_at(Vector3(fx, 0, fz)), fz))
 	camp_prop(fx + 1.7, fz - 0.9, "pot", {"shade": 0.5})
 	# ---- 통나무 의자 (불 둘레)
 	camp_prop(fx, fz - 2.5, "bench", {"box": Vector3(1.8, 0.6, 0.5)})
@@ -97,6 +99,7 @@ func _decorate() -> void:
 			for dx in range(-4, 5):
 				blocked[c + Vector2i(dx, dz)] = true
 		_mark(c, 3)
+	fireflies(8, Rect2(4, 4, 32, 24), Color("#ffe080"))
 	# ---- 숲·풀
 	scatter_trees(1600, 0.02)
 	scatter_props([["rock1", 5], ["stump0", 3], ["bush_light", 4], ["bush1", 3], ["log0", 2]])

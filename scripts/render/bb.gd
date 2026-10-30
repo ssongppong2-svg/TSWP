@@ -15,7 +15,9 @@ static func atlas(path: String) -> Dictionary:
 	var tex: Texture2D = load(path)
 	var js := FileAccess.get_file_as_string(path.get_basename() + ".json")
 	var rects: Dictionary = JSON.parse_string(js) if js != "" else {}
-	var d := {"tex": tex, "rects": rects, "size": Vector2(tex.get_size())}
+	var npath := path.get_basename() + "_n.png"
+	var ntex: Texture2D = load(npath) if ResourceLoader.exists(npath) else null
+	var d := {"tex": tex, "ntex": ntex, "rects": rects, "size": Vector2(tex.get_size())}
 	_atlases[path] = d
 	return d
 
@@ -54,6 +56,10 @@ static func make(path: String, name: String, opts := {}) -> MeshInstance3D:
 		m = ShaderMaterial.new()
 		m.shader = shader()
 		m.set_shader_parameter("tex", atlas(path)["tex"])
+		if atlas(path)["ntex"]:
+			m.set_shader_parameter("ntex", atlas(path)["ntex"])
+		else:
+			m.set_shader_parameter("normal_k", 0.0)
 		m.set_shader_parameter("region", region_uv(path, name))
 		m.set_shader_parameter("sway", float(opts.get("sway", 0.0)))
 		m.set_shader_parameter("push_k", float(opts.get("push", 0.0)))
@@ -116,6 +122,10 @@ static func multi(path: String, items: Array, opts := {}) -> MultiMeshInstance3D
 	var m := ShaderMaterial.new()
 	m.shader = shader()
 	m.set_shader_parameter("tex", atlas(path)["tex"])
+	if atlas(path)["ntex"]:
+		m.set_shader_parameter("ntex", atlas(path)["ntex"])
+	else:
+		m.set_shader_parameter("normal_k", 0.0)
 	m.set_shader_parameter("use_instance", true)
 	m.set_shader_parameter("sway", float(opts.get("sway", 0.0)))
 	m.set_shader_parameter("push_k", float(opts.get("push", 0.0)))

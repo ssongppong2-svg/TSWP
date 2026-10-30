@@ -179,22 +179,28 @@ def arm(a, x, y, c, length=5, hand=True):
         rect(a, x, y + length - 1, x + 1, y + length - 1, SKIN[1])
 
 
+# 6프레임 걷기: 다리 단계 (옆: 앞뒤 벌림 · 앞뒤: 들린 발)
+WALK_SIDE = [(0, 0), (-1, 1), (-2, 2), (0, 0), (1, -1), (2, -2)]
+WALK_LIFT = [(0, 0), (1, 0), (1, 0), (0, 0), (0, 1), (0, 1)]
+WALK_BOB = [0, -1, 0, 0, -1, 0]
+WALK_ARM = [(0, 0), (1, -1), (1, -1), (0, 0), (-1, 1), (-1, 1)]
+
+
 def legs(a, d, phase, oy, c, spread=0):
-    """phase: 0 모음 · 1 왼발 앞 · 2 모음 · 3 오른발 앞 (옆모습은 앞뒤로 벌림)"""
+    """phase: 0~5 (6프레임 걷기) — 옆모습은 앞뒤로 벌리고, 앞뒤 모습은 발을 번갈아 든다"""
     b = c["boots"]
     if d == "e":
-        f = {0: (0, 0), 1: (-2, 2), 2: (0, 0), 3: (2, -2)}[phase]
+        f = WALK_SIDE[phase]
         if spread:
             f = (-spread, spread)
         # 뒷발(어둡게) 먼저
         for k, (dx, col) in enumerate(((f[0], b[0]), (f[1], b[1]))):
             x = 10 + dx + k
-            lift = 1 if (phase in (1, 3) and dx < 0) else 0
+            lift = 1 if (phase in (1, 2, 4, 5) and dx < 0) else 0
             rect(a, x, 28 + oy - lift, x + 2, 30 + oy - lift, col)
             put(a, x + 3, 30 + oy - lift, col)
     else:
-        lift_l = 1 if phase == 1 else 0
-        lift_r = 1 if phase == 3 else 0
+        lift_l, lift_r = WALK_LIFT[phase]
         rect(a, 8 - spread, 28 - lift_l + oy, 10 - spread, 30 - lift_l + oy, b[1])
         rect(a, 13 + spread, 28 - lift_r + oy, 15 + spread, 30 - lift_r + oy, b[0] if d == "s" else b[1])
         # 발바닥 줄
@@ -217,16 +223,17 @@ def frame(c, d, anim, i):
     arm_dy = (0, 0)
     blink = False
     spread = 0
+    smear = False
     if anim == "idle":
-        head_dy = 1 if i == 1 else 0
-        blink = False
+        head_dy = [0, 0, 1, 1][i]            # 숨쉬기 4프레임
+        blink = i == 3
     elif anim in ("walk", "run"):
         phase = i
-        bob = -1 if i in (1, 3) else 0
-        arm_dy = {0: (0, 0), 1: (1, -1), 2: (0, 0), 3: (-1, 1)}[i]
+        bob = WALK_BOB[i]
+        arm_dy = WALK_ARM[i]
         if anim == "run":
             lean = 1
-            bob = -1 if i in (1, 3) else 0
+            arm_dy = (arm_dy[0] * 2, arm_dy[1] * 2)
     elif anim == "jump":
         bob = -1
         spread = 1
@@ -235,8 +242,10 @@ def frame(c, d, anim, i):
         spread = 1
         arm_dy = (-1, -1)
     elif anim == "attack":
-        lean = [0, 2, 1][i]
-        arm_dy = [(-3, 0), (2, 0), (1, 0)][i]
+        # 5프레임: 예비동작 · 스미어(잔상) · 타격 · 따라감 · 회복
+        lean = [-1, 1, 2, 2, 1][i]
+        arm_dy = [(-3, 0), (0, 0), (2, 0), (2, 0), (1, 0)][i]
+        smear = i == 1
     elif anim == "hurt":
         head_dy = 1
         blink = True
@@ -250,8 +259,15 @@ def frame(c, d, anim, i):
         arm(a, 10 + lean - arm_dy[1] // 2, 21 + bob, {**c, "cloth": [c["cloth"][0]] * 3}, 5)
         body(a, d, bob, c, lean)
         head(a, d, lean, bob + head_dy, c, blink)
-        # 앞 팔: 공격이면 앞으로 뻗음
-        if anim == "attack" and i >= 1:
+        # 앞 팔: 공격이면 앞으로 뻗음 (스미어 프레임은 휘두른 궤적을 옅게 남긴다)
+        if smear:
+            for k2 in range(7):
+                ang = -1.2 + k2 * 0.4
+                x = int(14 + lean + math.cos(ang) * 6)
+                y = int(22 + bob + math.sin(ang) * 6)
+                rect(a, x, y, x + 1, y, "#f4ecd8" if k2 > 2 else "#c8c0b0")
+            rect(a, 17 + lean, 21 + bob, 18 + lean, 22 + bob, SKIN[2])
+        elif anim == "attack" and i >= 2:
             rect(a, 13 + lean, 22 + bob, 17 + lean, 23 + bob, c["cloth"][1])
             rect(a, 18 + lean, 22 + bob, 18 + lean, 23 + bob, SKIN[1])
         else:
@@ -274,7 +290,7 @@ def roll(c, d, i):
     cx, cy, r = 12, 24.5, 6.6
     ball = ell(FW, FH, cx, cy, r, r)
     ang = np.arctan2(ys - cy, xs - cx)
-    rot = i * (math.pi / 2) * (1 if d != "n" else -1)
+    rot = i * (math.pi / 3) * (1 if d != "n" else -1)
     cap = np.cos(ang - (-math.pi / 2 + rot)) > 0.15
     lam = -((xs - cx) / r) * 0.5 - ((ys - cy) / r) * 0.6
     ramp(a, ball & ~cap, c["cloth"], 0.45 + lam * 0.45, 0.4)
@@ -286,7 +302,7 @@ def roll(c, d, i):
     return a
 
 
-ANIMS = {"idle": 2, "walk": 4, "run": 4, "roll": 4, "jump": 1, "fall": 1, "attack": 3, "hurt": 1}
+ANIMS = {"idle": 4, "walk": 6, "run": 6, "roll": 6, "jump": 1, "fall": 1, "attack": 5, "hurt": 1}
 
 
 def main():

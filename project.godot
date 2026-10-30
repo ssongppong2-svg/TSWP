@@ -65,6 +65,10 @@ focus_screen={
 "type": "vec4",
 "value": Vector4(-1000, -1000, 0, 0)
 }
+leaf_k={
+"type": "float",
+"value": 0.0
+}
 side_amt={
 "type": "float",
 "value": 0.0

@@ -25,6 +25,10 @@ var anim_t := 0.0
 var lunge_dir := Vector3.ZERO
 var _think := 0.0
 var _side_lane := false
+# 가상 뼈 (스프링): 예비동작에 움츠렸다 공격에 튀어나오고, 맞으면 출렁인다
+var bone_sx := SpringBone.new(1.0, 240.0, 12.0)
+var bone_sy := SpringBone.new(1.0, 240.0, 12.0)
+var bone_lean := SpringBone.new(0.0, 150.0, 10.0)
 
 
 static func spawn(parent: Node, k: String, at: Vector3, terrain_: Terrain, rig_: CamRig) -> Enemy:
@@ -196,12 +200,18 @@ func _pick_target() -> void:
 
 func _windup() -> void:
 	state = "windup"
+	bone_sy.target = 0.82          # 움츠림 (예고)
+	bone_sx.target = 1.15
 	st_t = float(E["windup"])
 	Audio.play("telegraph", global_position, -3.0)
 
 
 func _strike(to: Vector3) -> void:
 	state = "strike"
+	bone_sy.target = 1.0
+	bone_sx.target = 1.0
+	bone_sy.kick(10.0)             # 튀어나옴
+	bone_sx.kick(-8.0)
 	spr_mat.set_shader_parameter("flash", 0.0)
 	var dir := to.normalized() if to.length() > 0.01 else Vector3(1, 0, 0)
 	match String(E["role"]):
@@ -258,6 +268,13 @@ func _set_anim(a: String, frame := -1) -> void:
 
 func _anim_tick(dt: float) -> void:
 	anim_t += dt
+	var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
+	bone_lean.target = clampf(velocity.dot(scr_r) * 0.03, -0.2, 0.2)
+	if state != "windup":
+		bone_sy.target = 1.0
+		bone_sx.target = 1.0
+	spr_mat.set_shader_parameter("squash", Vector2(bone_sx.step(dt), bone_sy.step(dt)))
+	spr_mat.set_shader_parameter("skew", bone_lean.step(dt))
 	var counts := {"idle": 2, "move": 4, "attack": 3, "hurt": 1}
 	var a := "hurt" if flash > 0.06 else anim
 	var i: int = int(anim_t * float(FPS[a])) % int(counts[a])
@@ -270,6 +287,11 @@ func _anim_tick(dt: float) -> void:
 func _on_hurt(h: Hit, amt: float) -> void:
 	if amt > 0.0:
 		Audio.play("%s_hurt" % kind, global_position)
+		var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
+		bone_lean.kick(signf(h.knock.dot(scr_r) + 0.001) * 3.5)
+		Particles.burst(get_parent(), center(), Color("#fff4d0"), Color("#c88a4a"), 8, 3.5)
+		bone_sy.kick(-7.0)
+		bone_sx.kick(6.0)
 		# 맞으면 예고 중이던 공격이 끊긴다 (때리는 맛)
 		if state == "windup" and amt >= 10.0:
 			state = "recover"
@@ -282,6 +304,9 @@ func _die() -> void:
 	super._die()
 	Audio.play("%s_die" % kind, global_position)
 	killed.emit(self, last_hit_by)
+	var pc := {"acorn": [Color("#e8b070"), Color("#6e4426")], "shroom": [Color("#ffb0b0"), Color("#8a2e4e")], "spider": [Color("#c0a0e0"), Color("#2e1e3e")]}
+	var cc: Array = pc.get(kind, [Color.WHITE, Color.GRAY])
+	Particles.burst(get_parent(), center(), cc[0], cc[1], 22, 5.0)
 	Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 12.0)
 	Fx.pop(get_parent(), global_position + Vector3(0, 0.3, 0), ["spark0", "spark1", "spark2"], 12.0)
 	collision_layer = 0

@@ -42,6 +42,7 @@ var _buffer := 0.0
 var _was_floor := true
 var _step_t := 0.0
 var _fall_v := 0.0
+var _ghost_t := 0.0
 # 패시브 상태
 var _passive_t := 0.0
 var _blast_t := 0.0                   # 폭풍 질주 남은 시간
@@ -78,6 +79,14 @@ func _ready() -> void:
 	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	ring.position.y = 0.03
 	add_child(ring)
+	# 내 캐릭터 둘레 은은한 빛 — 어두운 곳에서도 내가 어디 있는지 (시각적 위계)
+	var pl := OmniLight3D.new()
+	pl.light_color = Color("#fff0d0")
+	pl.light_energy = 0.45
+	pl.omni_range = 3.2
+	pl.omni_attenuation = 1.8
+	pl.position = Vector3(0, 1.2, 0.6)
+	add_child(pl)
 	set_job(job)
 	damaged.connect(_on_damaged)
 
@@ -145,6 +154,10 @@ func _physics_process(dt: float) -> void:
 	# ---- 수평 이동
 	if roll_t > 0.0:
 		roll_t -= dt
+		_ghost_t -= dt
+		if _ghost_t <= 0.0:
+			_ghost_t = 0.05
+			spr.ghost(get_parent(), global_position)
 		velocity.x = roll_dir.x * ROLL
 		velocity.z = roll_dir.z * ROLL
 	else:
@@ -155,6 +168,7 @@ func _physics_process(dt: float) -> void:
 		if not sd and ctrl.roll and dir != Vector3.ZERO:
 			roll_t = ROLL_T
 			roll_dir = dir.normalized()
+			spr.stretch(-0.8)
 			invuln = maxf(invuln, 0.18)
 			Audio.play("dash", global_position)
 			Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 16.0)
@@ -214,6 +228,7 @@ func _after_move(dt: float) -> void:
 	var on_floor := is_on_floor()
 	if on_floor and not _was_floor:
 		var hard := _fall_v < -9.0
+		spr.stretch(clampf(_fall_v / 12.0, -1.6, -0.5))
 		Audio.play("land_heavy" if hard else "land", global_position)
 		Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 16.0)
 		if hard and rig:
@@ -234,6 +249,9 @@ func _after_move(dt: float) -> void:
 		_die()
 		return
 	spr.face(aim if attack_t > 0.0 else facing, rig.yaw if rig else 0.0)
+	# 가상 뼈: 달리는 쪽으로 몸이 기운다
+	var scr_right := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
+	spr.lean_to(velocity.dot(scr_right) * 0.022)
 	(ring.material_override as ShaderMaterial).set_shader_parameter("aim", atan2(aim.z, aim.x))
 	ring.visible = not side()
 	if flash > 0.08:
@@ -264,6 +282,7 @@ func jump() -> void:
 		velocity.y = JUMP
 		_coyote = 0.0
 		_buffer = 0.0
+		spr.stretch(1.0)
 		Audio.play("jump", global_position)
 		Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 16.0)
 
@@ -279,8 +298,18 @@ func _on_damaged(_f: Fighter, h: Hit, amt: float) -> void:
 	if amt > 0.0:
 		Audio.play("hurt", global_position)
 		invuln = maxf(invuln, 0.45)
+		var src := h.source as Node3D
+		var side_k := 1.0
+		if src and is_instance_valid(src):
+			var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
+			side_k = signf((global_position - src.global_position).dot(scr_r))
+		spr.wobble(side_k, 1.6)
+		Particles.burst(get_parent(), center(), Color("#ffd0c0"), Color("#c03030"), 10, 3.5)
+		spr.stretch(-0.6)
 		if rig and local:
 			rig.shake(2.5)
+			rig.kick(Vector2(side_k * 3.0, -1.5))
+			get_tree().call_group("hud", "hurt_flash", clampf(amt / 30.0, 0.3, 1.0))
 	# 폭탄마 패시브: 폭발에 맞으면 빨라진다 (자기 폭탄도)
 	if job == "bomber" and h.explosive:
 		_blast_t = 3.0
@@ -365,7 +394,10 @@ func _passives(dt: float, dir: Vector3) -> void:
 func _basic() -> void:
 	var b: Dictionary = J["basic"]
 	attack_cd = 1.0 / float(b["rate"])
-	attack_t = 0.22
+	attack_t = 0.26
+	var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
+	spr.wobble(1.0 if aim.dot(scr_r) >= 0.0 else -1.0, 0.8)
+	spr.stretch(-0.35)
 	spr.play("attack", true)
 	var atk := stat("attack")
 	match String(b["kind"]):

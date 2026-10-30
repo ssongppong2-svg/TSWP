@@ -22,6 +22,7 @@ var map_name := ""
 var walker: Player
 var party: Party
 var hud: Hud
+var air: Node3D
 var job := "warrior"
 var args := {}
 var _frame := 0
@@ -82,6 +83,11 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	world.add_child(map)
 	map.build(7)
 	env.apply(map.env_preset, true)
+	var rm := pv.rays.material as ShaderMaterial
+	rm.set_shader_parameter("strength", float(env.P["rays"]) if Prefs.quality >= 1 else 0.0)
+	rm.set_shader_parameter("ray_col", env.P["ray_col"])
+	pv.rays.visible = Prefs.quality >= 1
+	RenderingServer.global_shader_parameter_set("leaf_k", float(env.P["leaf"]) if Prefs.quality >= 1 else 0.0)
 	walker = Player.new()
 	walker.job = job
 	walker.terrain = map.terrain
@@ -96,6 +102,22 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	world.add_child(rig)
 	rig.setup(pv)
 	rig.bounds = Rect2(0, 0, map.WM, map.HM)
+	# 공기 속 입자 (카메라를 따라다님)
+	air = Node3D.new()
+	world.add_child(air)
+	if Prefs.quality >= 1:
+		match map.env_preset:
+			"forest":
+				air.add_child(Particles.ambient("leaves"))
+				air.add_child(Particles.ambient("pollen"))
+			"nest":
+				air.add_child(Particles.ambient("spores"))
+			"camp":
+				air.add_child(Particles.ambient("pollen"))
+	var bd := Backdrop.new()
+	bd.rig = rig
+	world.add_child(bd)
+	bd.build(map.WM, env.P)
 	rig.target = walker
 	rig.focus = walker.position + Vector3(0, 0.6, 0)
 	walker.rig = rig
@@ -205,6 +227,8 @@ func _process(dt: float) -> void:
 		var wp := walker.global_position
 		RenderingServer.global_shader_parameter_set("push_a", Vector4(wp.x, wp.y, wp.z, clampf(Vector2(walker.velocity.x, walker.velocity.z).length(), 0.3, 1.0)))
 		_check_zones(wp)
+		if air and is_instance_valid(air) and rig:
+			air.global_position = Vector3(rig.focus.x, rig.focus.y, rig.focus.z)
 		map.spawn_check([walker])
 		map.tick([walker])
 	# 도트 조준점
@@ -220,6 +244,12 @@ func _process(dt: float) -> void:
 		_go("camp", Vector3(20, 0, 19.5))
 	if Input.is_key_pressed(KEY_2) and map_name != "forest":
 		_go("forest", Vector3(32, 0, 44))
+	# F10: 화질 단계 바꾸기 (0 낮음 · 1 중간 · 2 높음 · 3 최고) — 지역을 다시 불러 적용
+	if Input.is_action_just_pressed("quality") and not _switching:
+		Prefs.quality = (Prefs.quality + 1) % 4
+		Prefs.save_prefs()
+		_go(map_name, walker.global_position)
+		hud.banner("화질: %s" % ["낮음", "중간", "높음", "최고"][Prefs.quality], 1.5)
 	if Input.is_key_pressed(KEY_3) and map_name != "nest":
 		_go("nest", Vector3(18, 0, 30.5))
 	if args.has("shot") and _frame == int(args.get("frames", "45")):

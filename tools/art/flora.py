@@ -334,6 +334,25 @@ def mushroom_patch(seed, W=16, H=12):
     return a
 
 
+def glow_shroom(seed, W=18, H=14, cols=("#1a4a5a", "#2a8aa0", "#5ad8e0", "#c8fff8")):
+    """빛나는 버섯 무리 (어두운 숲의 광원 — 청록 갓에 밝은 점)"""
+    a = canvas(W, H)
+    R = random.Random(seed)
+    xs, ys = grid(W, H)
+    for k in range(R.randint(3, 4)):
+        x = R.randrange(3, W - 3)
+        hgt = R.randint(3, 7)
+        r = R.choice([2, 2.5, 3])
+        y = H - 1
+        a[y - hgt:y + 1, x] = hx("#d8e8e0")
+        cap = ell(W, H, x + 0.5, y - hgt, r + 0.5, 1.9) & (ys <= y - hgt + 0.5)
+        ramp(a, cap, list(cols[:3]), 0.7 - (xs - x) / 8 - (ys - y + hgt) / 4, 0.2)
+        a[int(y - hgt - 1), x] = hx(cols[3])
+        if r > 2:
+            a[int(y - hgt), x + 1] = hx(cols[3])
+    return a
+
+
 def main():
     items = []
     items.append(("tree0", tree_broad(3)))
@@ -363,6 +382,8 @@ def main():
     for i in range(3):
         items.append((f"rock{i}", rock(100 + i, W=[24, 18, 30][i], H=[16, 12, 18][i])))
     items.append(("mush0", mushroom_patch(110)))
+    items.append(("glow0", glow_shroom(120)))
+    items.append(("glow1", glow_shroom(121, cols=("#3a1a5a", "#7a3ab0", "#c080f0", "#f8e0ff"))))
     at, pos = pack(items, os.path.join(OUT, "sprites", "flora"), 512)
     preview(at, "flora_pv.png", 3)
     print(len(pos), at.shape)

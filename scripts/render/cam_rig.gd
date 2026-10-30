@@ -66,7 +66,13 @@ func pitch() -> float:
 
 
 func shake(a: float) -> void:
-	shake_amt = maxf(shake_amt, a)
+	shake_amt = maxf(shake_amt, a * (1.0 if Prefs.shake else 0.3))
+
+
+## 카메라 킥: 맞은 방향으로 툭 밀렸다 돌아온다 (픽셀)
+var _kick := Vector2.ZERO
+func kick(px: Vector2) -> void:
+	_kick += px * (1.0 if Prefs.shake else 0.3)
 
 
 func _process(dt: float) -> void:
@@ -86,7 +92,8 @@ func _process(dt: float) -> void:
 	# 흔들림
 	_shake_t += dt * 38.0
 	shake_amt = move_toward(shake_amt, 0.0, dt * 9.0)
-	var sh := Vector2(sin(_shake_t * 1.3), cos(_shake_t * 1.7)) * shake_amt / PPU
+	_kick = _kick.lerp(Vector2.ZERO, 1.0 - exp(-14.0 * dt))
+	var sh := (Vector2(sin(_shake_t * 1.3), cos(_shake_t * 1.7)) * shake_amt + _kick) / PPU
 	var back := basis.z
 	var right := basis.x
 	var up := basis.y
@@ -106,6 +113,10 @@ func _process(dt: float) -> void:
 		var hz := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
 		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 34.0))
 	view.sub_offset = Vector2((cr - sr) * PPU, -(cu - su) * PPU)
+	if view.rays:
+		var rm := view.rays.material as ShaderMaterial
+		rm.set_shader_parameter("cam_px", Vector2(sr * PPU, su * PPU))
+		rm.set_shader_parameter("time", Time.get_ticks_msec() / 1000.0)
 	cam.size = float(PixelView.GH + PixelView.MARGIN * 2) / PPU / zoom
 	RenderingServer.global_shader_parameter_set("bb_stretch", 1.0 / maxf(0.2, cos(p)))
 	RenderingServer.global_shader_parameter_set("cam_pitch", p)

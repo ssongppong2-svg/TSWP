@@ -59,6 +59,11 @@ func _decorate() -> void:
 	scatter_trees(1400, 0.0)
 	scatter_props([["rock1", 6], ["rock0", 4], ["mush0", 10], ["stump0", 3]])
 	scatter_grass(0.6, 0.6)
+	# 보라빛 버섯 (어두운 둥지의 광원) + 보라 반딧불
+	for k in 10:
+		var a := k * TAU / 10.0 + rng.randf() * 0.3
+		glow_patch(Vector3(CENTER.x + cos(a) * 12.0, 0, CENTER.y + sin(a) * 10.5), 1)
+	fireflies(8, Rect2(CENTER.x - 12, CENTER.y - 10, 24, 20), Color("#d0a0ff"))
 	# 돌기둥 4개 (처음엔 땅속)
 	for k in 4:
 		var a := PI * 0.25 + k * PI * 0.5

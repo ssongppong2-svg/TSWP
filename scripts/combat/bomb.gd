@@ -88,6 +88,8 @@ func _explode() -> void:
 		h.self_ratio = self_ratio
 		fi.take(h)
 	exploded.emit(at)
+	Particles.burst(get_parent(), at, Color("#fff0a0"), Color("#c84a28"), 40 if big else 20, 9.0 if big else 6.0, 9.0)
+	get_tree().call_group("pond", "splash", at, 0.6 if big else 0.35, 4.0 if big else 2.5)
 	# 연출: 불덩이 · 불빛 번쩍 · 흔들림 · 소리
 	var fx := Fx.pop(get_parent(), global_position - Vector3(0, 0.7 if big else 0.4, 0), ["boom0", "boom1", "boom2", "boom3", "boom4", "boom5"], 16.0)
 	fx.mesh.material_override.set_shader_parameter("emission", 0.7)

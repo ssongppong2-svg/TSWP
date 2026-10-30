@@ -33,7 +33,37 @@ var _ghost := 1.0
 const HP_W := 72
 
 
+var hurt_rect: TextureRect
+var _hurt := 0.0
+
+
+## 맞으면 화면 가장자리가 붉게 번쩍 (도트 디더 테두리)
+func hurt_flash(k: float) -> void:
+	_hurt = maxf(_hurt, k)
+
+
+func _make_hurt() -> void:
+	var w := PixelView.GW
+	var h := PixelView.GH
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var bayer := [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+	for y in h:
+		for x in w:
+			var e := minf(minf(x, w - 1 - x) / 40.0, minf(y, h - 1 - y) / 26.0)
+			var k := clampf(1.0 - e, 0.0, 1.0)
+			var th: float = (float(bayer[(y % 4) * 4 + (x % 4)]) + 0.5) / 16.0
+			if k * k > th:
+				img.set_pixel(x, y, Color(0.85, 0.08, 0.1, 0.55))
+	hurt_rect = TextureRect.new()
+	hurt_rect.texture = ImageTexture.create_from_image(img)
+	hurt_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hurt_rect.modulate.a = 0.0
+	add_child(hurt_rect)
+
+
 func _ready() -> void:
+	add_to_group("hud")
+	_make_hurt()
 	size = Vector2(PixelView.GW, PixelView.GH)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# 바탕 판 (반투명)
@@ -132,6 +162,8 @@ func _rect(p: Vector2, s: Vector2, c: Color) -> ColorRect:
 
 
 func _process(dt: float) -> void:
+	_hurt = move_toward(_hurt, 0.0, dt * 2.2)
+	hurt_rect.modulate.a = _hurt if not Prefs.reduce_flash else _hurt * 0.4
 	if player == null or not is_instance_valid(player):
 		return
 	var J := player.J

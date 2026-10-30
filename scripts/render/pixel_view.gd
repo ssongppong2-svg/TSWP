@@ -18,6 +18,7 @@ var sub_offset := Vector2.ZERO       # 카메라 리그가 채움: 화면 픽셀
 var ui_vp: SubViewport               # 도트 UI (480x270, 투명 바탕)
 var ui: Control                      # UI 뿌리 — 여기에 붙이면 저해상도 좌표로 그려진다
 var ui_screen: TextureRect
+var rays: ColorRect                  # 갓 레이 (저해상도 화면 안에서)
 
 
 func _ready() -> void:
@@ -33,6 +34,13 @@ func _ready() -> void:
 	vp.positional_shadow_atlas_size = 2048
 	vp.handle_input_locally = false
 	add_child(vp)
+	rays = ColorRect.new()
+	rays.size = Vector2(vp.size)
+	rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rm := ShaderMaterial.new()
+	rm.shader = load("res://shaders/godrays.gdshader")
+	rays.material = rm
+	vp.add_child(rays)
 	frame = Control.new()
 	frame.clip_contents = true
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE

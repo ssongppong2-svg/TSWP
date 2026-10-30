@@ -185,6 +185,19 @@ def arrow_mark(i, S=40):
     return a
 
 
+def coin(i, S=8):
+    """돌아가는 금화 4프레임"""
+    a = canvas(S, S)
+    w = [3.4, 2.4, 1.0, 2.4][i]
+    m = ell(S, S, S / 2, S / 2, w, 3.4)
+    xs, ys = grid(S, S)
+    ramp(a, m, ["#a86a1e", "#e0a030", "#ffd860", "#fff4b0"], 0.6 - (xs - S / 2) / 6 - (ys - S / 2) / 6, 0.2)
+    if w > 2:
+        a[2:6, S // 2] = hx("#c88a2a")
+    outline(a, "#4a2a10")
+    return a
+
+
 def main():
     items = []
     for i in range(4):
@@ -206,6 +219,8 @@ def main():
         items.append((f"plus{i}", heal_plus(i)))
     for i in range(2):
         items.append((f"mark{i}", arrow_mark(i)))
+    for i in range(4):
+        items.append((f"coin{i}", coin(i)))
     at, pos = pack(items, os.path.join(OUT, "sprites", "fx"), 512, keep_bottom=False, trim_cells=False)
     preview(at, "fx_pv.png", 4)
     print(len(pos), at.shape)

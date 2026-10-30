@@ -55,7 +55,9 @@ func _stat(p: Node, key: String, n: float) -> void:
 
 
 func on_enemy_killed(e: Enemy, by: Node) -> void:
-	add_gold(int(e.E.get("gold", 1)))
+	# 금화는 실제 동전이 튀어나와 플레이어가 주울 때 더해진다 (Coin)
+	if e.is_inside_tree():
+		Coin.burst(e.get_parent(), e.global_position, int(e.E.get("gold", 1)), e.terrain)
 	if by is Player:
 		_stat(by, "kills", 1)
 
