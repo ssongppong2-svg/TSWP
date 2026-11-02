@@ -343,6 +343,7 @@ func _danger_tick(dt: float) -> void:
 
 # ------------------------------------------------------------------ 맞기 · 껍질 · 광폭화 · 쓰러짐
 func take(h: Hit) -> void:
+	h.sanitize()
 	if dead or h.heal:
 		super.take(h)
 		return

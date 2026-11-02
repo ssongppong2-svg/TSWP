@@ -20,6 +20,7 @@ const BUFFER := 0.12
 
 var ctrl := PlayerInput.new()
 var local := true
+var slot := 0                         # 파티 안 번호 (기록·팀색 — 온라인이면 접속 순서)
 var job := "warrior"
 var J: Dictionary
 var spr: CharSprite

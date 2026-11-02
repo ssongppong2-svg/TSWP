@@ -40,7 +40,7 @@ static func px_size(path: String, name: String) -> Vector2:
 	return Vector2(r[2], r[3])
 
 
-## 그림 하나 세우기. opts: sway, push, shadow, tint, up_normal, emission, receive_shade, unique(재질 따로)
+## 그림 하나 세우기. opts: sway, push, shadow, tint, up_normal, emission, receive_shade, shade_k(그늘 세기), unique(재질 따로)
 static func make(path: String, name: String, opts := {}) -> MeshInstance3D:
 	var sz := px_size(path, name)
 	var q := QuadMesh.new()
@@ -66,6 +66,7 @@ static func make(path: String, name: String, opts := {}) -> MeshInstance3D:
 		m.set_shader_parameter("up_normal", float(opts.get("up_normal", 0.85)))
 		m.set_shader_parameter("emission", float(opts.get("emission", 0.0)))
 		m.set_shader_parameter("receive_shade", bool(opts.get("receive_shade", true)))
+		m.set_shader_parameter("shade_k", float(opts.get("shade_k", 1.0)))
 		m.set_shader_parameter("see_through", bool(opts.get("see_through", false)))
 		if opts.has("tint"):
 			m.set_shader_parameter("tint", opts["tint"])

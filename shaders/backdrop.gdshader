@@ -31,12 +31,9 @@ void fragment() {
 	vec2 px = floor(UV * size_px);
 	float x = px.x + scroll;
 	float y = size_px.y - px.y;                      // 아래에서 위로
-	ivec2 bi = ivec2(mod(px, 4.0));
-	float b4[16] = float[](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-	float th = (b4[bi.y * 4 + bi.x] + 0.5) / 16.0;
 	if (kind == 0) {
 		float t = y / size_px.y;
-		float q = floor(t * 6.0 + th) / 6.0;
+		float q = floor(t * 9.0) / 9.0;                 // 디더 없는 띠 (멀리서 점무늬가 시끄럽지 않게)
 		vec3 c = mix(col_bot.rgb, col_top.rgb, q);
 		// 구름: 가로로 긴 덩어리, 천천히
 		vec2 cp = vec2((x + wind_time * 6.0) / 90.0, y / 26.0);
@@ -58,7 +55,7 @@ void fragment() {
 			discard;
 		}
 		float d = (top - y) / size_px.y;
-		vec3 c = mix(col_top.rgb, col_bot.rgb, clamp(floor(d * 8.0 + th) / 4.0, 0.0, 1.0));
+		vec3 c = mix(col_top.rgb, col_bot.rgb, clamp(floor(d * 10.0) / 5.0, 0.0, 1.0));
 		if (top - y < 2.0) {
 			c = col_hi.rgb;                         // 실루엣 윗선 밝게 (역광)
 		}

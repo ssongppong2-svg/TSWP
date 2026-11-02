@@ -62,6 +62,7 @@ func ratio() -> float:
 
 ## 맞기 (모든 피해·회복이 여기로)
 func take(h: Hit) -> void:
+	h.sanitize()
 	if dead:
 		return
 	if h.heal:

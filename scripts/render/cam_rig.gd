@@ -111,7 +111,7 @@ func _process(dt: float) -> void:
 		var tp := target.global_position + Vector3(0, 0.7, 0)
 		var sp := cam.unproject_position(tp)
 		var hz := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
-		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 34.0))
+		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 24.0))     # 반지름 24px (캐릭터 키만큼)
 	view.sub_offset = Vector2((cr - sr) * PPU, -(cu - su) * PPU)
 	if view.rays:
 		var rm := view.rays.material as ShaderMaterial
@@ -143,7 +143,8 @@ func _clamped(f: Vector3) -> Vector3:
 	# 탑다운에서 세로: 화면 위·아래가 땅에 닿는 깊이 (높이는 대충 초점 높이 기준)
 	var depth_h := hh / maxf(sin(p), 0.2)
 	if side_t < 0.5 and bounds.size.y > depth_h * 2.0:
-		out.z = clampf(f.z, bounds.position.y + depth_h, bounds.end.y - depth_h + 0.6)
+		# 위쪽은 HUD(약 40px) 만큼 더 열어 둔다 — 북쪽 끝에 선 캐릭터가 HUD 밑에 깔리지 않게 (그 너머는 원경이 보인다)
+		out.z = clampf(f.z, bounds.position.y + depth_h - 2.4, bounds.end.y - depth_h + 0.6)
 	return out
 
 

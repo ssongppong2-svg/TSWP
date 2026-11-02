@@ -58,7 +58,7 @@ func _ready() -> void:
 	cs.shape = sph
 	cs.position.y = 0.3
 	add_child(cs)
-	mesh = BB.make(ATLAS, "%s_idle0" % kind, {"unique": true, "up_normal": 0.7})
+	mesh = BB.make(ATLAS, "%s_idle0" % kind, {"unique": true, "up_normal": 0.7, "shade_k": 0.6})
 	spr_mat = mesh.material_override
 	add_child(mesh)
 	add_child(BB.blob(body_r + 0.1, (body_r + 0.1) * 0.5, 0.9))
@@ -303,7 +303,7 @@ func _on_hurt(h: Hit, amt: float) -> void:
 func _die() -> void:
 	super._die()
 	Audio.play("%s_die" % kind, global_position)
-	killed.emit(self, last_hit_by)
+	killed.emit(self, last_hit_by if is_instance_valid(last_hit_by) else null)
 	var pc := {"acorn": [Color("#e8b070"), Color("#6e4426")], "shroom": [Color("#ffb0b0"), Color("#8a2e4e")], "spider": [Color("#c0a0e0"), Color("#2e1e3e")]}
 	var cc: Array = pc.get(kind, [Color.WHITE, Color.GRAY])
 	Particles.burst(get_parent(), center(), cc[0], cc[1], 22, 5.0)

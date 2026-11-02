@@ -39,6 +39,7 @@ uniform float skew = 0.0;                          // 가상 뼈: 높이 1m 당 
 uniform vec2 squash = vec2(1.0, 1.0);              // 가상 뼈: 가로·세로 늘림 (발밑 기준)
 uniform float shadow_h = 0.5;                      // 그림자 키 (1 = 실제 키)
 uniform bool receive_shade = true;                 // 나무·덤불처럼 그늘을 만드는 쪽은 끈다
+uniform float shade_k = 1.0;                       // 그늘 세기 (캐릭터 0.5)
 uniform bool see_through = false;                  // 나무·천막처럼 주인공을 가릴 수 있는 것
 uniform bool use_instance = false;                 // 멀티메시: INSTANCE_CUSTOM = (region.x, region.y, region.w, region.h)
 
@@ -136,20 +137,25 @@ void fragment() {
 	if (v_cut > th * mix(1.2, 0.05, side_amt)) {
 		discard;
 	}
-	// 주인공 둘레 비춰 보기: 주인공보다 앞에 있는 큰 물건만, 둘레는 디더로 부드럽게
+	// 주인공 둘레 비춰 보기: 주인공보다 앞에 있는 큰 물건만 — 디더 점무늬 없이 깔끔한 원 구멍 + 1px 어두운 테
+	bool rim = false;
 	if (see_through && v_front > 0.15) {
-		float d = length(FRAGCOORD.xy - focus_screen.xy) / focus_screen.w;
-		if (d < 1.0 && th > 0.25 + smoothstep(0.55, 1.0, d) * 0.75) {
+		float dpx = length(FRAGCOORD.xy - focus_screen.xy);
+		if (dpx < focus_screen.w) {
 			discard;
 		}
+		rim = dpx < focus_screen.w + 1.5;
 	}
 	// 멀티메시만 인스턴스 색을 쓴다 (일반 메시는 정점 색이 없어서 COLOR 가 엉뚱한 값일 수 있다)
 	vec3 col = c.rgb * tint.rgb * (use_instance ? COLOR.rgb : vec3(1.0));
-	// 땅 그늘 두 단계 (지형과 같은 색)
+	// 땅 그늘 두 단계 (지형과 같은 색). 캐릭터는 덜 어둡게(shade_k) — 그늘 속에서도 실루엣이 읽히게
 	if (v_shade > 0.62) {
-		col *= vec3(0.36, 0.50, 0.56);
+		col *= mix(vec3(1.0), vec3(0.36, 0.50, 0.56), shade_k);
 	} else if (v_shade > 0.22) {
-		col *= vec3(0.50, 0.66, 0.70);
+		col *= mix(vec3(1.0), vec3(0.50, 0.66, 0.70), shade_k);
+	}
+	if (rim) {
+		col *= 0.55;
 	}
 	// 측면: 단면 뒤로 멀수록 공기 색으로 (깊이감)
 	float far_k = clamp((v_lane - 2.0) / 26.0, 0.0, 0.6) * side_amt;

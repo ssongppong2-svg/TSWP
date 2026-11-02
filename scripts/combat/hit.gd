@@ -26,3 +26,10 @@ static func make(amount_: float, source_: Node, knock_ := Vector3.ZERO, kind_ :=
 	if source_ is Fighter:
 		h.team = (source_ as Fighter).team
 	return h
+
+
+## 때린 쪽이 이미 사라졌으면(화살이 날아가는 사이 쏜 적이 죽음 등) 환경 피해로 바꾼다 — 받는 쪽이 지운 노드를 건드리지 않게
+func sanitize() -> Hit:
+	if not is_instance_valid(source):          # 지운 노드는 == null 비교로 안 잡힌다
+		source = null
+	return self

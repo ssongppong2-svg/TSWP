@@ -69,12 +69,23 @@ def petals(seed, W=18, H=12, col=BLOOM):
 
 
 def mud(seed, W=24, H=12):
+    """젖은 흙 얼룩 + 발자국 (구멍처럼 보이지 않게: 테두리 없이 길 색보다 한두 단계만 짙게)"""
     a = canvas(W, H)
+    R = random.Random(seed)
     xs, ys = grid(W, H)
     m = ell(W, H, W / 2, H / 2, W / 2 - 1, H / 2 - 1)
-    m &= vnoise(W, H, 4, seed) > 0.3
-    ramp(a, m, ["#4a3420", "#5e4430", "#74563a"], 0.5 - (ys - H / 2) / H, 0.5)
-    paint(a, m & ~nb(m, 0, -1), "#8e6c48")
+    m &= vnoise(W, H, 4, seed) > 0.42
+    ramp(a, m, ["#977452", "#a07c56"], vnoise(W, H, 3, seed + 2), 0.7)
+    # 발자국: 비스듬히 이어지는 작은 두 점 쌍
+    x, y = R.uniform(2, 5), R.uniform(3, H - 4)
+    while x < W - 3:
+        yy = int(y + (1 if int(x) % 2 else -1))
+        if 0 <= yy < H - 1:
+            a[yy, int(x):int(x) + 2] = hx("#7e5e3e")
+            if R.random() < 0.6:
+                a[yy + 1, int(x)] = hx("#7e5e3e")
+        x += R.uniform(3.5, 5)
+        y += R.uniform(-0.6, 0.6)
     return a
 
 

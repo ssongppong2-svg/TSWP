@@ -1,6 +1,6 @@
 class_name Party
 extends Node
-## 파티 공유 상태: 부활 횟수(인원 × 3) · 금화 · 기록(처치·피해·회복·사망 — 결과 화면용)
+## 파티 공유 상태: 부활 횟수(인원 × 3) · 금화 · 기록(처치·피해·회복·사망 — 결과 화면용, 파티 번호별)
 ## 근거: 게임 시작과 선택, 직업, 플레이.md / 방 시스템.md
 
 signal changed
@@ -16,8 +16,12 @@ func _enter_tree() -> void:
 	add_to_group("party")
 
 
+## 새 판: 부활 횟수 · 금화 · 기록을 처음으로
 func setup(player_count: int) -> void:
 	lives = player_count * 3
+	gold = 0
+	stats.clear()
+	over = false
 	changed.emit()
 
 
@@ -49,9 +53,11 @@ func add_gold(n: int) -> void:
 func _stat(p: Node, key: String, n: float) -> void:
 	if p == null:
 		return
-	if not stats.has(p):
-		stats[p] = {"kills": 0, "deaths": 0, "dmg": 0.0, "heal": 0.0}
-	stats[p][key] += n
+	# 지역을 옮기면 Player 노드가 새로 생기므로 노드 대신 파티 번호(slot)로 모은다
+	var id: Variant = p.get("slot") if p.get("slot") != null else p.get_instance_id()
+	if not stats.has(id):
+		stats[id] = {"kills": 0, "deaths": 0, "dmg": 0.0, "heal": 0.0}
+	stats[id][key] += n
 
 
 func on_enemy_killed(e: Enemy, by: Node) -> void:

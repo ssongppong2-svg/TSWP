@@ -24,7 +24,7 @@ var bone_lean := SpringBone.new(0.0, 160.0, 12.0)
 
 func _init(char_name: String) -> void:
 	who = char_name
-	mesh = BB.make(ATLAS, "%s_idle_s0" % who, {"unique": true, "up_normal": 0.6})
+	mesh = BB.make(ATLAS, "%s_idle_s0" % who, {"unique": true, "up_normal": 0.6, "shade_k": 0.5})
 	mat = mesh.material_override
 
 
