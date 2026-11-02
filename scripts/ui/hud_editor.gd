@@ -14,7 +14,7 @@ const PRESETS := [
 	{"name": "방송: 캠 오른쪽 아래", "layout": {"boss": Vector2(-118, 0)}, "hidden": {}},
 	# 웹캠을 왼쪽 위에 두는 방송: 내 상태·스킬은 아래로, 파티는 오른쪽, 보스·아이템 설명은 위 가운데
 	{"name": "방송: 캠 왼쪽 위", "layout": {"status": Vector2(0, 204), "skills": Vector2(0, 218), "party": Vector2(376, 100),
-		"boss": Vector2(0, -210), "toast": Vector2(140, -110)}, "hidden": {}},
+		"boss": Vector2(0, -210), "toast": Vector2(140, -110), "vote": Vector2(0, 30)}, "hidden": {}},
 	{"name": "최소 (미니맵·알림 숨김)", "layout": {}, "hidden": {"minimap": true, "feed": true, "party": true}},
 ]
 

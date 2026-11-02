@@ -31,6 +31,7 @@ const WIDGETS := {
 	"party": {"name": "파티", "rect": Rect2(4, 66, 100, 64)},
 	"toast": {"name": "아이템 설명", "rect": Rect2(4, 168, 196, 68)},
 	"boss": {"name": "보스", "rect": Rect2(122, 226, 236, 40)},
+	"vote": {"name": "시청자 투표", "rect": Rect2(156, 40, 168, 48)},
 }
 # 왼쪽 위
 var portrait: TextureRect
@@ -144,6 +145,11 @@ func _ready() -> void:
 	_build_feed()
 	_begin("party")
 	_build_party()
+	_begin("vote")
+	vote_box = Control.new()
+	vote_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vote_box.visible = false
+	_cur.add_child(vote_box)
 	_cur = _root
 	apply_layout()
 	center_l = PixelFont.label("", "big", Color("#fff4d6"))
@@ -891,37 +897,39 @@ func _party_tick() -> void:
 # ---- 시청자 투표 (돌발 이벤트) — 화면 위 가운데
 var vote_box: Control
 func vote_update(choices: Array, votes: Array, t: float, live: bool) -> void:
-	if vote_box == null:
-		vote_box = Control.new()
-		vote_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_root.add_child(vote_box)
 	for c in vote_box.get_children():
 		c.queue_free()
 	if choices.is_empty():
 		vote_box.visible = false
 		return
 	vote_box.visible = true
-	var w := 236.0
-	var h := 20.0 + choices.size() * 13.0 + 4.0
-	vote_box.position = Vector2(roundf((PixelView.GW - w) / 2.0), 40)
-	vote_box.add_child(UiKit.panel("panel", Vector2.ZERO, Vector2(w, h)))
-	var tl := PixelFont.label("시청자 투표! %s  %d초" % ["채팅 !1 !2 !3" if live else "(가짜 시청자)", ceili(t)], "small", Color("#ffd860"))
-	tl.position = Vector2(6, 3)
+	var r: Rect2 = WIDGETS["vote"]["rect"]
+	var w := r.size.x
+	var h := 15.0 + choices.size() * 11.0 + 3.0
+	vote_box.position = r.position
+	vote_box.add_child(UiKit.panel("panel_dark", Vector2.ZERO, Vector2(w, h)))
+	var tl := PixelFont.label("투표 %s · %d초" % ["채팅 !1 !2 !3" if live else "(가짜 시청자)", ceili(t)], "small", Color("#ffd860"))
+	tl.position = Vector2(5, 2)
 	vote_box.add_child(tl)
 	var total := 0
-	for v in votes:
-		total += int(v)
+	var top := 0
+	for i in votes.size():
+		total += int(votes[i])
+		if int(votes[i]) > int(votes[top]):
+			top = i
 	for i in choices.size():
-		var y := 18.0 + i * 13.0
+		var y := 15.0 + i * 11.0
 		var k := float(votes[i]) / maxf(1.0, float(total))
 		var bar := ColorRect.new()
-		bar.color = Color(1.0, 0.85, 0.4, 0.25)
-		bar.position = Vector2(6, y)
-		bar.size = Vector2(roundf((w - 12) * k), 11)
+		bar.color = Color(1.0, 0.85, 0.4, 0.32 if i == top and total > 0 else 0.16)
+		bar.position = Vector2(4, y)
+		bar.size = Vector2(roundf((w - 8) * k), 10)
 		vote_box.add_child(bar)
-		var l := PixelFont.label("!%d  %s" % [i + 1, EventDirector.EVENTS[choices[i]][0]], "small", Color("#fff4d6"))
-		l.position = Vector2(8, y)
+		var l := PixelFont.label("!%d %s" % [i + 1, EventDirector.EVENTS[choices[i]][0]], "small", Color("#fff4d6"))
+		l.position = Vector2(6, y - 1)
 		vote_box.add_child(l)
-		var n := PixelFont.label("%d표" % int(votes[i]), "small", Color("#ffd860"))
-		n.position = Vector2(w - 40, y)
+		var n := PixelFont.label("%d" % int(votes[i]), "small", Color("#ffd860"))
+		n.position = Vector2(w - 26, y - 1)
+		n.size = Vector2(20, 10)
+		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		vote_box.add_child(n)

@@ -39,7 +39,7 @@ func interact(p: Node) -> void:
 	Audio.play("troll", global_position)
 	var nick := (p as Player).nick if p is Player else "누군가"
 	if randf() < 0.7:
-		get_tree().call_group("hud", "notify", "%s 이(가) 눌렀다… 몬스터다!" % nick, Color("#ff7a7a"))
+		get_tree().call_group("hud", "notify", "%s 눌렀다… 몬스터다!" % Josa.i_ga(nick), Color("#ff7a7a"))
 		get_tree().call_group("hud", "banner", "아ㅋㅋㅋ 또 망했다!", 2.0)
 		for k in 3:
 			var a := k * TAU / 3.0
@@ -48,5 +48,5 @@ func interact(p: Node) -> void:
 			var e := Enemy.spawn(region, ["acorn", "spider", "boomer"][k], at, region.terrain, region.rig)
 			region.enemy_spawned.emit(e)
 	else:
-		get_tree().call_group("hud", "notify", "%s 이(가) 눌렀다… 금화다?!" % nick, Color("#ffd860"))
+		get_tree().call_group("hud", "notify", "%s 눌렀다… 금화다?!" % Josa.i_ga(nick), Color("#ffd860"))
 		Coin.burst(region, global_position + Vector3(0, 1.2, 0), 14, region.terrain)

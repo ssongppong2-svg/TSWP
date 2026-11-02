@@ -1024,7 +1024,7 @@ func _try_grab() -> void:
 	Audio.play("pickup", global_position)
 	spr.stretch(-0.5)
 	if best is Player:
-		get_tree().call_group("hud", "notify", "%s 이(가) %s 을(를) 번쩍!" % [nick, (best as Player).nick], Color("#ffd860"))
+		get_tree().call_group("hud", "notify", "%s %s 번쩍!" % [Josa.i_ga(nick), Josa.eul_reul((best as Player).nick)], Color("#ffd860"))
 
 
 func _carry_hold(dt: float) -> void:

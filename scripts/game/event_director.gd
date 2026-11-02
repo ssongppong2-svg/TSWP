@@ -56,7 +56,7 @@ func _process(dt: float) -> void:
 		var keys: Array = EVENTS.keys()
 		keys.shuffle()
 		choices = keys.slice(0, 3)
-		if Prefs.chat_vote and not main.args.has("bot"):
+		if Prefs.chat_vote and (not main.args.has("bot") or main.args.has("vote")):
 			voting = true
 			vote_t = 10.0
 			votes = [0, 0, 0]
@@ -211,7 +211,7 @@ func _ev_giant() -> void:
 	tw.tween_property(pl.spr.mesh, "scale", Vector3(1.6, 1.6, 1), 0.4).set_trans(Tween.TRANS_BACK)
 	tw.tween_interval(14.6)
 	tw.tween_property(pl.spr.mesh, "scale", Vector3.ONE, 0.3)
-	main.hud.notify("%s 거대해졌다!" % pl.nick, Color("#ffb060"))
+	main.hud.notify("%s 거대해졌다!" % Josa.i_ga(pl.nick), Color("#ffb060"))
 
 
 func _ev_goldbug() -> void:
