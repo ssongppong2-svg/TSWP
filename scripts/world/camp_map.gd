@@ -4,6 +4,7 @@ extends Region
 ##  · 가운데 돌바닥 광장에 모닥불 · 둘레에 통나무 의자
 ##  · 천막 넷 · 등불 기둥 · 짐수레 · 상자/통 · 장작 · 냄비
 ##  · 북쪽으로 흙길이 숲으로 이어지고 입구에 깃발과 표지판
+##  · 서쪽에 떠돌이 상인 (파티 금화로 장비·소비 아이템을 산다)
 ##  · 둘레는 빽빽한 숲 + 동쪽은 한 단 높은 둔덕
 
 const FIRE := Vector2(20.0, 16.0)
@@ -99,6 +100,8 @@ func _decorate() -> void:
 			for dx in range(-4, 5):
 				blocked[c + Vector2i(dx, dz)] = true
 		_mark(c, 3)
+	# ---- 떠돌이 상인 (광장 서쪽, 천막 사이) — 들를 때마다 물건이 바뀐다
+	shop_at(Vector2(6.4, 15.2))
 	fireflies(8, Rect2(4, 4, 32, 24), Color("#ffe080"))
 	# ---- 숲·풀
 	scatter_trees(1600, 0.02)

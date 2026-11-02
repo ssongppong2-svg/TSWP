@@ -53,9 +53,12 @@ func _physics_process(dt: float) -> void:
 	var spd := 6.0 + t * 14.0
 	if to.length() < 0.35:
 		Audio.play("coin", global_position)
-		var party := get_tree().get_first_node_in_group("party")
-		if party:
-			party.add_gold(1)
+		if target is Player:
+			(target as Player).collect_gold(1)       # 행운의 동전·왕관 배율은 줍는 사람 기준
+		else:
+			var party := get_tree().get_first_node_in_group("party")
+			if party:
+				party.add_gold(1)
 		queue_free()
 		return
 	global_position += to.normalized() * minf(spd * dt, to.length())

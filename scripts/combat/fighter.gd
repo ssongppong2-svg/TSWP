@@ -2,6 +2,7 @@ class_name Fighter
 extends CharacterBody3D
 ## 싸우는 것 공통 (플레이어 · 적 · 보스): 체력 · 팀 · 맞기 · 넉백 · 번쩍 · 독/느려짐 · 능력치 덧셈표
 ##  능력치는 직접 바꾸지 않고 mods[출처] = {이름: 비율} 로 쌓는다 (패시브·아이템이 서로 덮어쓰지 않게)
+##  피해 계산 순서: 아군(50% 또는 현재 체력 비율 · ff_taken) → 받는 피해(dmg_taken) · 넉백(knock_taken) → 때린 플레이어에게 on_dealt
 
 signal died(f: Fighter)
 signal damaged(f: Fighter, hit: Hit, amount: float)
@@ -27,6 +28,9 @@ var spr_mat: ShaderMaterial        # 맞으면 하얗게
 var body_r := 0.3
 var body_h := 1.0
 var last_hit_by: Node = null
+var stun_t := 0.0                  # 넘어짐·기절 (바나나 껍질 등): 움직이지도 공격하지도 못한다
+var hidden_t := 0.0                # 숨음 (연막·그림자 망토): 적이 노리지 않는다
+var _timed := {}                   # 잠깐 걸린 능력치: 출처 → 남은 시간 (set_timed_mod)
 
 
 func _enter_tree() -> void:
@@ -56,6 +60,12 @@ func set_mod(src: String, d: Dictionary) -> void:
 		hp = clampf(hp * after / before, 0.0, after)
 
 
+## 잠깐만 걸리는 능력치 (t 초 뒤 저절로 풀림) — 장난꾸러기 장갑·폭풍 질주 등
+func set_timed_mod(src: String, d: Dictionary, t: float) -> void:
+	set_mod(src, d)
+	_timed[src] = t
+
+
 func ratio() -> float:
 	return clampf(hp / maxf(1.0, max_hp()), 0.0, 1.0)
 
@@ -67,24 +77,36 @@ func take(h: Hit) -> void:
 		return
 	if h.heal:
 		var before := hp
-		hp = minf(max_hp(), hp + h.amount)
+		hp = minf(max_hp(), hp + h.amount * stat("heal_taken"))
 		if hp > before + 0.5:
 			DmgNum.pop(self, hp - before, "heal")
 		return
 	if invuln > 0.0:
 		return
 	var amt := h.amount
-	var friendly := h.team == team and h.source != null
+	var friendly := h.team == team and h.source != null and h.source != self
+	var knock := h.knock * (0.6 if friendly else 1.0)
 	if h.source == self:
 		amt *= h.self_ratio
 	elif friendly:
 		amt = hp * h.ff_cur if h.ff_cur >= 0.0 else amt * 0.5
-	if amt <= 0.0 and h.knock == Vector3.ZERO:
+		amt *= stat("ff_taken")                     # 저주받은 왕관: 아군에게 맞으면 2배
+		# 장난꾸러기 장갑: 아군에게는 피해 대신 크게 밀치고 잠깐 빠르게
+		if h.source is Player and (h.source as Player).inv and (h.source as Player).inv.fx("prank") > 0:
+			amt = 0.0
+			var away := global_position - (h.source as Node3D).global_position
+			away.y = 0.0
+			knock = (away.normalized() if away.length() > 0.01 else Vector3(1, 0, 0)) * 14.0 + Vector3(0, 5.0, 0)
+			set_timed_mod("prank", {"speed": 0.5}, 1.0)
+			Audio.play("troll", global_position, -6.0)
+	amt *= stat("dmg_taken")
+	knock *= stat("knock_taken")
+	if amt <= 0.0 and knock == Vector3.ZERO:
 		return
 	hp -= amt
 	last_hit_by = h.source
 	flash = 0.12
-	kv += h.knock * (0.6 if friendly else 1.0)
+	kv += knock
 	if h.poison > 0.0:
 		poison_t = 3.0
 		poison_dps = h.poison
@@ -96,6 +118,9 @@ func take(h: Hit) -> void:
 		DmgNum.pop(self, amt, "ally" if friendly else ("player" if team == 0 else "enemy"))
 	damaged.emit(self, h, amt)
 	_on_hurt(h, amt)
+	# 때린 플레이어에게 알림 (궁극기 충전 · 아이템 효과)
+	if amt > 0.0 and h.source is Player and h.source != self:
+		(h.source as Player).on_dealt(self, amt, h, friendly)
 	if hp <= 0.0:
 		hp = 0.0
 		_die()
@@ -113,6 +138,14 @@ func _die() -> void:
 ## 넉백·상태 이상 진행 (자식이 _physics_process 안에서 부른다)
 func tick_status(dt: float) -> void:
 	invuln = maxf(0.0, invuln - dt)
+	stun_t = maxf(0.0, stun_t - dt)
+	hidden_t = maxf(0.0, hidden_t - dt)
+	if not _timed.is_empty():
+		for src in _timed.keys():
+			_timed[src] = float(_timed[src]) - dt
+			if float(_timed[src]) <= 0.0:
+				_timed.erase(src)
+				set_mod(String(src), {})
 	if flash > 0.0:
 		flash = maxf(0.0, flash - dt)
 	if spr_mat:

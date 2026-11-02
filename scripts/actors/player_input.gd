@@ -15,6 +15,8 @@ var attack_held := false
 var skill := false
 var interact := false
 var switch_job := false
+var ult := false                  # 궁극기 (R)
+var use_item := false             # 소비 아이템 (F)
 var _mouse_t := -10.0
 
 
@@ -29,6 +31,8 @@ func poll_local(rig: CamRig, aim_y: float) -> void:
 	skill = Input.is_action_just_pressed("skill")
 	interact = Input.is_action_just_pressed("interact")
 	switch_job = Input.is_action_just_pressed("switch_job")
+	ult = Input.is_action_just_pressed("ult")
+	use_item = Input.is_action_just_pressed("use_item")
 	aim_stick = Controls.aim_stick()
 	if Input.get_last_mouse_velocity().length() > 1.0:
 		_mouse_t = Time.get_ticks_msec() / 1000.0
@@ -47,3 +51,5 @@ func clear() -> void:
 	skill = false
 	interact = false
 	switch_job = false
+	ult = false
+	use_item = false

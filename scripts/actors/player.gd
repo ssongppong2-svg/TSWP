@@ -1,6 +1,6 @@
 class_name Player
 extends Fighter
-## 플레이어 캐릭터: 이동(탑다운·측면) + 직업(기본 공격 · Q 스킬 · 패시브).
+## 플레이어 캐릭터: 이동(탑다운·측면) + 직업(기본 공격 · Q 스킬 · R 궁극기 · 패시브) + 가방(장비 5 · 소비 1).
 ##  · 입력은 PlayerInput 으로만 받는다 (온라인에서 남의 입력도 같은 길로)
 ##  · 탑다운: WASD 8방향, Shift 달리기, Space 구르기(짧은 무적 0.18초)
 ##  · 측면: A/D, Space 점프 (코요테 타임·입력 미리 받기·떼면 낮게)
@@ -44,6 +44,17 @@ var _was_floor := true
 var _step_t := 0.0
 var _fall_v := 0.0
 var _ghost_t := 0.0
+# 아이템 · 궁극기
+var inv: Inventory                    # 가방 (Party 가 파티 번호별로 들고 있음 — 지역을 옮겨도 이어짐)
+var ult := 0.0                        # 궁극기 게이지 (0 ~ DB.ULT_MAX)
+var _gold_frac := 0.0
+var _pact := 0                        # 피의 계약서 쌓인 수 (이 지역)
+var _pact_t := 0.0
+var _leap := false                    # 영웅의 낙하: 뛰어오른 중
+var _leap_t := 0.0
+var _ult_lock := 0.0                  # 궁극기 시전 중 (궁수 겨누기)
+var crown: MeshInstance3D             # 저주받은 왕관 (머리 위)
+var _was_hidden := false
 # 패시브 상태
 var _passive_t := 0.0
 var _blast_t := 0.0                   # 폭풍 질주 남은 시간
@@ -88,6 +99,13 @@ func _ready() -> void:
 	pl.omni_attenuation = 1.8
 	pl.position = Vector3(0, 1.2, 0.6)
 	add_child(pl)
+	var party := get_tree().get_first_node_in_group("party")
+	inv = party.inv_of(slot) if party else Inventory.new()
+	inv.changed.connect(_apply_items)
+	crown = BB.make("res://assets/sprites/loot.png", "crown_hat", {"unique": true, "receive_shade": false, "emission": 0.4})
+	crown.position.y = 1.55
+	crown.visible = false
+	add_child(crown)
 	set_job(job)
 	damaged.connect(_on_damaged)
 
@@ -102,6 +120,7 @@ func set_job(j: String) -> void:
 	spr_mat = spr.mat
 	mods.clear()
 	base_max_hp = float(J["hp"])
+	_apply_items()
 	hp = max_hp()
 	skill_cd = 0.0
 	job_changed.emit(self)
@@ -130,7 +149,11 @@ func _physics_process(dt: float) -> void:
 		dir = auto_dir
 	if dir.length() > 1.0:
 		dir = dir.normalized()
+	if stun_t > 0.0:
+		dir = Vector3.ZERO                       # 넘어짐: 아무것도 못 한다
+		ctrl.clear()
 	_update_aim(right, fwd, sd)
+	_items_tick(dt)
 	attack_t = maxf(0.0, attack_t - dt)
 	attack_cd = maxf(0.0, attack_cd - dt)
 	skill_cd = maxf(0.0, skill_cd - dt)
@@ -159,30 +182,50 @@ func _physics_process(dt: float) -> void:
 		if _ghost_t <= 0.0:
 			_ghost_t = 0.05
 			spr.ghost(get_parent(), global_position)
-		velocity.x = roll_dir.x * ROLL
-		velocity.z = roll_dir.z * ROLL
+		velocity.x = roll_dir.x * ROLL * stat("roll")
+		velocity.z = roll_dir.z * ROLL * stat("roll")
 	else:
 		var want := dir * spd
 		var acc := 30.0 if dir != Vector3.ZERO else 24.0
+		if _leap:
+			acc = 0.0                            # 영웅의 낙하: 날아가는 중엔 방향을 못 바꾼다
+		elif _ult_lock > 0.0:
+			want = Vector3.ZERO
+			acc = 40.0
 		velocity.x = move_toward(velocity.x, want.x, acc * dt)
 		velocity.z = move_toward(velocity.z, want.z, acc * dt)
 		if not sd and ctrl.roll and dir != Vector3.ZERO:
 			roll_t = ROLL_T
 			roll_dir = dir.normalized()
 			spr.stretch(-0.8)
-			invuln = maxf(invuln, 0.18)
+			invuln = maxf(invuln, 0.18 * stat("iframe"))
+			if inv and inv.fx("roll_stealth") > 0:
+				hidden_t = maxf(hidden_t, ROLL_T + 1.0)
 			Audio.play("dash", global_position)
 			Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 16.0)
 	# ---- 공격 · 스킬
-	if ctrl.attack_held and attack_cd <= 0.0 and roll_t <= 0.0:
+	if ctrl.attack_held and attack_cd <= 0.0 and roll_t <= 0.0 and _ult_lock <= 0.0 and not _leap:
 		_basic()
-	if ctrl.skill and skill_cd <= 0.0 and roll_t <= 0.0:
+	if ctrl.skill and skill_cd <= 0.0 and roll_t <= 0.0 and _ult_lock <= 0.0 and not _leap:
 		_skill()
+	if ctrl.ult and roll_t <= 0.0 and not _leap:
+		if ult >= DB.ULT_MAX:
+			_ult()
+		elif local:
+			Audio.play("ui_denied")
+	if ctrl.use_item:
+		use_consumable()
 	if ctrl.interact:
+		# 가장 가까운 것 하나 (아이템·상자·진열대·표지가 겹쳐 있어도 손 닿는 것부터)
+		var pick: Node = null
+		var pd := 1e9
 		for n in get_tree().get_nodes_in_group("interact"):
-			if (n as Node3D).global_position.distance_to(global_position) < float(n.get("reach")):
-				n.interact(self)
-				break
+			var d := (n as Node3D).global_position.distance_to(global_position)
+			if d < float(n.get("reach")) and d < pd:
+				pd = d
+				pick = n
+		if pick:
+			pick.interact(self)
 	if ctrl.switch_job:
 		var i := DB.JOB_ORDER.find(job)
 		set_job(DB.JOB_ORDER[(i + 1) % DB.JOB_ORDER.size()])
@@ -235,6 +278,10 @@ func _after_move(dt: float) -> void:
 		if hard and rig:
 			rig.shake(2.0)
 		_fall_v = 0.0
+	if _leap:
+		_leap_t += dt
+		if on_floor and _leap_t > 0.15:
+			_leap_land()
 	_was_floor = on_floor
 	var hv := Vector2(velocity.x, velocity.z).length()
 	if on_floor and hv > 0.5 and roll_t <= 0.0:
@@ -255,7 +302,7 @@ func _after_move(dt: float) -> void:
 	spr.lean_to(velocity.dot(scr_right) * 0.022)
 	(ring.material_override as ShaderMaterial).set_shader_parameter("aim", atan2(aim.z, aim.x))
 	ring.visible = not side()
-	if flash > 0.08:
+	if flash > 0.08 or stun_t > 0.0:
 		spr.play("hurt")
 	elif attack_t > 0.0:
 		spr.play("attack")
@@ -311,6 +358,8 @@ func _on_damaged(_f: Fighter, h: Hit, amt: float) -> void:
 			rig.shake(2.5)
 			rig.kick(Vector2(side_k * 3.0, -1.5))
 			get_tree().call_group("hud", "hurt_flash", clampf(amt / 30.0, 0.3, 1.0))
+	if amt > 0.0 and inv:
+		_items_on_hurt(h, amt)
 	# 폭탄마 패시브: 폭발에 맞으면 빨라진다 (자기 폭탄도)
 	if job == "bomber" and h.explosive:
 		_blast_t = 3.0
@@ -320,6 +369,8 @@ func _on_damaged(_f: Fighter, h: Hit, amt: float) -> void:
 
 func _die() -> void:
 	super._die()
+	_leap = false
+	_ult_lock = 0.0
 	Audio.play("die", global_position)
 	spr.play("hurt")
 	spr.update(0.0)
@@ -332,6 +383,18 @@ func _die() -> void:
 
 func _dead_tick(dt: float) -> void:
 	respawn_t -= dt
+	# 불사조 깃털: 부활 횟수를 쓰지 않고 그 자리에서 (깃털은 타서 없어짐)
+	if respawn_t <= 0.8 and respawn_t > -1.0 and inv and inv.fx("revive") > 0:
+		for id in inv.slots:
+			if "revive" in (Items.get_item(id).get("fx", []) as Array):
+				inv.remove(id)
+				break
+		revive(global_position)
+		hp = max_hp() * 0.5
+		Particles.burst(get_parent(), center(), Color("#fff0a0"), Color("#f06a2a"), 30, 6.0)
+		if local:
+			get_tree().call_group("hud", "toast_text", "불사조 깃털이 타올랐다!", Color("#ffb040"))
+		return
 	if respawn_t <= 0.0:
 		var party := get_tree().get_first_node_in_group("party")
 		if party and not party.use_life(self):
@@ -394,7 +457,7 @@ func _passives(dt: float, dir: Vector3) -> void:
 # ------------------------------------------------------------------ 직업: 기본 공격
 func _basic() -> void:
 	var b: Dictionary = J["basic"]
-	attack_cd = 1.0 / float(b["rate"])
+	attack_cd = 1.0 / (float(b["rate"]) * stat("atk_rate"))
 	attack_t = 0.26
 	var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
 	spr.wobble(1.0 if aim.dot(scr_r) >= 0.0 else -1.0, 0.8)
@@ -478,11 +541,22 @@ func _slash_fx() -> void:
 # ------------------------------------------------------------------ 직업: Q 스킬
 func _skill() -> void:
 	var s: Dictionary = J["skill"]
-	skill_cd = float(s["cd"])
+	skill_cd = float(s["cd"]) * stat("cd")
+	skill_used.emit(self)
+	_skill_cast(1.0)
+	# 메아리 종: 잠깐 뒤 절반 위력으로 한 번 더
+	if inv and inv.fx("echo") > 0:
+		await get_tree().create_timer(0.7, false).timeout
+		if is_inside_tree() and not dead:
+			Audio.play("crystal_ping", global_position, -4.0)
+			_skill_cast(0.5)
+
+
+func _skill_cast(power: float) -> void:
+	var s: Dictionary = J["skill"]
 	attack_t = 0.3
 	spr.play("attack", true)
-	skill_used.emit(self)
-	var atk := stat("attack")
+	var atk := stat("attack") * power
 	match job:
 		"warrior":
 			# 강타: 넓은 부채꼴 · 아군도 맞음 · 자기 체력 10% · 반동
@@ -555,3 +629,312 @@ func _arrow_rain(at: Vector3, s: Dictionary, atk: float) -> void:
 			Fx.pop(get_parent(), p, ["spark0", "spark1", "spark2"], 20.0)
 		Audio.play("sword_hit", at, -8.0)
 		await get_tree().create_timer(gap, false).timeout
+
+
+# ------------------------------------------------------------------ 아이템
+## 가방이 바뀌면 능력치 다시 계산 (출처 "items" 하나로)
+func _apply_items() -> void:
+	if inv == null:
+		return
+	set_mod("items", inv.mods())
+	if crown:
+		crown.visible = inv.fx("crown") > 0
+
+
+## 매 프레임: 피의 계약서(체력이 샌다) · 숨음 표시
+func _items_tick(dt: float) -> void:
+	if inv == null:
+		return
+	if inv.fx("pact") > 0:
+		_pact_t += dt
+		if _pact_t >= 0.25:
+			_pact_t = 0.0
+			hp = maxf(1.0, hp - 0.8 * 0.25 * inv.fx("pact"))
+	# 숨음: 푸르스름하게 (바뀔 때만 칠한다 — 독·분노 색과 다투지 않게)
+	var hid := hidden_t > 0.0
+	if hid != _was_hidden and spr_mat:
+		_was_hidden = hid
+		spr_mat.set_shader_parameter("tint", Color(0.55, 0.6, 0.85) if hid else Color.WHITE)
+	if crown and crown.visible:
+		crown.position.y = 1.55 + (1.0 / 16.0 if int(Time.get_ticks_msec() / 400) % 2 == 0 else 0.0)
+
+
+## 내가 누군가를 때림 (Fighter.take 가 부른다)
+func on_dealt(target: Fighter, amt: float, h: Hit, friendly: bool) -> void:
+	if not friendly and target.team != team:
+		ult = minf(DB.ULT_MAX, ult + amt * DB.ULT_PER_DMG * stat("ult"))
+	if inv == null or h.kind in ["chain", "burn", "thorns", "item"]:
+		return
+	var atk := stat("attack")
+	# 불꽃 부적 · 독사의 이빨: 맞은 쪽에 지속 피해 (센 쪽이 남는다)
+	var burn := inv.fx("burn") * 3.0
+	var venom := inv.fx("venom") * 2.5
+	if burn + venom > 0.0 and not target.dead:
+		target.poison_t = 3.0
+		target.poison_dps = maxf(target.poison_dps if target.poison_t > 0.0 else 0.0, burn + venom)
+		target.poison_src = self
+		if burn > 0.0:
+			Fx.pop(target.get_parent(), target.center(), ["spark0", "spark1"], 16.0)
+	# 폭풍 반지: 20% 확률로 번개가 둘레 3명에게 (아군도!)
+	var chain := inv.fx("chain")
+	if chain > 0 and randf() < 0.2 * chain:
+		_chain_lightning(target, 8.0 * atk)
+
+
+func _chain_lightning(from: Fighter, dmg: float) -> void:
+	var cands: Array = []
+	for f in Combat.in_radius(get_tree(), from.global_position, 4.5):
+		if f != from and f != self:
+			cands.append(f)
+	cands.sort_custom(func(a, b): return (a as Node3D).global_position.distance_to(from.global_position) < (b as Node3D).global_position.distance_to(from.global_position))
+	var prev := from.center()
+	for i in mini(3, cands.size()):
+		var fi := cands[i] as Fighter
+		var to := fi.center()
+		for k in 4:
+			Fx.pop(get_parent(), prev.lerp(to, (k + 0.5) / 4.0) + Vector3(randf_range(-0.15, 0.15), randf_range(-0.15, 0.15), 0), ["spark0", "spark1", "spark2"], 24.0)
+		fi.take(Hit.make(dmg, self, Vector3.ZERO, "chain"))
+		prev = to
+	if not cands.is_empty():
+		Audio.play("crystal_ping", from.global_position)
+
+
+## 내가 적을 쓰러뜨림 (Party 가 부른다)
+func on_kill(_e: Node) -> void:
+	ult = minf(DB.ULT_MAX, ult + DB.ULT_PER_KILL * stat("ult"))
+	if inv == null:
+		return
+	var vamp := inv.fx("kill_heal")
+	if vamp > 0 and not dead:
+		var h := Hit.make(5.0 * vamp, self, Vector3.ZERO, "item")
+		h.heal = true
+		take(h)
+	if inv.fx("pact") > 0:
+		_pact = mini(20, _pact + inv.fx("pact"))
+		set_mod("pact", {"attack": 0.04 * _pact})
+		Fx.pop(get_parent(), center() + Vector3(0, 0.6, 0), ["spark0", "spark1", "spark2"], 14.0)
+
+
+## 맞았을 때 아이템 (가시 갑옷 · 행운의 동전 · 불꽃 부적의 위험)
+func _items_on_hurt(h: Hit, _amt: float) -> void:
+	var src := h.source as Fighter
+	var thorns := inv.fx("thorns")
+	if thorns > 0 and src and src != self and not src.dead and h.kind != "thorns":
+		src.take(Hit.make(8.0 * thorns, self, Vector3.ZERO, "thorns"))
+		Fx.pop(get_parent(), src.center(), ["spark0", "spark1"], 18.0)
+	if inv.fx("coin_drop") > 0:
+		var party := get_tree().get_first_node_in_group("party")
+		if party and party.gold > 0:
+			party.add_gold(-1)
+			Coin.burst(get_parent(), global_position, 1, terrain)
+	if inv.fx("burn") > 0 and randf() < 0.2:
+		poison_t = 2.0
+		poison_dps = maxf(poison_dps, 3.0)
+		poison_src = self
+
+
+## 금화 줍기 (행운의 동전·왕관만큼 더)
+func collect_gold(n: int) -> void:
+	_gold_frac += n * stat("gold")
+	var whole := int(floorf(_gold_frac))
+	_gold_frac -= whole
+	var party := get_tree().get_first_node_in_group("party")
+	if party and whole > 0:
+		party.add_gold(whole)
+
+
+## 아이템 줍기: 자리가 없으면 오래된 것을 발밑에 떨어뜨린다
+func pick_up(id: String) -> void:
+	if inv == null:
+		return
+	for d in inv.add(id):
+		for k in int(d[1]):
+			ItemDrop.spawn(get_parent(), String(d[0]), global_position + Vector3(0, 0.6, 0), terrain, -facing * 2.0)
+	Audio.play(String(Items.RARITY[String(Items.get_item(id).get("rarity", "common"))]["sfx"]), global_position)
+	Fx.pop(get_parent(), center() + Vector3(0, 0.5, 0), ["spark0", "spark1", "spark2"], 16.0)
+	if local:
+		get_tree().call_group("hud", "toast_item", id)
+
+
+## 장비 하나 내려놓기 (메뉴에서 — 친구에게 주거나 버리기)
+func drop_item(i: int) -> void:
+	var id := inv.remove_at(i) if inv else ""
+	if id != "":
+		ItemDrop.spawn(get_parent(), id, global_position + Vector3(0, 0.6, 0), terrain, facing * 2.5)
+		Audio.play("item_c", global_position, -6.0)
+
+
+## 소비 아이템 쓰기 (F)
+func use_consumable() -> void:
+	if inv == null or dead or stun_t > 0.0:
+		return
+	var id := inv.take_consumable()
+	if id == "":
+		if local:
+			Audio.play("ui_denied")
+		return
+	match id:
+		"potion", "big_potion":
+			var h := Hit.make(45.0 if id == "potion" else max_hp(), self, Vector3.ZERO, "item")
+			h.heal = true
+			take(h)
+			if id == "big_potion":
+				poison_t = 0.0
+				slow_t = 0.0
+				if spr_mat:
+					spr_mat.set_shader_parameter("tint", Color.WHITE)
+			Audio.play("heal_get", global_position)
+			Fx.pop(get_parent(), center(), ["plus0", "plus1", "plus2"], 10.0, Vector3(0, 1.2, 0))
+		"banana":
+			Audio.play("pickup", global_position)
+			Peel.drop(get_parent(), global_position - facing * 0.6, self, terrain)
+		"smoke":
+			hidden_t = 4.0
+			Audio.play("fuse", global_position)
+			for k in 10:
+				Fx.pop(get_parent(), global_position + Vector3(randf_range(-1.2, 1.2), randf_range(0.0, 1.0), randf_range(-1.0, 1.0)), ["dust0", "dust1", "dust2", "dust3"], 8.0)
+			for f in get_tree().get_nodes_in_group("enemies"):
+				if (f as Enemy).target == self:
+					(f as Enemy).target = null
+		"firecracker":
+			Audio.play("fuse", global_position)
+			for k in 6:
+				var ang := randf() * TAU
+				var d := randf_range(1.0, 3.2)
+				var bm := Bomb.throw(get_parent(), global_position + Vector3(0, 1.0, 0), Vector3(cos(ang) * d / 0.6, 5.0, sin(ang) * d / 0.6), self, false)
+				bm.fuse = 0.6 + k * 0.15
+				bm.fuse0 = bm.fuse
+				bm.radius = 1.5
+				bm.dmg = 18.0 * stat("attack")
+				bm.knock = 7.0
+		"recall":
+			Audio.play("revive", global_position)
+			get_tree().call_group("game", "go_camp")
+		"curse_doll":
+			var best: Fighter = null
+			var bd := 8.0
+			for f in get_tree().get_nodes_in_group("fighters"):
+				var o := f as Fighter
+				if o != self and o.team == team and not o.dead and o.global_position.distance_to(global_position) < bd:
+					bd = o.global_position.distance_to(global_position)
+					best = o
+			if best:
+				var steal := best.hp * 0.25
+				best.hp = maxf(1.0, best.hp - steal)
+				best.flash = 0.12
+				var h2 := Hit.make(steal, self, Vector3.ZERO, "item")
+				h2.heal = true
+				take(h2)
+				Audio.play("troll", global_position)
+				Fx.pop(get_parent(), best.center(), ["spark0", "spark1", "spark2"], 14.0)
+			elif local:
+				Audio.play("ui_denied")
+				get_tree().call_group("hud", "toast_text", "저주할 친구가 없다…", Color("#c8a0ff"))
+
+
+# ------------------------------------------------------------------ 직업: R 궁극기
+func _ult() -> void:
+	ult = 0.0
+	var u: Dictionary = J["ult"]
+	var atk := stat("attack")
+	spr.play("attack", true)
+	attack_t = 0.35
+	Audio.play("q_roar" if job == "warrior" else "item_e", global_position, -4.0)
+	if rig and local:
+		rig.kick(Vector2(0, -2.0))
+	match job:
+		"warrior":
+			# 영웅의 낙하: 조준점으로 높이 뛰어 내려찍기
+			var to := aim_point - global_position
+			to.y = 0.0
+			if to.length() > float(u["range"]):
+				to = to.normalized() * float(u["range"])
+			var t := 0.55
+			velocity = Vector3(to.x / t, 0.5 * GRAV * t, to.z / t)
+			_leap = true
+			_leap_t = 0.0
+			_coyote = 0.0
+			invuln = maxf(invuln, t)
+			spr.stretch(1.2)
+			Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 14.0)
+		"bomber":
+			# 폭죽 축제: 둘레에 폭탄을 뿌리고 차례로 터진다
+			var n := int(u["n"])
+			for k in n:
+				var ang := TAU * k / n + randf_range(-0.2, 0.2)
+				var d := randf_range(2.0, 4.6)
+				var bm := Bomb.throw(get_parent(), global_position + Vector3(0, 1.1, 0), Vector3(cos(ang) * d / 0.7, 6.5, sin(ang) * d / 0.7), self, false)
+				bm.fuse = 0.9 + k * 0.12
+				bm.fuse0 = bm.fuse
+				bm.radius = float(u["radius"])
+				bm.dmg = float(u["dmg"]) * atk
+				bm.knock = float(u["knock"])
+			Audio.play("throw", global_position)
+		"doctor":
+			# 기적: 원 안의 아군 부활·가득 회복 — 적도 40% 회복 (트롤 위험)
+			var r := float(u["radius"])
+			for f in get_tree().get_nodes_in_group("fighters"):
+				var fi := f as Fighter
+				if fi.global_position.distance_to(global_position) > r:
+					continue
+				if fi.team == team and fi != self:
+					if fi.dead and fi is Player:
+						(fi as Player).revive(fi.global_position)
+					var h := Hit.make(fi.max_hp(), self, Vector3.ZERO, "item")
+					h.heal = true
+					fi.take(h)
+					fi.poison_t = 0.0
+					Fx.pop(fi.get_parent(), fi.center(), ["plus0", "plus1", "plus2"], 10.0, Vector3(0, 1.2, 0))
+				elif fi.team != team and not fi.dead:
+					var h2 := Hit.make(fi.max_hp() * float(u["enemy_heal"]), self, Vector3.ZERO, "item")
+					h2.heal = true
+					fi.take(h2)
+			var hs := Hit.make(max_hp() * float(u["self_heal"]), self, Vector3.ZERO, "item")
+			hs.heal = true
+			take(hs)
+			Audio.play("heal_pulse", global_position)
+			var ring_ := Fx.flat_at(get_parent(), global_position, 0.0, ["ring_heal0", "ring_heal1", "ring_heal2", "ring_heal3"], 9.0)
+			ring_.scale = Vector3(r / 1.25, 1, r / 1.25)
+			Particles.burst(get_parent(), center(), Color("#ffffff"), Color("#7af08a"), 40, 7.0, 4.0)
+		"archer":
+			# 꿰뚫는 화살: 잠깐 멈춰 겨눈 뒤 일직선
+			_ult_lock = float(u["charge"])
+			var dir := aim
+			var line := Fx.flat_at(get_parent(), global_position + dir * 4.0, atan2(dir.z, dir.x), ["mark0", "mark1", "mark0", "mark1"], 8.0)
+			line.scale = Vector3(4.0, 1, 0.35)
+			Audio.play("fuse", global_position)
+			await get_tree().create_timer(float(u["charge"]), false).timeout
+			_ult_lock = 0.0
+			if not is_inside_tree() or dead:
+				return
+			dir = aim
+			var h3 := Hit.make(float(u["dmg"]) * atk, self, dir * float(u["knock"]), "arrow")
+			var pa := Projectile.fire(get_parent(), global_position + Vector3(0, 0.75, 0), dir, float(u["speed"]), float(u["range"]), Fx.ATLAS, "arrow", self, h3)
+			pa.hits_allies = true
+			pa.pierce = 99
+			pa.radius = 0.6
+			pa.sprite.scale = Vector3(2.0, 2.0, 2.0)
+			Audio.play("smash", global_position)
+			if rig and local:
+				rig.shake(4.0)
+
+
+func _leap_land() -> void:
+	_leap = false
+	var u: Dictionary = J["ult"]
+	var c := global_position
+	Audio.play("smash", c)
+	Audio.play("land_heavy", c)
+	for f in Combat.in_radius(get_tree(), c, float(u["radius"])):
+		if f == self:
+			continue
+		var fi := f as Fighter
+		fi.take(Hit.make(float(u["dmg"]) * stat("attack"), self, Combat.push(c, fi.global_position, float(u["knock"]), 0.7), "smash"))
+	var ring_ := Fx.flat_at(get_parent(), c, 0.0, ["ring_hit0", "ring_hit1", "ring_hit2", "ring_hit3"], 12.0)
+	ring_.scale = Vector3(float(u["radius"]) / 1.1, 1, float(u["radius"]) / 1.1)
+	Fx.pop(get_parent(), c, ["dust0", "dust1", "dust2", "dust3"], 12.0)
+	Particles.burst(get_parent(), c + Vector3(0, 0.2, 0), Color("#fff0c0"), Color("#8a6a4a"), 36, 7.0)
+	spr.stretch(-1.6)
+	if rig:
+		rig.shake(7.0)
+	Combat.hitstop(get_tree(), 0.08)

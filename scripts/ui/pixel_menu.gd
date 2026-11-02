@@ -17,6 +17,9 @@ var items: Array = []
 var width := 200
 var top := -1.0                    # 판 위쪽 y (음수면 화면 가운데)
 var boxless := false               # 판 없이 글자만 (타이틀) — 고른 줄만 금테
+var _desc: Label                   # 항목에 "desc" 가 있으면 판 아래쪽에 고른 줄 설명 (2줄)
+var _has_desc := false
+const DESC_H := 38
 var sel := 0
 var _rows: Array = []              # [Control 줄, 값 Label, 선택 판]
 var _box: Control
@@ -45,7 +48,11 @@ func build() -> void:
 		c.queue_free()
 	_rows.clear()
 	var head := 22 if title != "" else 6
-	var h := head + items.size() * ROW_H + 8
+	_has_desc = false
+	for it in items:
+		if (it as Dictionary).has("desc"):
+			_has_desc = true
+	var h := head + items.size() * ROW_H + 8 + (DESC_H if _has_desc else 0)
 	var x0 := roundf((PixelView.GW - width) / 2.0)
 	var y0 := top if top >= 0.0 else roundf((PixelView.GH - h) / 2.0) + 18
 	_box = Control.new()
@@ -85,6 +92,17 @@ func build() -> void:
 		if String(it.get("type", "button")) == "button":
 			l.size = Vector2(width - 40, 14)
 		_rows.append([l, v, hi])
+	if _has_desc:
+		var sep := ColorRect.new()
+		sep.color = Color("#5a4a6e")
+		sep.position = Vector2(x0 + 10, _origin.y + items.size() * ROW_H + 3)
+		sep.size = Vector2(width - 20, 1)
+		_box.add_child(sep)
+		_desc = PixelFont.label("", "small", Color("#d8ccb8"))
+		_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_desc.position = Vector2(x0 + 10, _origin.y + items.size() * ROW_H + 6)
+		_desc.size = Vector2(width - 20, 33)
+		_box.add_child(_desc)
 	_arrow = UiKit.icon("sel")
 	_box.add_child(_arrow)
 	sel = clampi(sel, 0, items.size() - 1)
@@ -116,13 +134,21 @@ func refresh() -> void:
 				v.add_theme_color_override("font_color", Color("#9aff9a") if bool(it["get"].call()) else Color("#ff9a9a"))
 			_:
 				v.text = String(it.get("value", ""))
+				if it.has("value_col"):
+					v.add_theme_color_override("font_color", it["value_col"])
 		var on := i == sel
 		(_rows[i][2] as Control).visible = on
 		var lc := Color("#ffffff") if on else Color("#d8ccb8")
 		if tp == "info":
 			lc = Color("#a89cb8")
+		if it.has("label_col"):
+			lc = it["label_col"] if on else (it["label_col"] as Color).darkened(0.15)
 		(_rows[i][0] as Label).add_theme_color_override("font_color", lc)
 	_arrow.position = _origin + Vector2(4, sel * ROW_H + 5)
+	if _desc and sel < items.size():
+		_desc.text = String((items[sel] as Dictionary).get("desc", ""))
+		var dc: Variant = (items[sel] as Dictionary).get("desc_col", null)
+		_desc.add_theme_color_override("font_color", dc if dc != null else Color("#d8ccb8"))
 
 
 func _process(dt: float) -> void:

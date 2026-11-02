@@ -12,8 +12,9 @@ extends Node
 ##    --quit=초           몇 초 뒤 끝내기
 ##    --title             타이틀 화면을 강제로 띄운다 (기본: 위 인자가 없으면 타이틀부터)
 ##    --pause             (시험용) 바로 일시정지 메뉴 · --settings 설정 화면 · --result=win|lose 결과 화면
-##    --selftest          화면 흐름 자가 시험 (tools/test_flow.gd)
+##    --selftest          화면 흐름 자가 시험 (tools/test_flow.gd) · --itemtest 아이템·궁극기 시험 (tools/test_items.gd)
 ##    --autostart=초      타이틀에서 몇 초 뒤 자동 시작 (영상용)
+##    --give=id,id        (시험) 아이템을 넣고 시작 · --ultfull 궁극기 가득
 
 const MAPS := {"camp": "캠프", "forest": "속삭이는 숲", "nest": "거미 여왕의 둥지"}
 
@@ -56,6 +57,7 @@ func _ready() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	Controls.ensure()
 	process_mode = Node.PROCESS_MODE_ALWAYS          # 메뉴·커서는 일시정지 중에도 돈다
+	add_to_group("game")
 	pv = PixelView.new()
 	pv.process_mode = Node.PROCESS_MODE_PAUSABLE     # 세계·HUD 는 멈춘다
 	add_child(pv)
@@ -81,6 +83,15 @@ func _ready() -> void:
 		_hint_basics()
 	if args.has("selftest") and ResourceLoader.exists("res://tools/test_flow.gd"):
 		add_child(load("res://tools/test_flow.gd").new())
+	if args.has("give"):                        # 시험용: --give=id,id,... 가방에 넣고 시작
+		for id in String(args["give"]).split(","):
+			if Items.ITEMS.has(id):
+				walker.pick_up(id)
+		walker.ult = DB.ULT_MAX if args.has("ultfull") else walker.ult
+	if args.has("gold"):
+		party.add_gold(int(args["gold"]))
+	if args.has("itemtest") and ResourceLoader.exists("res://tools/test_items.gd"):
+		add_child(load("res://tools/test_items.gd").new())
 	if args.has("side"):
 		_manual_side = true
 		rig.set_side(true, 0.0, walker.position.z)
@@ -308,10 +319,12 @@ func _process(dt: float) -> void:
 		get_tree().quit()
 	if args.has("result") and _frame == 40:
 		_show_result(args["result"] == "win")
-	if (args.has("pause") or args.has("settings")) and _frame == 40:
+	if (args.has("pause") or args.has("settings") or args.has("bag")) and _frame == 40:
 		_pause()
 		if args.has("settings"):
 			_open_settings()
+		if args.has("bag"):
+			_open_bag()
 	if get_tree().paused:
 		return
 	_wind += dt
@@ -407,6 +420,12 @@ func _bot(dt: float) -> void:
 		no_stop = true
 	elif best:
 		goal = best.global_position
+	elif _bot_loot() != null:
+		# 떨어진 아이템 줍기
+		var lt := _bot_loot()
+		goal = lt.global_position
+		c.interact = goal.distance_to(walker.global_position) < 1.1
+		no_stop = true
 	else:
 		goal = walker.global_position
 		for g in map.groups:
@@ -447,6 +466,20 @@ func _bot(dt: float) -> void:
 		c.attack_held = to.length() < want_d + 3.5
 		c.skill = to.length() < 3.5 and fmod(_bot_t, 3.0) < dt
 		c.roll = fmod(_bot_t, 2.3) < dt and walker.hp < walker.max_hp() * 0.5
+		c.ult = walker.ult >= DB.ULT_MAX and to.length() < 6.0
+	if walker.hp < walker.max_hp() * 0.4 and walker.inv.cons in ["potion", "big_potion"]:
+		c.use_item = true
+
+
+func _bot_loot() -> Node3D:
+	var best: Node3D = null
+	var bd := 10.0
+	for n in get_tree().get_nodes_in_group("loot"):
+		var d := (n as Node3D).global_position.distance_to(walker.global_position)
+		if d < bd:
+			bd = d
+			best = n
+	return best
 
 
 ## 측면 구간 · 출구
@@ -607,6 +640,7 @@ func _pause() -> void:
 	Audio.play("ui_click")
 	var items: Array = [
 		{"label": "계속하기", "do": _resume},
+		{"label": "장비", "do": _open_bag},
 		{"label": "설정", "do": _open_settings},
 		{"label": "조작법", "do": _open_controls},
 	]
@@ -669,7 +703,8 @@ func _apply_quality() -> void:
 
 func _open_controls() -> void:
 	var rows := [["이동", "W A S D"], ["달리기", "Shift"], ["구르기 · 측면 점프", "Space"], ["공격", "왼쪽 클릭"],
-		["스킬", "Q · 오른쪽 클릭"], ["상호작용", "E"], ["직업 바꾸기", "Tab"], ["시점 전환 (시험)", "F2"], ["지역 이동 (시험)", "1 · 2 · 3"]]
+		["스킬", "Q · 오른쪽 클릭"], ["궁극기", "R"], ["소비 아이템", "F"], ["줍기 · 열기 · 사기", "E"], ["직업 바꾸기", "Tab"],
+		["시점 전환 (시험)", "F2"], ["지역 이동 (시험)", "1 · 2 · 3"]]
 	var items: Array = []
 	for r in rows:
 		items.append({"label": r[0], "value": r[1]})
@@ -745,6 +780,12 @@ func _hints_tick() -> void:
 				_hint_once("job", [["E", "이 직업으로"], ["Tab", "직업 돌려 보기"]], 5.0)
 	if walker.hp < walker.max_hp() * 0.35:
 		_hint_once("low", [["Space", "구르면 잠깐 무적"]], 4.0)
+	if walker.inv and walker.inv.cons != "":
+		_hint_once("cons", [["F", "%s 쓰기" % Items.get_item(walker.inv.cons).get("name", "")]], 4.0)
+	if walker.ult >= DB.ULT_MAX:
+		_hint_once("ult", [["R", "궁극기 — %s" % walker.J["ult"]["name"]]], 4.0)
+	if walker.inv and walker.inv.slots.size() >= Items.SLOTS:
+		_hint_once("full", [["Esc", "장비 — 꽉 차면 오래된 것부터 떨어진다"]], 5.0)
 	if hud.boss != null:
 		_hint_once("boss", [["Space", "구르기로 피하기"], ["Q", "스킬은 아껴서"]], 5.0)
 
@@ -783,3 +824,36 @@ func _result_to_camp() -> void:
 	_play_t = 0.0
 	hud.set_shown(true)
 	_go("camp", Vector3(20, 0, 19.5))
+
+
+# ------------------------------------------------------------------ 아이템
+## 귀환 두루마리 (Player 가 group "game" 으로 부른다)
+func go_camp() -> void:
+	if map_name != "camp":
+		_go("camp", Vector3(20, 0, 19.5))
+
+
+## 일시정지 → 장비: 가진 장비·소비 아이템 (고르면 설명, 실행하면 발밑에 내려놓기 — 친구에게 주거나 버리기)
+func _open_bag() -> void:
+	var items: Array = []
+	var inv := walker.inv
+	for i in inv.slots.size():
+		var id: String = inv.slots[i]
+		var it := Items.get_item(id)
+		var k := i
+		items.append({"label": String(it["name"]), "label_col": Items.color(id), "value": "내려놓기",
+			"value_col": Color(1, 1, 1, 0.5), "desc": "%s\n위험: %s" % [it["desc"], it["risk"]],
+			"do": func():
+				walker.drop_item(k)
+				_pop_menu()
+				_open_bag()})
+	if inv.cons != "":
+		var ci := Items.get_item(inv.cons)
+		items.append({"label": "%s ×%d" % [ci["name"], inv.cons_n], "label_col": Items.color(inv.cons), "type": "info",
+			"value": "F 로 사용", "desc": String(ci["desc"])})
+	if items.is_empty():
+		items.append({"label": "빈 가방", "type": "info", "value": "", "desc": "적·상자·상인에게서 아이템을 얻는다. 장비는 5칸까지."})
+	items.append({"label": "뒤로", "do": func(): _pop_menu(), "desc": "궁극기 게이지: %d%%" % int(walker.ult)})
+	var m := PixelMenu.new("장비  (%d / %d)" % [inv.slots.size(), Items.SLOTS], items, 260)
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m)

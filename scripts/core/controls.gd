@@ -12,7 +12,9 @@ const DEFAULT := {
 	"run": [KEY_SHIFT],
 	"interact": [KEY_E],
 	"emote": [KEY_T],
-	"ping": [KEY_F],
+	"ping": [KEY_G],
+	"ult": [KEY_R],               # 궁극기 (게이지가 차면)
+	"use_item": [KEY_F],          # 소비 아이템
 	"menu": [KEY_ESCAPE],
 	"debug_side": [KEY_F2],
 	"skill": [KEY_Q],
@@ -21,7 +23,8 @@ const DEFAULT := {
 }
 const MOUSE := {"attack": MOUSE_BUTTON_LEFT, "skill": MOUSE_BUTTON_RIGHT, "ping": MOUSE_BUTTON_MIDDLE}
 const PAD_BTN := {"roll": JOY_BUTTON_A, "attack": JOY_BUTTON_X, "skill": JOY_BUTTON_Y, "interact": JOY_BUTTON_B,
-	"run": JOY_BUTTON_LEFT_SHOULDER, "menu": JOY_BUTTON_START, "emote": JOY_BUTTON_DPAD_UP, "ping": JOY_BUTTON_RIGHT_SHOULDER}
+	"run": JOY_BUTTON_LEFT_SHOULDER, "menu": JOY_BUTTON_START, "emote": JOY_BUTTON_DPAD_UP, "ping": JOY_BUTTON_DPAD_DOWN,
+	"ult": JOY_BUTTON_RIGHT_SHOULDER, "use_item": JOY_BUTTON_DPAD_RIGHT}
 const PAD_AXIS := {"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS_LEFT_X, 1.0],
 	"move_up": [JOY_AXIS_LEFT_Y, -1.0], "move_down": [JOY_AXIS_LEFT_Y, 1.0]}
 

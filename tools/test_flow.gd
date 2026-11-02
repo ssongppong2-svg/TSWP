@@ -51,7 +51,8 @@ func _process(dt: float) -> void:
 		3:
 			check(main.state == "pause" and get_tree().paused, "Esc → 일시정지")
 			key(KEY_DOWN)
-			key(KEY_ENTER)                                  # 설정
+			key(KEY_DOWN)
+			key(KEY_ENTER)                                  # 설정 (계속 · 장비 · 설정)
 		4:
 			check(main.menu_stack.size() == 2, "설정 열림")
 			_v0 = Prefs.vol_master

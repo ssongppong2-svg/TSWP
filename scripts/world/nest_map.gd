@@ -144,4 +144,10 @@ func _win() -> void:
 	var tw := c.create_tween().set_loops()
 	tw.tween_property(c, "position:y", c.position.y + 0.4, 0.6).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(c, "position:y", c.position.y, 0.6).set_trans(Tween.TRANS_SINE)
+	# 보스 보상: 희귀 이상 둘 + 영웅 이상 하나 + 금화 한 무더기 (보스 공용 드롭 — 먼저 줍는 사람이 임자)
+	var lr := RandomNumberGenerator.new()
+	lr.randomize()
+	for k in 3:
+		ItemDrop.spawn(self, Items.roll(lr, false, 1.0, "epic" if k == 0 else "rare"), at + Vector3(0, 1.0, 0), terrain, Vector3(cos(k * 2.1) * 2.5, 0, sin(k * 2.1) * 2.5))
+	Coin.burst(self, at + Vector3(0, 0.6, 0), 25, terrain)
 	victory.emit()

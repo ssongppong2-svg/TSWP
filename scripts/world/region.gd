@@ -471,3 +471,75 @@ func scatter_props(list: Array) -> void:
 				continue
 			prop(c, pr[0])
 			placed += 1
+
+
+# ------------------------------------------------------------------ 아이템: 상자 · 상점
+## near 둘레에서 평평하고 비어 있는 칸 찾기 (없으면 near 그대로)
+func find_spot(near: Vector2, r := 3.0) -> Vector3:
+	for i in 60:
+		var a := rng.randf() * TAU
+		var d := rng.randf() * r
+		var c := _cell(near.x + cos(a) * d, near.y + sin(a) * d)
+		if terrain.inside(c.x, c.y) and _flat(c, 2) and _free(c, 1):
+			return _spot(c)
+	var p := Vector3(near.x, 0, near.y)
+	p.y = terrain.height_at(p)
+	return p
+
+
+## 보물상자 하나 (mimic_k: 미믹일 확률)
+func chest_at(near: Vector2, mimic_k := 0.12, luck := 0.0, exact := false) -> Chest:
+	var p := find_spot(near, 2.5)
+	if exact:
+		p = Vector3(near.x, 0, near.y)
+		p.y = terrain.height_at(p)
+	var ch := Chest.new()
+	ch.region = self
+	ch.mimic = rng.randf() < mimic_k
+	ch.luck = luck
+	ch.solid = not exact
+	add_child(ch)
+	ch.position = p
+	_mark(terrain.cell_of(p), 3)
+	return ch
+
+
+## 떠돌이 상인 + 진열대 n개 (장비) + 소비 1개 — 상인 오른쪽(동쪽)으로 가로 한 줄 (2m 간격). 들를 때마다 물건이 바뀐다
+func shop_at(at: Vector2, n := 3) -> void:
+	var srng := RandomNumberGenerator.new()
+	srng.randomize()
+	var mp := Vector3(at.x, 0, at.y)
+	mp.y = terrain.height_at(mp)
+	var m := BB.make("res://assets/sprites/loot.png", "merchant0", {"unique": true, "up_normal": 0.7, "shade_k": 0.5})
+	m.position = mp
+	add_child(m)
+	var an := SpriteAnim.new()
+	an.setup(m, "res://assets/sprites/loot.png", ["merchant0", "merchant1"], 2.0)
+	add_child(an)
+	var bl := BB.blob(0.6, 0.3, 0.9)
+	bl.position = mp
+	add_child(bl)
+	solid(mp, 0.45)
+	warm_light(mp + Vector3(0.6, 1.6, 0.6), 1.2, 4.5, Color("#ffd08a"), 0.04)    # 상인 등불 (어두운 숲 가에서도 보이게)
+	var talk := Merchant.new()
+	talk.position = mp
+	add_child(talk)
+	var used := {}
+	for k in n + 1:
+		var id := ""
+		for tries in 20:
+			id = Items.roll(srng, k == n, 0.4)
+			if not used.has(id):
+				break
+		used[id] = true
+		var p := Vector3(at.x + 1.9 + k * 2.0, 0, at.y + 0.3)
+		p.y = terrain.height_at(p)
+		if absf(p.y - mp.y) > 0.4:
+			continue                     # 둔덕 위에 걸치면 그 자리는 비운다
+		var st := ShopStand.new()
+		st.id = id
+		add_child(st)
+		st.position = p
+	for gz in range(int((at.y - 1.8) / C), int((at.y + 1.6) / C)):
+		for gx in range(int((at.x - 1.2) / C), int((at.x + 2.6 + (n + 1) * 2.0) / C)):
+			blocked[Vector2i(gx, gz)] = true

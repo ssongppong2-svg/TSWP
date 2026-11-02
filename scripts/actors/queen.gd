@@ -34,7 +34,7 @@ var shell := false
 var shell_t := 0.0
 var shell_hp := 0.0
 var shells_done := 0
-var stun_t := 0.0
+var q_stun_t := 0.0
 var enraged := false
 var cds := {}
 var charge_dir := Vector3.ZERO
@@ -102,8 +102,8 @@ func _physics_process(dt: float) -> void:
 				intro_done = true
 		"stun":
 			_set_anim("hurt")
-			stun_t -= dt
-			if stun_t <= 0.0:
+			q_stun_t -= dt
+			if q_stun_t <= 0.0:
 				state = "idle"
 				st_t = 0.6
 		"idle":
@@ -130,7 +130,7 @@ func _physics_process(dt: float) -> void:
 					Audio.play("q_wallhit", global_position)
 					if rig:
 						rig.shake(6.0)
-					stun_t = 1.2
+					q_stun_t = 1.2
 					state = "stun"
 				else:
 					state = "idle"
@@ -397,7 +397,7 @@ func _end_shell(broken: bool) -> void:
 	shell = false
 	if broken:
 		Audio.play("q_shatter", global_position)
-		stun_t = 3.0
+		q_stun_t = 3.0
 		state = "stun"
 		pending.clear()
 		if rig:

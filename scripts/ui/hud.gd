@@ -3,6 +3,8 @@ extends Control
 ## 도트 HUD (480x270 위에 그린다 · 부품은 UiKit 아틀라스)
 ##  왼쪽 위: 직업 초상(아이콘) · 이름 · 패시브(보석) · 체력바(숫자는 바 안, 막 깎인 부분은 하얗게 남았다 줄어듦)
 ##  그 옆: 스킬 칸 (스킬 그림 · 쿨타임은 위에서부터 걷힘 · 남은 초 · Q 키캡 · 다 차면 금테 번쩍)
+##        · 소비 아이템 칸 (F · 개수) · 궁극기 칸 (R · 아래부터 차오르는 게이지, 가득 차면 금빛 깜빡)
+##  그 아래: 장비 5칸 (희귀도 색 밑줄) · 새로 얻으면 왼쪽에 아이템 알림(이름·효과·위험)
 ##  오른쪽 위: 남은 부활(하트) · 금화 (늘면 톡 튐)
 ##  아래 가운데: 상황 힌트(키캡 + 설명, 잠깐 떴다 사라짐) · 보스 체력바 + 위험 게이지
 
@@ -33,6 +35,21 @@ var q_sec: Label
 var q_flash: ColorRect
 var q_name: Label
 var _was_cd := false
+# 소비 · 궁극기 · 장비
+var c_icon: TextureRect
+var c_n: Label
+var u_panel: NinePatchRect
+var u_icon: TextureRect
+var u_fill: ColorRect
+var _ult_full := false
+var item_slots: Array = []         # [TextureRect 그림, ColorRect 밑줄]
+var _bag_sig := ""
+# 알림
+var toast_box: Control
+var _toast_t := 0.0
+var _toast_q: Array = []
+var msg_l: Label
+var _msg_t := 0.0
 var _ready_t := 0.0
 var _qname_t := 0.0                # 직업을 바꾼 뒤 잠깐만 스킬 이름을 보여 준다
 # 오른쪽 위
@@ -97,6 +114,7 @@ func _ready() -> void:
 	add_child(_root)
 	_build_main()
 	_build_skill()
+	_build_extra()
 	_build_right()
 	_build_boss()
 	center_l = PixelFont.label("", "big", Color("#fff4d6"))
@@ -177,6 +195,134 @@ func _build_right() -> void:
 	_root.add_child(coin)
 	gold_l = PixelFont.label("0", "big", Color("#ffd860"))
 	_root.add_child(gold_l)
+
+
+## 소비 칸 · 궁극기 칸 · 장비 5칸 · 알림
+func _build_extra() -> void:
+	_root.add_child(UiKit.panel("panel", Vector2(182, 4), Vector2(34, 34)))
+	c_icon = UiKit.icon("potion", Vector2(191, 13))
+	c_icon.texture = null
+	_root.add_child(c_icon)
+	c_n = PixelFont.label("", "small", Color.WHITE, Color("#1a1420"))
+	c_n.position = Vector2(186, 6)
+	_root.add_child(c_n)
+	var kf := UiKit.key("F")
+	kf.position = Vector2(206, 26)
+	_root.add_child(kf)
+	u_panel = UiKit.panel("panel", Vector2(219, 4), Vector2(34, 34))
+	_root.add_child(u_panel)
+	u_fill = _rect(Vector2(221, 36), Vector2(30, 0), Color(0.35, 0.85, 1.0, 0.35))
+	u_icon = UiKit.icon("ult_warrior", Vector2(227, 12))
+	_root.add_child(u_icon)
+	var kr := UiKit.key("R")
+	kr.position = Vector2(243, 26)
+	_root.add_child(kr)
+	for i in Items.SLOTS:
+		var x := 4 + i * 21
+		_root.add_child(UiKit.panel("panel_dark", Vector2(x, 41), Vector2(20, 20)))
+		var ic := TextureRect.new()
+		ic.position = Vector2(x + 2, 43)
+		ic.size = Vector2(16, 16)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_root.add_child(ic)
+		var ul := _rect(Vector2(x + 2, 58), Vector2(16, 1), Color(0, 0, 0, 0))
+		item_slots.append([ic, ul])
+	toast_box = Control.new()
+	toast_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast_box.modulate.a = 0.0
+	_root.add_child(toast_box)
+	msg_l = PixelFont.label("", "big", Color.WHITE)
+	msg_l.position = Vector2(0, 78)
+	msg_l.size = Vector2(PixelView.GW, 14)
+	msg_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg_l.add_theme_color_override("font_outline_color", Color("#1a1420"))
+	msg_l.add_theme_constant_override("outline_size", 4)
+	_root.add_child(msg_l)
+
+
+static func _item_tex(id: String) -> AtlasTexture:
+	var a := BB.atlas(ItemDrop.ATLAS)
+	var r: Array = a["rects"].get(id, [0, 0, 16, 16])
+	var t := AtlasTexture.new()
+	t.atlas = a["tex"]
+	t.region = Rect2(r[0], r[1], r[2], r[3])
+	return t
+
+
+## 아이템을 얻으면 왼쪽에 잠깐: 그림 · 이름(희귀도 색) · 등급·종류 · 효과 · 위험
+func toast_item(id: String) -> void:
+	_toast_q.append(id)
+	if _toast_q.size() == 1:
+		_show_toast()
+
+
+func _show_toast() -> void:
+	for c in toast_box.get_children():
+		c.queue_free()
+	if _toast_q.is_empty():
+		return
+	var id: String = _toast_q[0]
+	var it := Items.get_item(id)
+	var w := 196.0
+	var f := PixelFont.get_font("small")
+	var fs := PixelFont.size_of("small")
+	var desc := String(it.get("desc", ""))
+	var risk := String(it.get("risk", ""))
+	if risk != "":
+		risk = "위험: " + risk
+	var dn := _lines(f, fs, desc, w - 12.0)
+	var rn := 0 if risk == "" else _lines(f, fs, risk, w - 12.0)
+	var h := 31.0 + (dn + rn) * 11.0 + 5.0
+	toast_box.position = Vector2(4, PixelView.GH - 34 - h)      # 왼쪽 아래 (가운데 힌트·보스바와 겹치지 않게)
+	toast_box.add_child(UiKit.panel("panel", Vector2.ZERO, Vector2(w, h)))
+	var slot := UiKit.panel("panel_dark", Vector2(5, 5), Vector2(22, 22))
+	toast_box.add_child(slot)
+	var ic := TextureRect.new()
+	ic.texture = _item_tex(id)
+	ic.position = Vector2(8, 8)
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast_box.add_child(ic)
+	var nl := PixelFont.label(String(it.get("name", id)), "big", Items.color(id))
+	nl.position = Vector2(31, 3)
+	toast_box.add_child(nl)
+	var ll := PixelFont.label(Items.line(id), "small", Color(1, 1, 1, 0.6))
+	ll.position = Vector2(31, 16)
+	toast_box.add_child(ll)
+	var dl := PixelFont.label(desc, "small", Color("#fff4d6"))
+	dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART          # 줄바꿈을 먼저 켜야 폭이 글 길이로 늘어나지 않는다
+	dl.position = Vector2(6, 30)
+	dl.size = Vector2(w - 12, dn * 11)
+	toast_box.add_child(dl)
+	if risk != "":
+		var rl := PixelFont.label(risk, "small", Color("#ff8a7a"))
+		rl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		rl.position = Vector2(6, 30 + dn * 11)
+		rl.size = Vector2(w - 12, rn * 11)
+		toast_box.add_child(rl)
+	_toast_t = 4.2
+
+
+## 낱말 단위 줄바꿈했을 때 몇 줄인가
+static func _lines(f: Font, fs: int, text: String, width: float) -> int:
+	var n := 1
+	var cur := 0.0
+	var sp := f.get_string_size(" ", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	for word in text.split(" "):
+		var ww := f.get_string_size(word, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		if cur > 0.0 and cur + sp + ww > width:
+			n += 1
+			cur = ww
+		else:
+			cur += (sp if cur > 0.0 else 0.0) + ww
+	return n
+
+
+## 짧은 글 알림 (가운데 위)
+func toast_text(text: String, col := Color.WHITE) -> void:
+	msg_l.text = text
+	msg_l.add_theme_color_override("font_color", col)
+	_msg_t = 2.2
 
 
 ## 보스 체력바 (아래 가운데) + 위험 게이지
@@ -260,6 +406,7 @@ func _process(dt: float) -> void:
 	_hurt = move_toward(_hurt, 0.0, dt * 2.2)
 	hurt_rect.modulate.a = _hurt if not Prefs.reduce_flash else _hurt * 0.4
 	_tick_hint(dt)
+	_tick_toast(dt)
 	if player == null or not is_instance_valid(player):
 		return
 	var J := player.J
@@ -275,6 +422,7 @@ func _process(dt: float) -> void:
 		passive_l.text = String(J["passive"]["name"])
 		q_name.text = String(J["skill"]["name"])
 		_qname_t = 4.0
+		u_icon.texture = UiKit.tex("ult_" + player.job)
 	# 체력
 	var r := player.ratio()
 	_ghost = move_toward(_ghost, r, dt * 0.7) if _ghost > r else r
@@ -299,6 +447,34 @@ func _process(dt: float) -> void:
 	q_flash.color.a = _ready_t / 0.35 * 0.7
 	q_panel.texture = UiKit.tex("panel_hi" if _ready_t > 0.0 else "panel")
 	q_icon.modulate = Color(1, 1, 1, 1) if cd <= 0.0 else Color(0.6, 0.6, 0.7, 1)
+	# 궁극기 게이지
+	var uk := clampf(player.ult / DB.ULT_MAX, 0.0, 1.0)
+	u_fill.size.y = roundf(30.0 * uk)
+	u_fill.position.y = 36.0 - u_fill.size.y
+	var full := uk >= 1.0
+	if full and not _ult_full:
+		Audio.play("ui_confirm")
+	_ult_full = full
+	var ublink := full and int(Time.get_ticks_msec() / 250) % 2 == 0
+	u_panel.texture = UiKit.tex("panel_hi" if ublink else "panel")
+	u_fill.color = Color(1.0, 0.85, 0.35, 0.45) if full else Color(0.35, 0.85, 1.0, 0.35)
+	u_icon.modulate = Color.WHITE if full else Color(0.55, 0.55, 0.65)
+	# 소비 · 장비 (바뀔 때만 다시 칠한다)
+	if player.inv:
+		var sig := "%s|%s|%d" % [",".join(player.inv.slots), player.inv.cons, player.inv.cons_n]
+		if sig != _bag_sig:
+			_bag_sig = sig
+			c_icon.texture = _item_tex(player.inv.cons) if player.inv.cons != "" else null
+			c_n.text = ("×%d" % player.inv.cons_n) if player.inv.cons_n > 1 else ""
+			for i in Items.SLOTS:
+				var ic: TextureRect = item_slots[i][0]
+				var ul: ColorRect = item_slots[i][1]
+				if i < player.inv.slots.size():
+					ic.texture = _item_tex(player.inv.slots[i])
+					ul.color = Items.color(player.inv.slots[i])
+				else:
+					ic.texture = null
+					ul.color = Color(0, 0, 0, 0)
 	_qname_t = maxf(0.0, _qname_t - dt)
 	q_name.modulate.a = clampf(_qname_t / 0.6, 0.0, 1.0)
 	# 오른쪽 위
@@ -363,6 +539,22 @@ func _draw_hearts() -> void:
 		var l := PixelFont.label("× %d" % party.lives, "big", Color("#ff8a8a"))
 		l.position = Vector2(x0 + 12, 5)
 		hearts.add_child(l)
+
+
+func _tick_toast(dt: float) -> void:
+	if _toast_t > 0.0:
+		_toast_t -= dt
+		toast_box.modulate.a = clampf(minf(_toast_t / 0.4, (4.2 - _toast_t) / 0.15), 0.0, 1.0)
+		toast_box.position.x = 4.0 - roundf(maxf(0.0, 0.15 - (4.2 - _toast_t)) / 0.15 * 12.0)
+		if _toast_t <= 0.0:
+			_toast_q.pop_front()
+			toast_box.modulate.a = 0.0
+			_show_toast()
+	if _msg_t > 0.0:
+		_msg_t -= dt
+		msg_l.modulate.a = clampf(_msg_t / 0.4, 0.0, 1.0)
+		if _msg_t <= 0.0:
+			msg_l.text = ""
 
 
 func _tick_hint(dt: float) -> void:

@@ -10,6 +10,10 @@ var lives := 3
 var gold := 0
 var stats := {}                    # 플레이어 → {"kills", "deaths", "dmg", "heal"}
 var over := false
+var bags := {}                     # 파티 번호 → Inventory (지역을 옮겨도 가방이 이어지게)
+var rng := RandomNumberGenerator.new()
+const DROP_ITEM := 0.07            # 적 처치 시 장비가 떨어질 확률
+const DROP_CONS := 0.09            # 소비 아이템
 
 
 func _enter_tree() -> void:
@@ -21,6 +25,9 @@ func setup(player_count: int) -> void:
 	lives = player_count * 3
 	gold = 0
 	stats.clear()
+	for b in bags.values():
+		(b as Inventory).clear()
+	rng.randomize()
 	over = false
 	changed.emit()
 
@@ -45,6 +52,12 @@ func _check_wipe() -> void:
 		game_over.emit()
 
 
+func inv_of(slot: int) -> Inventory:
+	if not bags.has(slot):
+		bags[slot] = Inventory.new()
+	return bags[slot]
+
+
 func add_gold(n: int) -> void:
 	gold += n
 	changed.emit()
@@ -66,6 +79,13 @@ func on_enemy_killed(e: Enemy, by: Node) -> void:
 		Coin.burst(e.get_parent(), e.global_position, int(e.E.get("gold", 1)), e.terrain)
 	if by is Player:
 		_stat(by, "kills", 1)
+		(by as Player).on_kill(e)
+	# 아이템 떨어뜨리기 (적 시스템.md: 일반 몬스터도 낮은 확률로)
+	if e.is_inside_tree():
+		if rng.randf() < DROP_ITEM:
+			ItemDrop.spawn(e.get_parent(), Items.roll(rng), e.global_position + Vector3(0, 0.5, 0), e.terrain)
+		elif rng.randf() < DROP_CONS:
+			ItemDrop.spawn(e.get_parent(), Items.roll(rng, true), e.global_position + Vector3(0, 0.5, 0), e.terrain)
 
 
 ## 무리 밖에서 생긴 적(고치에서 부화 등)도 처치 보상 연결

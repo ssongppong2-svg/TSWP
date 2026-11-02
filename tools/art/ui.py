@@ -219,6 +219,39 @@ def skill_icon(job):
     return a
 
 
+def ult_icon(job):
+    """궁극기: 금빛 방사 + 직업별 그림"""
+    a = canvas(18, 18)
+    burst_bg(a, "#fff4b0", "#ffc040")
+    s = canvas(18, 18)
+    if job == "warrior":                                  # 아래로 내리꽂는 칼
+        sword(s, 0, 1, big=True)
+        s = np.ascontiguousarray(np.rot90(s, -1))
+    elif job == "bomber":                                 # 폭탄 셋
+        for (ox, oy) in [(-4, 3), (4, 3), (0, -2)]:
+            b = canvas(18, 18)
+            bomb(b, ox, oy, r=3.2)
+            over(s, b, 0, 0)
+    elif job == "doctor":                                 # 후광 두른 십자
+        xs, ys = grid(18, 18)
+        d = np.sqrt((xs - 8.5) ** 2 + (ys - 8.5) ** 2)
+        paint(s, (d > 7.2) & (d < 8.2), "#fff0a0")
+        c = canvas(18, 18)
+        cross(c, 1, 0)
+        over(s, c, 0, 0)
+    elif job == "archer":                                 # 긴 화살 + 속도선
+        for x in range(1, 16):
+            s[9, x] = hx("#e8d8b0")
+        s[8, 15] = hx("#ffffff"); s[9, 16] = hx("#ffffff"); s[10, 15] = hx("#ffffff")
+        s[8, 1] = hx("#e05a5a"); s[10, 1] = hx("#e05a5a")
+        for (x0, y) in [(2, 5), (4, 13), (6, 3)]:
+            for x in range(x0, x0 + 4):
+                s[y, x] = hx("#c8f4ff")
+        outline(s, OUTL)
+    over(a, s, 0, 0)
+    return a
+
+
 def job_icon(job):
     a = canvas(18, 18)
     if job == "warrior":
@@ -334,6 +367,7 @@ def main():
     for j in ["warrior", "bomber", "doctor", "archer"]:
         items.append(("job_" + j, job_icon(j)))
         items.append(("skill_" + j, skill_icon(j)))
+        items.append(("ult_" + j, ult_icon(j)))
     at, pos = pack(items, os.path.join(OUT, "sprites", "ui"), 256, keep_bottom=False, trim_cells=False)
     preview(at, "ui_pv.png", 4, bg=(60, 70, 60))
     lg = logo()

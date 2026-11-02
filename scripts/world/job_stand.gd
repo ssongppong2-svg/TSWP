@@ -19,8 +19,8 @@ func _ready() -> void:
 	add_child(BB.blob(0.42, 0.2, 0.8))
 	name_l = _label(String(J["name"]), "small", Color("#fff4d6"))
 	name_l.position.y = 2.4
-	desc_l = _label("[E] %s\n%s" % [J["name"], J["desc"]], "small", Color(1, 1, 1, 0.95))
-	desc_l.position.y = 3.9
+	desc_l = _label("[E] %s\n%s\nR 궁극기: %s" % [J["name"], J["desc"], J["ult"]["name"]], "small", Color(1, 1, 1, 0.95))
+	desc_l.position.y = 4.3
 	desc_l.visible = false
 
 

@@ -87,66 +87,73 @@ func _physics_process(dt: float) -> void:
 		to = target.global_position - global_position
 		to.y = 0.0
 		dist = to.length()
-	match state:
-		"idle":
-			_set_anim("move" if global_position.distance_to(wander) > 0.4 else "idle")
-			if global_position.distance_to(wander) > 0.4:
-				want = (wander - global_position).normalized() * spd * 0.4
-			if st_t <= 0.0:
-				st_t = randf_range(1.5, 3.5)
-				wander = home + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5))
-			if target:
-				state = "chase"
-				Audio.play("telegraph", global_position, -6.0)
-		"chase":
-			if target == null or global_position.distance_to(home) > 16.0:
-				state = "idle"
-				target = null
-				wander = home
-			else:
-				_set_anim("move")
-				var role := String(E["role"])
-				if role == "ranged":
-					# 알맞은 거리 유지: 너무 가까우면 물러나고, 멀면 다가간다
-					var ideal := float(E["range"]) * 0.75
-					if dist < ideal - 1.0:
-						want = -to.normalized() * spd
-					elif dist > ideal + 0.6:
-						want = to.normalized() * spd
-					else:
-						want = to.normalized().rotated(Vector3.UP, PI / 2) * spd * 0.4 * (1.0 if int(home.x) % 2 == 0 else -1.0)
-					if dist < float(E["range"]) and st_t <= 0.0:
-						_windup()
-				elif role == "lunger":
-					# 옆으로 돌다가 거리가 맞으면 도약
-					var side_dir := to.normalized().rotated(Vector3.UP, PI / 2 * (1.0 if int(home.z) % 2 == 0 else -1.0))
-					want = (to.normalized() * (1.0 if dist > float(E["range"]) else -0.3) + side_dir * 0.6).normalized() * spd
-					if dist < float(E["range"]) and st_t <= 0.0:
-						_windup()
+	if stun_t > 0.0:
+		# 넘어짐 (바나나 껍질 등): 하던 공격이 끊기고 가만히
+		if state in ["windup", "strike"]:
+			state = "recover"
+			st_t = 0.3
+			spr_mat.set_shader_parameter("flash", 0.0)
+	else:
+		match state:
+			"idle":
+				_set_anim("move" if global_position.distance_to(wander) > 0.4 else "idle")
+				if global_position.distance_to(wander) > 0.4:
+					want = (wander - global_position).normalized() * spd * 0.4
+				if st_t <= 0.0:
+					st_t = randf_range(1.5, 3.5)
+					wander = home + Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5))
+				if target:
+					state = "chase"
+					Audio.play("telegraph", global_position, -6.0)
+			"chase":
+				if target == null or global_position.distance_to(home) > 16.0:
+					state = "idle"
+					target = null
+					wander = home
 				else:
-					want = to.normalized() * spd
-					if dist < float(E["range"]) and st_t <= 0.0:
-						_windup()
-		"windup":
-			_set_anim("attack", 0)
-			spr_mat.set_shader_parameter("flash", 0.45 if int(st_t * 20.0) % 2 == 0 else 0.0)
-			if target:
-				_face(to)
-			if st_t <= 0.0:
-				_strike(to)
-		"strike":
-			_set_anim("attack", 1)
-			if String(E["role"]) == "lunger":
-				want = lunge_dir * float(E["lunge"])
-				_bite_check()
-			if st_t <= 0.0:
-				state = "recover"
-				st_t = float(E["recover"])
-		"recover":
-			_set_anim("attack", 2)
-			if st_t <= 0.0:
-				state = "chase"
-				st_t = randf_range(0.3, 1.0)
+					_set_anim("move")
+					var role := String(E["role"])
+					if role == "ranged":
+						# 알맞은 거리 유지: 너무 가까우면 물러나고, 멀면 다가간다
+						var ideal := float(E["range"]) * 0.75
+						if dist < ideal - 1.0:
+							want = -to.normalized() * spd
+						elif dist > ideal + 0.6:
+							want = to.normalized() * spd
+						else:
+							want = to.normalized().rotated(Vector3.UP, PI / 2) * spd * 0.4 * (1.0 if int(home.x) % 2 == 0 else -1.0)
+						if dist < float(E["range"]) and st_t <= 0.0:
+							_windup()
+					elif role == "lunger":
+						# 옆으로 돌다가 거리가 맞으면 도약
+						var side_dir := to.normalized().rotated(Vector3.UP, PI / 2 * (1.0 if int(home.z) % 2 == 0 else -1.0))
+						want = (to.normalized() * (1.0 if dist > float(E["range"]) else -0.3) + side_dir * 0.6).normalized() * spd
+						if dist < float(E["range"]) and st_t <= 0.0:
+							_windup()
+					else:
+						want = to.normalized() * spd
+						if dist < float(E["range"]) and st_t <= 0.0:
+							_windup()
+			"windup":
+				_set_anim("attack", 0)
+				spr_mat.set_shader_parameter("flash", 0.45 if int(st_t * 20.0) % 2 == 0 else 0.0)
+				if target:
+					_face(to)
+				if st_t <= 0.0:
+					_strike(to)
+			"strike":
+				_set_anim("attack", 1)
+				if String(E["role"]) == "lunger":
+					want = lunge_dir * float(E["lunge"])
+					_bite_check()
+				if st_t <= 0.0:
+					state = "recover"
+					st_t = float(E["recover"])
+			"recover":
+				_set_anim("attack", 2)
+				if st_t <= 0.0:
+					state = "chase"
+					st_t = randf_range(0.3, 1.0)
 	# 서로 밀어내기 (겹치지 않게)
 	for f in get_tree().get_nodes_in_group("enemies"):
 		if f == self:
@@ -189,9 +196,10 @@ func _pick_target() -> void:
 	var bd := float(E["aggro"]) * (1.6 if target else 1.0)
 	for f in get_tree().get_nodes_in_group("fighters"):
 		var o := f as Fighter
-		if o.team == team or o.dead:
+		if o.team == team or o.dead or o.hidden_t > 0.0:
 			continue
-		var d := o.global_position.distance_to(global_position)
+		# 노림 정도(threat): 저주받은 왕관을 쓰면 멀리서도 그 사람만 본다
+		var d := o.global_position.distance_to(global_position) / o.stat("threat")
 		if d < bd:
 			bd = d
 			best = o
@@ -276,7 +284,7 @@ func _anim_tick(dt: float) -> void:
 	spr_mat.set_shader_parameter("squash", Vector2(bone_sx.step(dt), bone_sy.step(dt)))
 	spr_mat.set_shader_parameter("skew", bone_lean.step(dt))
 	var counts := {"idle": 2, "move": 4, "attack": 3, "hurt": 1}
-	var a := "hurt" if flash > 0.06 else anim
+	var a := "hurt" if flash > 0.06 or stun_t > 0.0 else anim
 	var i: int = int(anim_t * float(FPS[a])) % int(counts[a])
 	if a == "attack":
 		i = int({"windup": 0, "strike": 1, "recover": 2}.get(state, 0))

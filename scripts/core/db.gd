@@ -2,13 +2,15 @@ class_name DB
 extends RefCounted
 ## 숫자 표 (직업 · 적). 근거 문서: 직업 시스템.md · 전투 시스템.md · 적 시스템.md (밸런스 값은 문서 미정 → 플레이하며 조정)
 
-## 직업: 기본 공격 · Q 스킬 · 패시브 — 모두 장점과 위험을 함께 가진다
+## 직업: 기본 공격 · Q 스킬 · R 궁극기 · 패시브 — 모두 장점과 위험을 함께 가진다
+##  궁극기는 적에게 준 피해·처치로 게이지가 찬다 (ULT_MAX)
 const JOBS := {
 	"warrior": {
 		"name": "용사", "sprite": "warrior", "hp": 120.0, "speed": 1.0, "diff": 1,
 		"basic": {"kind": "melee", "dmg": 12.0, "rate": 2.6, "range": 1.35, "arc": 70.0, "knock": 4.5},
 		"skill": {"name": "강타", "cd": 6.0, "dmg": 60.0, "radius": 3.2, "half": 75.0, "knock": 12.0, "self_cost": 0.1, "recoil": 5.0},
 		"passive": {"name": "역경의 투지", "desc": "체력이 낮을수록 강해진다 (높으면 약해진다)"},
+		"ult": {"name": "영웅의 낙하", "desc": "조준한 곳으로 뛰어올라 내려찍는다 — 둘레 모두(아군 포함)를 하늘로", "dmg": 90.0, "radius": 3.6, "range": 7.0, "knock": 15.0},
 		"desc": "검 · 강타는 아군도 날리고 내 체력도 깎는다",
 	},
 	"bomber": {
@@ -16,6 +18,7 @@ const JOBS := {
 		"basic": {"kind": "bomb", "dmg": 14.0, "rate": 1.6, "range": 6.0, "radius": 1.4, "fuse": 0.7, "knock": 6.0},
 		"skill": {"name": "거대 폭탄", "cd": 9.0, "dmg": 70.0, "radius": 3.0, "fuse": 1.2, "knock": 16.0, "ff_cur": 0.2, "self": 0.5},
 		"passive": {"name": "폭풍 질주", "desc": "폭발에 맞으면 3초 동안 아주 빨라진다 (자기 폭탄도)"},
+		"ult": {"name": "폭죽 축제", "desc": "둘레에 폭탄 10개를 뿌린다 — 차례로 터진다", "dmg": 26.0, "n": 10, "radius": 1.8, "knock": 9.0},
 		"desc": "폭탄 · 폭발은 적·아군·나를 가리지 않는다",
 	},
 	"doctor": {
@@ -23,6 +26,7 @@ const JOBS := {
 		"basic": {"kind": "syringe", "dmg": 7.0, "heal": 9.0, "rate": 2.2, "speed": 13.0, "poison": 3.0},
 		"skill": {"name": "수혈 파동", "cd": 10.0, "heal": 35.0, "radius": 4.5, "cost": 8.0},
 		"passive": {"name": "응급 분류", "desc": "위급한 아군이 가까우면 빨라지지만 최대 체력이 준다"},
+		"ult": {"name": "기적", "desc": "넓은 원 안의 아군을 모두 살리고 가득 회복 — 원 안의 적도 40% 회복된다", "radius": 7.0, "enemy_heal": 0.4, "self_heal": 0.6},
 		"desc": "주사 · 아군은 회복, 적은 독 · 살릴수록 내가 위험",
 	},
 	"archer": {
@@ -30,10 +34,14 @@ const JOBS := {
 		"basic": {"kind": "arrow", "dmg": 9.0, "rate": 2.4, "speed": 18.0, "range": 12.0, "knock": 2.0},
 		"skill": {"name": "화살비", "cd": 8.0, "dmg": 6.0, "radius": 2.6, "ticks": 8, "time": 1.6},
 		"passive": {"name": "집중", "desc": "멈춰 서 있을수록 화살이 세진다 (움직이면 풀린다)"},
+		"ult": {"name": "꿰뚫는 화살", "desc": "잠깐 겨눈 뒤 화면을 가로지르는 화살 — 줄에 선 모두를 꿰뚫는다", "dmg": 75.0, "charge": 0.55, "speed": 42.0, "range": 34.0, "knock": 8.0},
 		"desc": "활 · 화살비는 아군 머리 위에도 떨어진다",
 	},
 }
 const JOB_ORDER := ["warrior", "bomber", "doctor", "archer"]
+const ULT_MAX := 100.0
+const ULT_PER_DMG := 0.45         # 적에게 준 피해 1 당
+const ULT_PER_KILL := 6.0
 
 ## 적
 const ENEMIES := {

@@ -4,6 +4,7 @@ extends Region
 ##  · 남쪽 낮은 풀밭 → 흙길이 굽이쳐 북쪽 언덕(4층 절벽)으로 돌계단을 타고 올라간다
 ##  · 기억할 자리(랜드마크): 서쪽 둔덕의 고대 나무 · 동쪽 돌 유적 공터(아치·기둥·수호상) · 남동쪽 연못 · 갈림길 표지판
 ##  · 길가 돌무더기가 진행 방향을 안내하고, 적 무리는 둘레가 트인 빈터에서 나온다
+##  · 보물상자 넷 (랜드마크 곁 셋 · 측면 능선 꼭대기 하나)
 
 
 ## 측면 구간: 절벽 앞 바위 능선 (x 42~62, 구간 선 z 26). 1m 마다 층 — 점프로 오르내리고 가운데 웅덩이 하나
@@ -117,6 +118,11 @@ func _decorate() -> void:
 	for g in groups:
 		var ga: Vector3 = g["at"]
 		_clear(Vector2(ga.x, ga.z), 5.0)
+	# 보물상자: 랜드마크 곁 셋 (가끔 미믹) + 능선 꼭대기 하나 (점프로만 닿음 — 미믹 없음, 운 좋음)
+	chest_at(GIANT + Vector2(2.6, 2.2))
+	chest_at(RUINS + Vector2(3.0, -2.4))
+	chest_at(POND + Vector2(-5.2, -3.6))
+	chest_at(Vector2(RIDGE.position.x + 11.5, 26.0), 0.0, 1.2, true)
 	scatter_trees(2600)
 	scatter_props([["rock0", 4], ["rock1", 6], ["rock2", 3], ["stump0", 3], ["log0", 2], ["bush_light", 4], ["bush1", 5]])
 	scatter_grass()
