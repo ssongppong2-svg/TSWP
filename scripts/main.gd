@@ -818,7 +818,7 @@ func _hints_tick() -> void:
 	if walker.inv and walker.inv.cons != "":
 		_hint_once("cons", [["F", "%s 쓰기" % Items.get_item(walker.inv.cons).get("name", "")]], 4.0)
 	if walker.ult >= DB.ULT_MAX:
-		_hint_once("ult", [["R", "궁극기 — %s" % walker.J["ult"]["name"]]], 4.0)
+		_hint_once("ult", [["R", "궁극기 준비됨"]], 4.0)
 	if walker.inv and walker.inv.slots.size() >= Items.SLOTS:
 		_hint_once("full", [["Esc", "장비 — 꽉 차면 오래된 것부터 떨어진다"]], 5.0)
 	if hud.boss != null:
