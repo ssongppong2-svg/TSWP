@@ -440,13 +440,28 @@ def crown_hat():
     return fin(a)
 
 
+def wardrobe():
+    W, H = 22, 30
+    a = canvas(W, H)
+    shade(a, rectm(1, 2, 20, 28, W, H), WOOD)
+    shade(a, rectm(0, 0, 21, 3, W, H), ["#4a2e1a", "#7a5030", "#a8784a"])
+    shade(a, rectm(4, 6, 17, 22, W, H), ["#6a8aa0", "#a8c8d8", "#e8f8ff"])        # 거울
+    for (x, y) in [(6, 8), (7, 9), (8, 10), (12, 8), (13, 9)]:
+        px1(a, [(x, y)], "#ffffff")
+    shade(a, rectm(2, 24, 19, 26, W, H), ["#6a2a3a", "#a84a5a", "#e08a90"])      # 옷 서랍 천
+    px1(a, [(10, 25), (11, 25)], "#f0c050")
+    shade(a, rectm(2, 28, 4, 29, W, H), WOOD)
+    shade(a, rectm(17, 28, 19, 29, W, H), WOOD)
+    return fin(a)
+
+
 def main():
     items = [(k, f()) for k, f in ICONS.items()]
     at, pos = pack(items, os.path.join(OUT, "sprites", "items"), 256, keep_bottom=False, trim_cells=False)
     preview(at, "items_pv.png", 4, bg=(60, 70, 60))
     world = [("chest_closed", chest("closed")), ("chest_open", chest("open")), ("chest_mimic", chest("mimic")),
              ("pedestal", pedestal()), ("peel", peel()), ("merchant0", merchant(0)), ("merchant1", merchant(1)),
-             ("crown_hat", crown_hat())]
+             ("crown_hat", crown_hat()), ("wardrobe", wardrobe())]
     at2, pos2 = pack(world, os.path.join(OUT, "sprites", "loot"), 128, keep_bottom=True, trim_cells=False)
     preview(at2, "loot_pv.png", 5, bg=(60, 90, 70))
     print(len(pos), at.shape, len(pos2), at2.shape)

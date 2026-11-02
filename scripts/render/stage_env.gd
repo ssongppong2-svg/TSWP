@@ -22,6 +22,7 @@ const PRESETS := {
 		"cool": Color("#0a1a2a"), "warm": Color("#a0e0ff"), "sat": 0.95, "rays": 0.4, "ray_col": Color("#a0e8ff"), "leaf": 0.0},
 }
 
+const BASE_SAT := 0.82              # 그림 자체가 진해서 한 번 눌러 둔다 (설정 '채도'로 더 조절)
 var env: Environment
 var sun: DirectionalLight3D
 var we: WorldEnvironment
@@ -58,6 +59,11 @@ func setup(q: int = 2) -> void:
 	apply(preset, true)
 
 
+## 설정에서 채도를 바꾸면 바로
+func refresh_saturation() -> void:
+	env.adjustment_saturation = P["sat"] * BASE_SAT * Prefs.saturation
+
+
 func apply(name_: String, _instant := false) -> void:
 	preset = name_
 	P = PRESETS.get(name_, PRESETS["forest"])
@@ -80,7 +86,7 @@ func apply(name_: String, _instant := false) -> void:
 	env.ssil_sharpness = 0.9
 	env.ssil_normal_rejection = 1.0
 	env.volumetric_fog_enabled = false
-	env.adjustment_saturation = P["sat"]
+	env.adjustment_saturation = P["sat"] * BASE_SAT * Prefs.saturation
 	env.adjustment_contrast = 1.04
 	env.adjustment_color_correction = _lut(P["cool"], P["warm"])
 

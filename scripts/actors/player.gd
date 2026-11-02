@@ -21,6 +21,8 @@ const BUFFER := 0.12
 var ctrl := PlayerInput.new()
 var local := true
 var slot := 0                         # 파티 안 번호 (기록·팀색 — 온라인이면 접속 순서)
+var nick := "용사"                    # 닉네임 (문서: 스팀 닉네임 — 지금은 설정의 이름)
+var look := {}                        # 꾸미기 (CharLook) — 1P 는 설정값, 나머지는 무작위
 var job := "warrior"
 var J: Dictionary
 var spr: CharSprite
@@ -117,6 +119,7 @@ func set_job(j: String) -> void:
 		spr.mesh.queue_free()
 	spr = CharSprite.new(String(J["sprite"]))
 	add_child(spr.mesh)
+	spr.set_look(look)
 	spr_mat = spr.mat
 	mods.clear()
 	base_max_hp = float(J["hp"])
@@ -369,6 +372,7 @@ func _on_damaged(_f: Fighter, h: Hit, amt: float) -> void:
 
 func _die() -> void:
 	super._die()
+	get_tree().call_group("hud", "notify", "%s 쓰러짐!" % nick, Color("#ff8a7a"))
 	_leap = false
 	_ult_lock = 0.0
 	Audio.play("die", global_position)
@@ -413,6 +417,7 @@ func revive(at: Vector3) -> void:
 	spr.mesh.scale = Vector3.ONE
 	invuln = 1.5
 	Audio.play("revive", global_position)
+	get_tree().call_group("hud", "notify", "%s 다시 일어남" % nick, Color("#9aff9a"))
 	Fx.flat_at(get_parent(), global_position, 0.0, ["ring_heal0", "ring_heal1", "ring_heal2", "ring_heal3"], 12.0)
 
 
@@ -754,6 +759,7 @@ func pick_up(id: String) -> void:
 	Fx.pop(get_parent(), center() + Vector3(0, 0.5, 0), ["spark0", "spark1", "spark2"], 16.0)
 	if local:
 		get_tree().call_group("hud", "toast_item", id)
+	get_tree().call_group("hud", "notify", "%s: %s" % [nick, Items.get_item(id).get("name", id)], Items.color(id), Hud._item_tex(id))
 
 
 ## 장비 하나 내려놓기 (메뉴에서 — 친구에게 주거나 버리기)

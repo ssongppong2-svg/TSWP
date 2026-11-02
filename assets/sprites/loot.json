@@ -1,1 +1,1 @@
-{"merchant0": [0, 0, 20, 28], "merchant1": [21, 0, 20, 28], "chest_closed": [42, 0, 22, 18], "chest_open": [65, 0, 22, 18], "chest_mimic": [88, 0, 22, 18], "pedestal": [111, 0, 16, 14], "peel": [0, 29, 14, 7], "crown_hat": [15, 29, 11, 7]}
+{"wardrobe": [0, 0, 22, 30], "merchant0": [23, 0, 20, 28], "merchant1": [44, 0, 20, 28], "chest_closed": [65, 0, 22, 18], "chest_open": [88, 0, 22, 18], "chest_mimic": [0, 31, 22, 18], "pedestal": [23, 31, 16, 14], "peel": [40, 31, 14, 7], "crown_hat": [55, 31, 11, 7]}

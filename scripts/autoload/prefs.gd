@@ -26,6 +26,9 @@ var fullscreen := false
 var quality := 2                  # 화질: 0 낮음 1 중간 2 높음 3 최고
 var shake := true                 # 화면 흔들림 (끄면 30%로 약하게)
 var reduce_flash := false         # 번쩍임 감소
+var saturation := 1.0             # 채도 (0.5 ~ 1.2, 기본 1 = 눌러 둔 색)
+var cam_follow := 0               # 카메라: 0 부드럽게(여유 칸) · 1 딱 붙기 · 2 아주 느긋하게
+var shake_k := 0.6                # 화면 흔들림 세기 (0 ~ 1)
 # UI · 접근성
 var ui_size := 0                  # -1 작게 / 0 보통 / 1 크게
 var ui_opacity := 1.0
@@ -34,6 +37,18 @@ var captions := false             # 소리 자막
 var colorblind := 0               # 0 없음 1 적록(제1·2색약) 2 청황(제3색약)
 var show_net := false             # 핑·FPS 표시
 var keybinds := {}                # 액션 → [physical_keycode …] (비면 기본값)
+var hud_layout := {}              # HUD 위젯 이름 → 기본 자리에서 옮긴 만큼 (Vector2, 480x270 픽셀)
+var hud_hidden := {}              # HUD 위젯 이름 → true 면 숨김
+# 캐릭터 꾸미기 (CharLook)
+var look_hair := 0
+var look_skin := 1
+var look_cloth := 0               # 0 = 직업색 그대로
+var look_hat := 0
+# 방송 (치지직)
+var chzzk_channel := ""           # 채널 ID (방송 주소 끝의 긴 글자)
+var chat_vote := true             # 시청자 투표로 돌발 이벤트 고르기
+var difficulty := 1               # 0 겁쟁이 · 1 인간 · 2 신 · 3 밈
+var title_id := ""                # 머리 위 칭호
 
 
 func _ready() -> void:
@@ -65,6 +80,9 @@ func load_prefs() -> void:
 	shake = bool(cf.get_value("v", "shake", shake))
 	quality = clampi(int(cf.get_value("v", "quality", quality)), 0, 3)
 	reduce_flash = bool(cf.get_value("v", "reduce_flash", reduce_flash))
+	saturation = clampf(float(cf.get_value("v", "saturation", saturation)), 0.5, 1.2)
+	cam_follow = clampi(int(cf.get_value("v", "cam_follow", cam_follow)), 0, 2)
+	shake_k = clampf(float(cf.get_value("v", "shake_k", shake_k)), 0.0, 1.0)
 	ui_size = clampi(int(cf.get_value("ui", "size", ui_size)), -1, 1)
 	ui_opacity = clampf(float(cf.get_value("ui", "opacity", ui_opacity)), 0.3, 1.0)
 	damage_numbers = bool(cf.get_value("ui", "damage_numbers", damage_numbers))
@@ -72,6 +90,16 @@ func load_prefs() -> void:
 	colorblind = clampi(int(cf.get_value("ui", "colorblind", colorblind)), 0, 2)
 	show_net = bool(cf.get_value("ui", "show_net", show_net))
 	keybinds = cf.get_value("input", "binds", {})
+	hud_layout = cf.get_value("ui", "hud_layout", {})
+	hud_hidden = cf.get_value("ui", "hud_hidden", {})
+	look_hair = int(cf.get_value("look", "hair", look_hair))
+	look_skin = int(cf.get_value("look", "skin", look_skin))
+	look_cloth = int(cf.get_value("look", "cloth", look_cloth))
+	look_hat = int(cf.get_value("look", "hat", look_hat))
+	chzzk_channel = String(cf.get_value("stream", "chzzk", chzzk_channel))
+	chat_vote = bool(cf.get_value("stream", "vote", chat_vote))
+	difficulty = clampi(int(cf.get_value("p", "difficulty", difficulty)), 0, 3)
+	title_id = String(cf.get_value("p", "title", title_id))
 
 
 func save_prefs() -> void:
@@ -94,6 +122,9 @@ func save_prefs() -> void:
 	cf.set_value("v", "shake", shake)
 	cf.set_value("v", "quality", quality)
 	cf.set_value("v", "reduce_flash", reduce_flash)
+	cf.set_value("v", "saturation", saturation)
+	cf.set_value("v", "cam_follow", cam_follow)
+	cf.set_value("v", "shake_k", shake_k)
 	cf.set_value("ui", "size", ui_size)
 	cf.set_value("ui", "opacity", ui_opacity)
 	cf.set_value("ui", "damage_numbers", damage_numbers)
@@ -101,6 +132,16 @@ func save_prefs() -> void:
 	cf.set_value("ui", "colorblind", colorblind)
 	cf.set_value("ui", "show_net", show_net)
 	cf.set_value("input", "binds", keybinds)
+	cf.set_value("ui", "hud_layout", hud_layout)
+	cf.set_value("ui", "hud_hidden", hud_hidden)
+	cf.set_value("look", "hair", look_hair)
+	cf.set_value("look", "skin", look_skin)
+	cf.set_value("look", "cloth", look_cloth)
+	cf.set_value("look", "hat", look_hat)
+	cf.set_value("stream", "chzzk", chzzk_channel)
+	cf.set_value("stream", "vote", chat_vote)
+	cf.set_value("p", "difficulty", difficulty)
+	cf.set_value("p", "title", title_id)
 	cf.save(PATH)
 	changed.emit()
 

@@ -102,6 +102,14 @@ func _decorate() -> void:
 		_mark(c, 3)
 	# ---- 떠돌이 상인 (광장 서쪽, 천막 사이) — 들를 때마다 물건이 바뀐다
 	shop_at(Vector2(6.4, 15.2))
+	# ---- 옷장 (꾸미기)
+	var wd := Wardrobe.new()
+	add_child(wd)
+	var wp := Vector3(11.8, 0, 19.4)
+	wp.y = terrain.height_at(wp)
+	wd.position = wp
+	solid(wp, 0.5)
+	_mark(terrain.cell_of(wp), 3)
 	fireflies(8, Rect2(4, 4, 32, 24), Color("#ffe080"))
 	# ---- 숲·풀
 	scatter_trees(1600, 0.02)

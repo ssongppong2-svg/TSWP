@@ -133,6 +133,11 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	RenderingServer.global_shader_parameter_set("leaf_k", float(env.P["leaf"]) if Prefs.quality >= 1 else 0.0)
 	walker = Player.new()
 	walker.job = job
+	walker.look = CharLook.current()
+	if args.has("look"):                      # 시험용: --look=머리,피부,옷,모자
+		var lk := String(args["look"]).split(",")
+		walker.look = {"hair": int(lk[0]), "skin": int(lk[1]), "cloth": int(lk[2]), "hat": int(lk[3])}
+	walker.nick = Prefs.player_name
 	walker.terrain = map.terrain
 	world.add_child(walker)
 	walker.job_changed.connect(func(pl: Player): job = pl.job)
@@ -141,6 +146,7 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	walker.position = p
 	walker.spawn_point = p
 	hud.player = walker
+	hud.map = map
 	# 출구 표지 (가까이 가면 "▲ 다음 지역" 이 떠오른다)
 	for ex in map.exits:
 		var r: Rect2 = ex[0]
@@ -189,6 +195,7 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	if map is NestMap:
 		(map as NestMap).boss_started.connect(func(q: Queen):
 			hud.boss = q
+			hud.notify("보스 등장: 부화의 여왕", Color("#ff6a8a"))
 			_show_title("부화의 여왕"))
 		(map as NestMap).victory.connect(func():
 			hud.banner("부화의 여왕을 쓰러뜨렸다!", 6.0)
@@ -317,6 +324,8 @@ func _process(dt: float) -> void:
 		img.save_png(String(args["shot"]))
 		print("saved ", args["shot"])
 		get_tree().quit()
+	if args.has("wardrobe") and _frame == 40:
+		open_wardrobe(walker)
 	if args.has("result") and _frame == 40:
 		_show_result(args["result"] == "win")
 	if (args.has("pause") or args.has("settings") or args.has("bag")) and _frame == 40:
@@ -607,6 +616,7 @@ func _enter_title() -> void:
 	title_ui.add_child(ver)
 	var m := PixelMenu.new("", [
 		{"label": "모험 시작", "do": _start_game},
+		{"label": "꾸미기", "do": func(): open_wardrobe(walker)},
 		{"label": "설정", "do": _open_settings},
 		{"label": "조작법", "do": _open_controls},
 		{"label": "게임 종료", "do": func(): get_tree().quit()},
@@ -704,25 +714,125 @@ func _resume() -> void:
 
 
 func _open_settings() -> void:
-	var q0 := Prefs.quality
 	var m := PixelMenu.new("설정", [
+		{"label": "소리", "do": _settings_sound, "desc": "전체 · 음악 · 효과음 · 환경음"},
+		{"label": "화면", "do": _settings_video, "desc": "화질 · 전체 화면 · 채도 · 카메라 · 흔들림 · 번쩍임"},
+		{"label": "HUD · 접근성", "do": _settings_hud, "desc": "HUD 배치 편집 · 투명도 · 피해 숫자 · 위젯 보이기"},
+		{"label": "조작 · 키 바꾸기", "do": _settings_keys, "desc": "키보드 키를 바꾼다 (패드는 고정)"},
+		{"label": "방송 (치지직)", "do": _settings_stream, "desc": "치지직 채널을 넣으면 시청자 채팅으로 돌발 이벤트를 투표한다"},
+		{"label": "뒤로", "do": func(): _pop_menu()},
+	], 200)
+	m.back.connect(func(): _pop_menu())
+	m.tree_exiting.connect(func(): Prefs.save_prefs())
+	_push_menu(m)
+
+
+func _settings_sound() -> void:
+	var m := PixelMenu.new("소리", [
 		{"label": "전체 음량", "type": "slider", "get": func(): return Prefs.vol_master, "set": func(v): Prefs.vol_master = v; Audio.apply_volumes()},
 		{"label": "음악", "type": "slider", "get": func(): return Prefs.vol_music, "set": func(v): Prefs.vol_music = v; Audio.apply_volumes()},
 		{"label": "효과음", "type": "slider", "get": func(): return Prefs.vol_sfx, "set": func(v): Prefs.vol_sfx = v; Audio.apply_volumes()},
 		{"label": "환경음", "type": "slider", "get": func(): return Prefs.vol_amb, "set": func(v): Prefs.vol_amb = v; Audio.apply_volumes()},
-		{"label": "화질", "type": "choice", "options": ["낮음", "중간", "높음", "최고"], "get": func(): return Prefs.quality, "set": func(v): Prefs.quality = v},
+		{"label": "뒤로", "do": func(): _pop_menu()},
+	], 236)
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m)
+
+
+func _settings_video() -> void:
+	var q0 := Prefs.quality
+	var m := PixelMenu.new("화면", [
+		{"label": "화질", "type": "choice", "options": ["낮음", "중간", "높음", "최고"], "get": func(): return Prefs.quality, "set": func(v): Prefs.quality = v,
+			"desc": "낮음: 빛·그림자·입자를 줄인다 (느린 컴퓨터) · 메뉴를 닫으면 적용"},
 		{"label": "전체 화면", "type": "toggle", "get": func(): return Prefs.fullscreen, "set": func(v): Prefs.fullscreen = v; Prefs.apply_window()},
-		{"label": "화면 흔들림", "type": "toggle", "get": func(): return Prefs.shake, "set": func(v): Prefs.shake = v},
+		{"label": "채도", "type": "slider", "get": func(): return (Prefs.saturation - 0.5) / 0.7, "set": func(v): Prefs.saturation = 0.5 + v * 0.7; env.refresh_saturation(),
+			"desc": "색의 진하기. 기본은 조금 눌러 둔 값 (가운데쯤)"},
+		{"label": "카메라", "type": "choice", "options": ["여유 있게", "딱 붙기", "느긋하게"], "get": func(): return Prefs.cam_follow, "set": func(v): Prefs.cam_follow = v,
+			"desc": "여유 있게: 가운데 작은 칸 안에서 걸으면 화면이 가만히 있다 (멀미 덜함)"},
+		{"label": "화면 흔들림", "type": "slider", "get": func(): return Prefs.shake_k if Prefs.shake else 0.0, "set": func(v): Prefs.shake_k = v; Prefs.shake = v > 0.0,
+			"desc": "타격·폭발 때 화면이 흔들리는 세기 (걸을 때는 흔들리지 않는다)"},
 		{"label": "번쩍임 줄이기", "type": "toggle", "get": func(): return Prefs.reduce_flash, "set": func(v): Prefs.reduce_flash = v},
-		{"label": "피해 숫자", "type": "toggle", "get": func(): return Prefs.damage_numbers, "set": func(v): Prefs.damage_numbers = v},
 		{"label": "뒤로", "do": func(): _pop_menu()},
 	], 236)
 	m.back.connect(func(): _pop_menu())
 	m.tree_exiting.connect(func():
-		Prefs.save_prefs()
 		if Prefs.quality != q0:
 			_apply_quality())
 	_push_menu(m)
+
+
+func _settings_hud() -> void:
+	var tog := func(n: String) -> Dictionary:
+		return {"label": "  " + String(Hud.WIDGETS[n]["name"]), "type": "toggle", "get": func(): return not bool(Prefs.hud_hidden.get(n, false)),
+			"set": func(v): Prefs.hud_hidden[n] = not v; hud.apply_layout()}
+	var m := PixelMenu.new("HUD · 접근성", [
+		{"label": "HUD 배치 편집", "do": _open_hud_editor, "desc": "마우스로 끌어 옮기기 · 방송용 프리셋 (웹캠·채팅 자리 비우기)"},
+		{"label": "UI 투명도", "type": "slider", "get": func(): return (Prefs.ui_opacity - 0.3) / 0.7, "set": func(v): Prefs.ui_opacity = 0.3 + v * 0.7; hud.apply_layout()},
+		{"label": "피해 숫자", "type": "toggle", "get": func(): return Prefs.damage_numbers, "set": func(v): Prefs.damage_numbers = v},
+		tog.call("minimap"), tog.call("feed"), tog.call("party"), tog.call("toast"),
+		{"label": "뒤로", "do": func(): _pop_menu()},
+	], 236)
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m)
+
+
+## HUD 배치 편집: 메뉴를 잠깐 치우고 HUD 를 보이게 한 채 편집기를 띄운다
+var hud_editor: HudEditor
+func _open_hud_editor() -> void:
+	for mm in menu_stack:
+		mm.visible = false
+	hud.set_shown(true)
+	menu_dim.visible = false
+	hud_editor = HudEditor.new()
+	hud_editor.hud = hud
+	menu_layer.add_child(hud_editor)
+	hud_editor.done.connect(func():
+		hud_editor = null
+		menu_dim.visible = state != "title"
+		hud.set_shown(state == "play")
+		if not menu_stack.is_empty():
+			menu_stack[-1].visible = true
+			menu_stack[-1].refresh())
+
+
+func _settings_stream() -> void:
+	var m := PixelMenu.new("방송 (치지직)", [
+		{"label": "채널 ID", "type": "text", "get": func(): return Prefs.chzzk_channel, "set": func(v): Prefs.chzzk_channel = String(v).strip_edges(),
+			"desc": "치지직 방송 주소 chzzk.naver.com/live/ 뒤의 긴 글자. Enter 로 입력 · Ctrl+V 붙여넣기"},
+		{"label": "시청자 투표", "type": "toggle", "get": func(): return Prefs.chat_vote, "set": func(v): Prefs.chat_vote = v,
+			"desc": "돌발 이벤트 때 채팅에 !1 !2 !3 으로 투표 (채널이 없으면 가짜 시청자가 투표)"},
+		{"label": "연결 시험", "do": func(): get_tree().call_group("chat", "reconnect"), "desc": "지금 채널로 다시 연결해 본다"},
+		{"label": "뒤로", "do": func(): _pop_menu()},
+	], 260)
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m)
+
+
+func _settings_keys() -> void:
+	var acts := [["move_up", "위"], ["move_down", "아래"], ["move_left", "왼쪽"], ["move_right", "오른쪽"], ["roll", "구르기 · 점프"], ["run", "달리기"],
+		["skill", "스킬"], ["ult", "궁극기"], ["use_item", "소비 아이템"], ["interact", "상호작용 · 들기"], ["emote", "이모트"], ["switch_job", "직업 바꾸기"]]
+	var items: Array = []
+	for a in acts:
+		var act: String = a[0]
+		items.append({"label": a[1], "type": "key", "action": act, "get": func(): return _key_name(act)})
+	items.append({"label": "기본값으로", "do": func():
+		Prefs.keybinds = {}
+		Controls.ensure()
+		Prefs.save_prefs()
+		_pop_menu()
+		_settings_keys()})
+	items.append({"label": "뒤로", "do": func(): _pop_menu()})
+	var m := PixelMenu.new("키 바꾸기 (고르고 Enter → 새 키)", items, 260)
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m)
+
+
+func _key_name(act: String) -> String:
+	var keys: Array = Prefs.keybinds.get(act, Controls.DEFAULT.get(act, []))
+	var names: Array = []
+	for k in keys:
+		names.append(OS.get_keycode_string(int(k)))
+	return " · ".join(names)
 
 
 ## 화질 바뀜: 게임 중이면 메뉴를 닫을 때 지역을 다시 불러 적용, 타이틀이면 바로
@@ -780,6 +890,11 @@ func _close_all_menus() -> void:
 
 func _input(e: InputEvent) -> void:
 	if _switching:
+		return
+	if hud_editor and is_instance_valid(hud_editor):
+		var hp := pv.to_ui(e.position) if e is InputEventMouse else Vector2.ZERO
+		hud_editor.handle(e, hp)
+		get_viewport().set_input_as_handled()
 		return
 	if not menu_stack.is_empty():
 		var p := pv.to_ui(e.position) if e is InputEventMouse else pv.to_ui(get_tree().root.get_mouse_position())
@@ -892,3 +1007,59 @@ func _open_bag() -> void:
 	var m := PixelMenu.new("장비  (%d / %d)" % [inv.slots.size(), Items.SLOTS], items, 260)
 	m.back.connect(func(): _pop_menu())
 	_push_menu(m)
+
+
+# ------------------------------------------------------------------ 꾸미기 (옷장 · 타이틀)
+func open_wardrobe(p: Node) -> void:
+	if not (p is Player) or not (p as Player).local and not args.has("bot"):
+		return
+	var pl := p as Player
+	var from_play := state == "play"
+	if from_play:
+		state = "pause"
+		get_tree().paused = true
+		hud.set_shown(false)
+	menu_dim.visible = false                    # 어둡게 덮지 않는다 (꾸민 모습이 잘 보이게)
+	var upd := func():
+		var l := CharLook.current()
+		if pl == walker:
+			pl.look = l
+		pl.spr.set_look(pl.look)
+		pl.spr.update(0.0)
+	var names := func(arr: Array) -> Array:
+		var out: Array = []
+		for e in arr:
+			out.append(e[0])
+		return out
+	var m := PixelMenu.new("꾸미기", [
+		{"label": "이름", "type": "text", "get": func(): return Prefs.player_name, "set": func(v):
+			Prefs.player_name = String(v).substr(0, 12) if String(v).strip_edges() != "" else Prefs.player_name
+			walker.nick = Prefs.player_name},
+		{"label": "머리색", "type": "choice", "options": names.call(CharLook.HAIR), "get": func(): return Prefs.look_hair, "set": func(v): Prefs.look_hair = v; upd.call()},
+		{"label": "피부", "type": "choice", "options": names.call(CharLook.SKIN), "get": func(): return Prefs.look_skin, "set": func(v): Prefs.look_skin = v; upd.call()},
+		{"label": "옷", "type": "choice", "options": names.call(CharLook.CLOTH), "get": func(): return Prefs.look_cloth, "set": func(v): Prefs.look_cloth = v; upd.call(),
+			"desc": "직업색: 파랑 용사 · 주황 폭탄마 · 초록 의사 · 갈색 궁수 (같은 색으로 바꾸면 헷갈릴 수 있다!)"},
+		{"label": "모자", "type": "choice", "options": names.call(CharLook.HATS), "get": func(): return Prefs.look_hat, "set": func(v): Prefs.look_hat = v; upd.call()},
+		{"label": "무작위", "do": func():
+			var r := RandomNumberGenerator.new()
+			r.randomize()
+			var l := CharLook.random_look(r)
+			Prefs.look_hair = l["hair"]
+			Prefs.look_skin = l["skin"]
+			Prefs.look_cloth = l["cloth"]
+			Prefs.look_hat = l["hat"]
+			upd.call()
+			menu_stack[-1].refresh()},
+		{"label": "완료", "do": func(): _close_wardrobe(from_play)},
+	], 200)
+	m.left = 272.0                              # 오른쪽에 — 가운데 캐릭터가 바뀌는 게 보이게
+	m.back.connect(func(): _close_wardrobe(from_play))
+	_push_menu(m)
+
+
+func _close_wardrobe(from_play: bool) -> void:
+	Prefs.save_prefs()
+	if from_play:
+		_resume()
+	else:
+		_pop_menu()

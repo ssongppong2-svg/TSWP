@@ -55,6 +55,11 @@ func _process(dt: float) -> void:
 			key(KEY_ENTER)                                  # 설정 (계속 · 장비 · 설정)
 		4:
 			check(main.menu_stack.size() == 2, "설정 열림")
+			key(KEY_ENTER)                                  # 소리
+			step = 39
+			return
+		39:
+			check(main.menu_stack.size() == 3, "소리 열림")
 			_v0 = Prefs.vol_master
 			key(KEY_LEFT)
 			step = 40
@@ -62,6 +67,7 @@ func _process(dt: float) -> void:
 		40:
 			check(absf(Prefs.vol_master - (_v0 - 0.1)) < 0.01 or _v0 < 0.05, "왼쪽 → 음량 줄어듦")
 			key(KEY_RIGHT)
+			key(KEY_ESCAPE)                                 # 소리 닫기
 			key(KEY_ESCAPE)                                 # 설정 닫기
 			step = 5
 			return

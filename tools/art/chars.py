@@ -17,13 +17,14 @@ BLUSH = "#f0a0a0"
 
 CHARS = {
     # 이름: 머리색 3단, 옷 3단, 장식
-    "warrior": {"hair": ["#4a2f22", "#6b4a32", "#8c6644"], "cloth": ["#7a2e2e", "#b84a3e", "#e0705a"], "acc": "band",
+    # 옷 = 직업 대표색 (팔레트 시스템.md: 용사 파랑 · 폭탄마 주황 · 의사 초록 · 궁수 갈색) — 꾸미기에서 바꿀 수 있다
+    "warrior": {"hair": ["#4a2f22", "#6b4a32", "#8c6644"], "cloth": ["#2e4470", "#4a68a8", "#7a9ad8"], "acc": "band",
                 "acc_col": "#e8d4a0", "boots": ["#3a2a22", "#5a4030"]},
-    "bomber": {"hair": ["#9a4a1e", "#d9893a", "#f0b45a"], "cloth": ["#2f4a40", "#4a7058", "#6a9a74"], "acc": "goggles",
+    "bomber": {"hair": ["#3a2a22", "#5a4232", "#7a5a44"], "cloth": ["#8a4a1e", "#c8742e", "#eaa45a"], "acc": "goggles",
                "acc_col": "#7ac0d8", "boots": ["#3a2a22", "#5a4030"]},
-    "healer": {"hair": ["#c07a9a", "#eaa8c0", "#fbd4e2"], "cloth": ["#9aa0b0", "#e8ecf0", "#ffffff"], "acc": "cross",
-               "acc_col": "#5aaa6a", "boots": ["#5a5060", "#7a7088"]},
-    "rogue": {"hair": ["#2a3048", "#3e4a6e", "#5a6a98"], "cloth": ["#283040", "#3a4660", "#566684"], "acc": "hood",
+    "healer": {"hair": ["#c07a9a", "#eaa8c0", "#fbd4e2"], "cloth": ["#2e5a3e", "#4a8a5a", "#7ab884"], "acc": "cross",
+               "acc_col": "#f4f0e4", "boots": ["#5a5060", "#7a7088"]},
+    "rogue": {"hair": ["#2a3048", "#3e4a6e", "#5a6a98"], "cloth": ["#4a3422", "#74563a", "#a07e58"], "acc": "hood",
               "acc_col": "#c8a050", "boots": ["#1e1e28", "#34343e"]},
 }
 
@@ -319,6 +320,19 @@ def main():
         sheet.append(row)
     # 아틀라스: 모든 프레임 같은 크기 → 자르지 않고 그대로 (발 위치 고정)
     at, pos = pack(items, os.path.join(OUT, "sprites", "chars"), 1024, keep_bottom=False, trim_cells=False)
+    # 머리 꼭대기 (모자 자리): 프레임마다 [맨 윗줄 y, 그 줄 근처 가운데 x] — CharSprite 가 모자를 얹는다
+    import json as _json
+    heads = {}
+    for nm, f in items:
+        al = f[..., 3] > 0
+        rows = np.nonzero(al[:18].any(axis=1))[0]
+        if len(rows) == 0:
+            continue
+        top = int(rows[0])
+        xs_ = np.nonzero(al[top:top + 4].any(axis=0))[0]
+        heads[nm] = [top, float((xs_.min() + xs_.max() + 1) / 2.0)]
+    _json.dump(heads, open(os.path.join(OUT, "sprites", "chars_head.json"), "w"))
+    hats()
     # 미리보기: 캐릭터마다 한 줄
     pv = canvas(FW * len(sheet[0]) + len(sheet[0]), (FH + 2) * len(sheet))
     for r, row in enumerate(sheet):
@@ -326,6 +340,108 @@ def main():
             over(pv, f, k * (FW + 1), r * (FH + 2))
     preview(pv, "chars_pv.png", 3)
     print(len(pos), at.shape)
+
+
+# ------------------------------------------------------------------ 모자 (꾸미기) — 아래 가운데가 머리 꼭대기에 얹힌다
+def _hat(w, h):
+    return canvas(w, h)
+
+
+def hats():
+    H = {}
+    # 파티 모자 (고깔 + 줄무늬 + 방울)
+    a = canvas(12, 13)
+    for y in range(3, 13):
+        half = (y - 2) * 0.5
+        for x in range(int(6 - half), int(6 + half) + 1):
+            a[y, x] = hx("#e05a8a" if (y // 2) % 2 == 0 else "#ffd860")
+    a[0:3, 5:7] = hx("#7ad0ff")
+    a[1, 4:8] = hx("#7ad0ff")
+    outline(a, OUTL)
+    H["party"] = a
+    # 털모자
+    a = canvas(16, 9)
+    m = ell(16, 9, 8, 7, 7.2, 5.5) & (grid(16, 9)[1] < 8)
+    ramp(a, m, ["#3a6a8a", "#5a9ac0", "#8ac8e8"], 0.5 - (grid(16, 9)[1] - 4) / 8, 0.0)
+    a[6:8, 1:15] = np.where(a[6:8, 1:15, 3:4] > 0, hx("#e8e0d0"), a[6:8, 1:15])
+    a[0:2, 7:9] = hx("#e8e0d0")
+    outline(a, OUTL)
+    H["beanie"] = a
+    # 꽃
+    a = canvas(9, 8)
+    for (x, y) in [(4, 1), (2, 3), (6, 3), (3, 5), (5, 5)]:
+        a[y:y + 2, x:x + 2] = hx("#ff9ac0")
+    a[3:5, 4:6] = hx("#ffe060")
+    a[6:8, 2] = hx("#4a9a4a")
+    outline(a, OUTL)
+    H["flower"] = a
+    # 뿔
+    a = canvas(18, 8)
+    for (x0, d) in [(2, 1), (15, -1)]:
+        for y in range(7):
+            x = x0 + int(d * (6 - y) * 0.4)
+            a[y, x] = hx("#e8dcc0")
+            a[y, x + d] = hx("#b8a888") if y > 1 else a[y, x + d]
+    outline(a, OUTL)
+    H["horns"] = a
+    # 고양이 귀
+    a = canvas(16, 7)
+    for (x0, x1) in [(1, 5), (11, 15)]:
+        for y in range(7):
+            w = (y + 1) * 0.35
+            c = (x0 + x1) / 2
+            for x in range(int(c - w), int(c + w) + 1):
+                a[y, x] = hx("#e8a0b0" if abs(x - c) < w - 1 and y > 2 else "#5a4a4a")
+    outline(a, OUTL)
+    H["catears"] = a
+    # 왕관
+    a = canvas(14, 8)
+    pts = [(0, 7), (0, 2), (3, 4), (7, 0), (11, 4), (13, 2), (13, 7)]
+    from PIL import Image as _I, ImageDraw as _D
+    im = _I.new("L", (14, 8), 0)
+    _D.Draw(im).polygon(pts, fill=255)
+    m = np.array(im) > 127
+    paint(a, m, "#f0c050")
+    paint(a, m & (grid(14, 8)[1] >= 6), "#a8742a")
+    a[5, 6:8] = hx("#e04a6a")
+    outline(a, OUTL)
+    H["crown"] = a
+    # 새싹
+    a = canvas(10, 9)
+    a[4:9, 4] = hx("#4a9a4a")
+    a[1:4, 1:4] = hx("#7ad06a")
+    a[0:3, 5:9] = hx("#7ad06a")
+    a[2, 2] = hx("#b8f0a0")
+    a[1, 6] = hx("#b8f0a0")
+    outline(a, OUTL)
+    H["sprout"] = a
+    # 요리사 모자
+    a = canvas(14, 11)
+    m = ell(14, 11, 7, 4.5, 6.5, 4.5) | (grid(14, 11)[1] >= 7) & (grid(14, 11)[0] >= 2) & (grid(14, 11)[0] <= 11)
+    ramp(a, m, ["#c8c4b8", "#f4f0e8", "#ffffff"], 0.6 - (grid(14, 11)[0] - 7) / 14, 0.0)
+    outline(a, OUTL)
+    H["chef"] = a
+    # 해적 모자
+    a = canvas(20, 9)
+    im = _I.new("L", (20, 9), 0)
+    _D.Draw(im).polygon([(0, 8), (3, 3), (7, 0), (13, 0), (17, 3), (19, 8)], fill=255)
+    m = np.array(im) > 127
+    paint(a, m, "#2a2430")
+    paint(a, m & (grid(20, 9)[1] == 7), "#c8a050")
+    a[3:5, 9:11] = hx("#f4f0e4")
+    outline(a, "#120e14")
+    H["pirate"] = a
+    # 실크햇
+    a = canvas(14, 12)
+    a[0:9, 3:11] = hx("#2e2a38")
+    a[0:9, 3] = hx("#4a4458")
+    a[6:8, 3:11] = hx("#c84a4a")
+    a[9:11, 0:14] = hx("#2e2a38")
+    outline(a, "#120e14")
+    H["tophat"] = a
+    items = list(H.items())
+    at, pos = pack(items, os.path.join(OUT, "sprites", "hats"), 128, keep_bottom=True)
+    preview(at, "hats_pv.png", 6)
 
 
 if __name__ == "__main__":

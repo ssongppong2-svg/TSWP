@@ -16,7 +16,10 @@ var title := ""
 var items: Array = []
 var width := 200
 var top := -1.0                    # 판 위쪽 y (음수면 화면 가운데)
+var left := -1.0                   # 판 왼쪽 x (음수면 화면 가운데)
 var boxless := false               # 판 없이 글자만 (타이틀) — 고른 줄만 금테
+var _edit := -1                    # 글자 입력 · 키 바꾸기 중인 줄
+var _buf := ""
 var _desc: Label                   # 항목에 "desc" 가 있으면 판 아래쪽에 고른 줄 설명 (2줄)
 var _has_desc := false
 const DESC_H := 38
@@ -53,7 +56,7 @@ func build() -> void:
 		if (it as Dictionary).has("desc"):
 			_has_desc = true
 	var h := head + items.size() * ROW_H + 8 + (DESC_H if _has_desc else 0)
-	var x0 := roundf((PixelView.GW - width) / 2.0)
+	var x0 := left if left >= 0.0 else roundf((PixelView.GW - width) / 2.0)
 	var y0 := top if top >= 0.0 else roundf((PixelView.GH - h) / 2.0) + 18
 	_box = Control.new()
 	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -132,6 +135,19 @@ func refresh() -> void:
 			"toggle":
 				v.text = "켬" if bool(it["get"].call()) else "끔"
 				v.add_theme_color_override("font_color", Color("#9aff9a") if bool(it["get"].call()) else Color("#ff9a9a"))
+			"text":
+				var tv := String(it["get"].call()) if _edit != i else _buf
+				if _edit == i:
+					tv += "_" if int(_t * 3.0) % 2 == 0 else " "
+				v.text = tv if tv.strip_edges() != "" else "(비어 있음)"
+				v.clip_text = true
+				v.add_theme_font_override("font", PixelFont.get_font("small"))
+				v.add_theme_font_size_override("font_size", PixelFont.size_of("small"))
+				v.position.y = _origin.y + i * ROW_H + 3
+				v.add_theme_color_override("font_color", Color("#fff4b0") if _edit == i else Color("#ffd860"))
+			"key":
+				v.text = "… 새 키를 누르세요" if _edit == i else String(it["get"].call())
+				v.add_theme_color_override("font_color", Color("#fff4b0") if _edit == i else Color("#ffd860"))
 			_:
 				v.text = String(it.get("value", ""))
 				if it.has("value_col"):
@@ -153,6 +169,8 @@ func refresh() -> void:
 
 func _process(dt: float) -> void:
 	_t += dt
+	if _edit >= 0 and String((items[_edit] as Dictionary).get("type", "")) == "text":
+		refresh()
 	if _arrow:
 		_arrow.position.x = _origin.x + 4 + (1.0 if int(_t * 3.0) % 2 == 0 else 0.0)
 	_fade = minf(1.0, _fade + dt * 6.0)
@@ -199,6 +217,15 @@ func _activate() -> void:
 			Audio.play("ui_confirm")
 			if it.has("do"):
 				it["do"].call()
+		"text":
+			_edit = sel
+			_buf = String(it["get"].call())
+			Audio.play("ui_click")
+			refresh()
+		"key":
+			_edit = sel
+			Audio.play("ui_click")
+			refresh()
 		"toggle", "choice":
 			_adjust(1)
 		"slider":
@@ -209,6 +236,8 @@ func _activate() -> void:
 func handle(e: InputEvent, ui_pos: Vector2) -> bool:
 	if not is_visible_in_tree() or items.is_empty():
 		return false
+	if _edit >= 0:
+		return _edit_input(e)
 	if e is InputEventMouseMotion:
 		var i := _row_at(ui_pos)
 		if i >= 0 and i != sel:
@@ -279,3 +308,37 @@ func _row_at(p: Vector2) -> int:
 		return -1
 	var i := int(r.y / ROW_H)
 	return i if i < items.size() and _selectable(i) else -1
+
+
+## 글자 입력 · 키 바꾸기 중 (Enter 확정 · Esc 취소)
+func _edit_input(e: InputEvent) -> bool:
+	if not (e is InputEventKey) or not e.pressed:
+		return e is InputEventMouseButton
+	var k := e as InputEventKey
+	var it: Dictionary = items[_edit]
+	if String(it.get("type", "")) == "key":
+		if k.physical_keycode != KEY_ESCAPE:
+			Prefs.keybinds[String(it["action"])] = [int(k.physical_keycode)]
+			Controls.ensure()
+			Prefs.save_prefs()
+			Audio.play("ui_confirm")
+		_edit = -1
+		refresh()
+		return true
+	match k.physical_keycode:
+		KEY_ENTER, KEY_KP_ENTER:
+			it["set"].call(_buf)
+			_edit = -1
+			Audio.play("ui_confirm")
+		KEY_ESCAPE:
+			_edit = -1
+			Audio.play("ui_back")
+		KEY_BACKSPACE:
+			_buf = _buf.substr(0, maxi(0, _buf.length() - 1))
+		KEY_V when k.ctrl_pressed:
+			_buf += DisplayServer.clipboard_get().strip_edges()
+		_:
+			if k.unicode >= 32 and _buf.length() < 64:
+				_buf += String.chr(k.unicode)
+	refresh()
+	return true

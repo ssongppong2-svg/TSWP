@@ -41,7 +41,11 @@ uniform float shadow_h = 0.5;                      // 그림자 키 (1 = 실제 
 uniform bool receive_shade = true;                 // 나무·덤불처럼 그늘을 만드는 쪽은 끈다
 uniform float shade_k = 1.0;                       // 그늘 세기 (캐릭터 0.5)
 uniform bool see_through = false;                  // 나무·천막처럼 주인공을 가릴 수 있는 것
-uniform bool use_instance = false;                 // 멀티메시: INSTANCE_CUSTOM = (region.x, region.y, region.w, region.h)
+uniform bool use_instance = false;
+// 색 바꾸기 (캐릭터 꾸미기): 그림의 이 색(src, 선형)을 저 색(dst)으로 — 도트 색이 정확히 같을 때만
+uniform int swap_n = 0;
+uniform vec3 swap_src[12];
+uniform vec3 swap_dst[12];                 // 멀티메시: INSTANCE_CUSTOM = (region.x, region.y, region.w, region.h)
 
 varying vec4 v_region;
 varying float v_flip;
@@ -129,6 +133,13 @@ void fragment() {
 	vec4 c = texture(tex, v_region.xy + uv * v_region.zw);
 	if (c.a < 0.5) {
 		discard;
+	}
+	for (int i = 0; i < swap_n; i++) {
+		vec3 d = abs(c.rgb - swap_src[i]);
+		if (d.r + d.g + d.b < 0.012) {
+			c.rgb = swap_dst[i];
+			break;
+		}
 	}
 	// 측면 단면: 앞쪽 물건은 디더로 사라진다
 	ivec2 bp = ivec2(mod(FRAGCOORD.xy, 4.0));

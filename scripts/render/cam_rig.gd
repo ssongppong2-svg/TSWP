@@ -4,6 +4,12 @@ extends Node3D
 ##  · 탑다운 3/4 시점(위에서 비스듬히) ↔ 측면 시점(옆에서)을 카메라가 돌아가며 부드럽게 전환한다.
 ##  · 위치는 화면 픽셀 단위로 끊고, 남은 소수점은 PixelView 가 화면을 밀어 처리 (도트 흔들림 없음).
 ##  · 빌보드(나무·캐릭터)가 기울어 보이지 않게 bb_stretch(=1/cos 기울기)를 셰이더 전역값으로 알려 준다.
+##  · 따라가기 (걸을 때 화면이 출렁이지 않게):
+##      - 물리 틱에서 움직인다 (캐릭터와 같은 박자 — 화면 주사율이 달라도 덜컹임 없음)
+##      - 여유 칸(dead-zone): 캐릭터가 가운데 작은 상자 안에서 움직이면 화면은 가만히,
+##        상자 끝을 밀 때만 정확히 같이 움직인다 (지연 보간이 없어 캐릭터가 픽셀 사이에서 떨리지 않음)
+##      - 높이는 발 디딘 땅 기준으로만 천천히 (점프·계단에 화면이 위아래로 튀지 않게)
+##      - 여럿(로컬 협동)이면 살아 있는 사람들의 가운데
 
 const PPU := 16.0                    # 1m 당 픽셀
 const TOP_PITCH := deg_to_rad(52.0)  # 탑다운 3/4: 아래로 52도
@@ -14,7 +20,11 @@ var cam: Camera3D
 var ear: AudioListener3D              # 소리 귀: 카메라(60m 뒤)가 아니라 초점 자리
 var view: PixelView
 var target: Node3D
+var targets: Array = []               # 여럿이면 가운데를 본다 (비면 target 하나)
 var focus := Vector3.ZERO
+var _goal := Vector3.ZERO
+var _goal_set := false
+var _ground_y := 0.0
 var look_ahead := Vector3.ZERO
 var side_t := 0.0                    # 0 탑다운 … 1 측면 (현재)
 var side_goal := 0.0
@@ -66,26 +76,70 @@ func pitch() -> float:
 
 
 func shake(a: float) -> void:
-	shake_amt = maxf(shake_amt, a * (1.0 if Prefs.shake else 0.3))
+	shake_amt = maxf(shake_amt, a * _shake_mul())
+
+
+func _shake_mul() -> float:
+	return (Prefs.shake_k if Prefs.shake else 0.0) * 0.8
 
 
 ## 카메라 킥: 맞은 방향으로 툭 밀렸다 돌아온다 (픽셀)
 var _kick := Vector2.ZERO
 func kick(px: Vector2) -> void:
-	_kick += px * (1.0 if Prefs.shake else 0.3)
+	_kick += px * _shake_mul()
 
 
-func _process(dt: float) -> void:
+## 지금 따라갈 자리 (여럿이면 살아 있는 사람들의 가운데)
+func _follow_point() -> Variant:
+	var pts: Array = []
+	for t in targets:
+		if is_instance_valid(t) and not (t is Fighter and (t as Fighter).dead):
+			pts.append((t as Node3D).global_position)
+	if pts.is_empty() and target and is_instance_valid(target):
+		pts.append(target.global_position)
+	if pts.is_empty():
+		return null
+	var c := Vector3.ZERO
+	for p in pts:
+		c += p
+	return c / pts.size()
+
+
+func _physics_process(dt: float) -> void:
 	if cam == null:
 		return
 	# 전환 속도: 0.7초에 걸쳐 돌아간다
 	side_t = move_toward(side_t, side_goal, dt / 0.7)
 	yaw = lerp_angle(yaw, yaw_goal if side_goal > 0.5 else 0.0, 1.0 - exp(-6.0 * dt))
-	if target and is_instance_valid(target):
-		# 측면에선 화면 아래쪽에 땅이 덜 보이게 초점을 위로
+	var fp: Variant = _follow_point()
+	if fp != null:
+		var tp: Vector3 = fp
 		var k_side := side_t * side_t * (3.0 - 2.0 * side_t)
-		var want := target.global_position + Vector3(0, 0.6 + 2.4 * k_side, 0) + look_ahead
-		focus = focus.lerp(want, 1.0 - exp(-9.0 * dt))
+		if not _goal_set:
+			_goal = tp
+			_ground_y = tp.y
+			_goal_set = true
+		# 높이: 땅에 서 있을 때만 따라간다 (점프 중엔 크게 벗어날 때만)
+		var on_floor := target is CharacterBody3D and (target as CharacterBody3D).is_on_floor()
+		if on_floor or absf(tp.y - _ground_y) > 2.5 or side_t > 0.5:
+			_ground_y = lerpf(_ground_y, tp.y, 1.0 - exp(-(6.0 if side_t > 0.5 else 4.0) * dt))
+		# 여유 칸 (화면 기준 좌우·앞뒤 m)
+		var dz := [Vector2(1.0, 0.7), Vector2(0.0, 0.0), Vector2(2.4, 1.5)][clampi(Prefs.cam_follow, 0, 2)] as Vector2
+		if targets.size() > 1:
+			dz = Vector2(0.4, 0.3)
+		var right := Vector3(1, 0, 0).rotated(Vector3.UP, yaw)
+		var fwd := Vector3(0, 0, 1).rotated(Vector3.UP, yaw)
+		var d := tp - _goal
+		var dr := d.dot(right)
+		var df := d.dot(fwd)
+		if side_t > 0.5:
+			df = 0.0                                    # 측면: 앞뒤는 구간 선에 붙어 있다
+		var mr := signf(dr) * maxf(0.0, absf(dr) - dz.x)
+		var mf := signf(df) * maxf(0.0, absf(df) - dz.y)
+		_goal += right * mr + fwd * mf
+		if side_t > 0.5:
+			_goal += fwd * (tp - _goal).dot(fwd)
+		focus = Vector3(_goal.x, _ground_y + 0.6 + 2.4 * k_side, _goal.z) + look_ahead
 	var fc := _clamped(focus)
 	var p := pitch()
 	var basis := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, -p)
