@@ -382,6 +382,8 @@ func _bot(dt: float) -> void:
 	var c := walker.ctrl
 	c.clear()
 	_bot_t += dt
+	if args.has("botlog") and int(_bot_t / 3.0) != int((_bot_t - dt) / 3.0):
+		print("bot t=%.0f pos=%s hp=%d ult=%d gold=%d items=%s cons=%s" % [_bot_t, walker.global_position.snapped(Vector3.ONE), walker.hp, walker.ult, party.gold, walker.inv.slots, walker.inv.cons])
 	if args["bot"] == "cycle":
 		var want_job: String = DB.JOB_ORDER[int(_bot_t / 6.0) % DB.JOB_ORDER.size()]
 		if walker.job != want_job:
@@ -424,7 +426,18 @@ func _bot(dt: float) -> void:
 		# 떨어진 아이템 줍기
 		var lt := _bot_loot()
 		goal = lt.global_position
-		c.interact = goal.distance_to(walker.global_position) < 1.1
+		# 3초 동안 거의 못 움직이면 닿을 수 없는 곳 — 포기
+		if lt != _bot_goal_n:
+			_bot_goal_n = lt
+			_bot_stuck_t = 0.0
+			_bot_last_p = walker.global_position
+		_bot_stuck_t += dt
+		if _bot_stuck_t > 3.0:
+			if walker.global_position.distance_to(_bot_last_p) < 1.0:
+				_bot_skip[lt] = true
+			_bot_stuck_t = 0.0
+			_bot_last_p = walker.global_position
+		c.interact = goal.distance_to(walker.global_position) < 1.2
 		no_stop = true
 	else:
 		goal = walker.global_position
@@ -469,12 +482,34 @@ func _bot(dt: float) -> void:
 		c.ult = walker.ult >= DB.ULT_MAX and to.length() < 6.0
 	if walker.hp < walker.max_hp() * 0.4 and walker.inv.cons in ["potion", "big_potion"]:
 		c.use_item = true
+	# 측면 구간: 막혀서 못 가면 점프
+	if rig and rig.side_goal > 0.5 and c.move != Vector2.ZERO and walker.is_on_floor() and Vector2(walker.velocity.x, walker.velocity.z).length() < 0.6:
+		c.roll = true
+		c.roll_held = true
+
+
+var _bot_skip := {}
+var _bot_goal_n: Node3D
+var _bot_stuck_t := 0.0
+var _bot_last_p := Vector3.ZERO
 
 
 func _bot_loot() -> Node3D:
+	# 주울 만한 것만: 장비는 칸이 남을 때, 소비는 칸이 비었거나 같은 것일 때 (서로 바꿔 줍기 무한 반복 방지) + 안 연 상자
 	var best: Node3D = null
-	var bd := 10.0
-	for n in get_tree().get_nodes_in_group("loot"):
+	var bd := 14.0
+	for n in get_tree().get_nodes_in_group("interact"):
+		var ok := false
+		if n is ItemDrop:
+			var id: String = (n as ItemDrop).id
+			if Items.is_consumable(id):
+				ok = walker.inv.cons == "" or (walker.inv.cons == id and walker.inv.cons_n < Items.STACK)
+			else:
+				ok = walker.inv.slots.size() < Items.SLOTS
+		elif n is Chest:
+			ok = not (n as Chest).opened
+		if not ok or _bot_skip.has(n):
+			continue
 		var d := (n as Node3D).global_position.distance_to(walker.global_position)
 		if d < bd:
 			bd = d

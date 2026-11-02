@@ -119,7 +119,7 @@ func _decorate() -> void:
 		var ga: Vector3 = g["at"]
 		_clear(Vector2(ga.x, ga.z), 5.0)
 	# 보물상자: 랜드마크 곁 셋 (가끔 미믹) + 능선 꼭대기 하나 (점프로만 닿음 — 미믹 없음, 운 좋음)
-	chest_at(GIANT + Vector2(2.6, 2.2))
+	chest_at(GIANT + Vector2(7.0, 2.0))          # 고대 나무 둔덕 발치 (둔덕 위는 못 올라감)
 	chest_at(RUINS + Vector2(3.0, -2.4))
 	chest_at(POND + Vector2(-5.2, -3.6))
 	chest_at(Vector2(RIDGE.position.x + 11.5, 26.0), 0.0, 1.2, true)

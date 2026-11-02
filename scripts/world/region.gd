@@ -475,12 +475,13 @@ func scatter_props(list: Array) -> void:
 
 # ------------------------------------------------------------------ 아이템: 상자 · 상점
 ## near 둘레에서 평평하고 비어 있는 칸 찾기 (없으면 near 그대로)
-func find_spot(near: Vector2, r := 3.0) -> Vector3:
-	for i in 60:
+func find_spot(near: Vector2, r := 3.0, max_level := 0) -> Vector3:
+	# 걸어서 닿는 바닥(max_level 층 이하)만 — 둔덕 위에 두면 탑다운에선 못 올라간다
+	for i in 80:
 		var a := rng.randf() * TAU
 		var d := rng.randf() * r
 		var c := _cell(near.x + cos(a) * d, near.y + sin(a) * d)
-		if terrain.inside(c.x, c.y) and _flat(c, 2) and _free(c, 1):
+		if terrain.inside(c.x, c.y) and terrain.level(c.x, c.y) <= max_level and _flat(c, 2) and _free(c, 1):
 			return _spot(c)
 	var p := Vector3(near.x, 0, near.y)
 	p.y = terrain.height_at(p)

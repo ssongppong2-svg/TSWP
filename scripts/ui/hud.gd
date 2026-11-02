@@ -48,6 +48,7 @@ var _bag_sig := ""
 var toast_box: Control
 var _toast_t := 0.0
 var _toast_q: Array = []
+var _toast_len := 4.2
 var msg_l: Label
 var _msg_t := 0.0
 var _ready_t := 0.0
@@ -300,7 +301,8 @@ func _show_toast() -> void:
 		rl.position = Vector2(6, 30 + dn * 11)
 		rl.size = Vector2(w - 12, rn * 11)
 		toast_box.add_child(rl)
-	_toast_t = 4.2
+	_toast_len = 4.2 if _toast_q.size() <= 1 else 2.4      # 줄 서 있으면 빨리 넘긴다
+	_toast_t = _toast_len
 
 
 ## 낱말 단위 줄바꿈했을 때 몇 줄인가
@@ -544,8 +546,8 @@ func _draw_hearts() -> void:
 func _tick_toast(dt: float) -> void:
 	if _toast_t > 0.0:
 		_toast_t -= dt
-		toast_box.modulate.a = clampf(minf(_toast_t / 0.4, (4.2 - _toast_t) / 0.15), 0.0, 1.0)
-		toast_box.position.x = 4.0 - roundf(maxf(0.0, 0.15 - (4.2 - _toast_t)) / 0.15 * 12.0)
+		toast_box.modulate.a = clampf(minf(_toast_t / 0.4, (_toast_len - _toast_t) / 0.15), 0.0, 1.0)
+		toast_box.position.x = 4.0 - roundf(maxf(0.0, 0.15 - (_toast_len - _toast_t)) / 0.15 * 12.0)
 		if _toast_t <= 0.0:
 			_toast_q.pop_front()
 			toast_box.modulate.a = 0.0
