@@ -17,6 +17,9 @@ global uniform float side_amt;
 global uniform vec4 lane_plane;     // 측면 구간 선 (n, 깊이) — 멀리 있는 것일수록 공기 색      // 0 탑다운 … 1 측면
 global uniform vec4 atmo_col;       // 측면에서 멀리 있는 것을 섞을 공기 색
 global uniform vec4 focus_screen;   // (화면 x, y, 깊이 기준값, 반지름) — 주인공을 가리는 큰 물건은 그 둘레를 비춰 보이게          // 화면 카메라가 보는 방향 — 이것과 다르면 그림자(해) 패스
+global uniform vec4 focus_b;        // 협동: 다른 파티원 셋도 같은 식으로 비춰 보기
+global uniform vec4 focus_c;
+global uniform vec4 focus_d;
 global uniform float wind_time;
 global uniform vec4 push_a;
 global uniform vec4 push_b;
@@ -54,6 +57,7 @@ varying vec3 v_nrm;
 varying vec3 v_tan;
 varying float v_cut;                               // 단면까지 거리 (+ 면 걷어 낼 쪽)
 varying float v_lane;                              // 구간 선에서 뒤로 얼마나 먼가 (m)
+varying float v_depth;                             // 카메라 방향(수평) 깊이 — 파티원별 앞뒤 비교용
 varying float v_front;                             // 주인공보다 카메라 쪽에 있는가 (+)                                // 세계 기준 빛 받는 면 (뒷면 뒤집힘 없이 조각에서 다시 넣는다)
 
 void vertex() {
@@ -68,7 +72,8 @@ void vertex() {
 	v_cut = dot(cut_plane.xyz, MODEL_MATRIX[3].xyz) - cut_plane.w;
 	v_lane = lane_plane.w - dot(lane_plane.xyz, MODEL_MATRIX[3].xyz);
 	vec3 hz = normalize(vec3(cam_fwd.x, 0.0, cam_fwd.z) + vec3(0.0, 0.0, 0.0001));
-	v_front = focus_screen.z - dot(hz, MODEL_MATRIX[3].xyz);
+	v_depth = dot(hz, MODEL_MATRIX[3].xyz);
+	v_front = focus_screen.z - v_depth;
 	if (!use_instance && MODEL_MATRIX[0].x < 0.0) {
 		v_flip = 1.0 - v_flip;               // 노드를 좌우로 뒤집어(scale.x < 0) 두면 그림도 뒤집기
 	}
@@ -150,12 +155,18 @@ void fragment() {
 	}
 	// 주인공 둘레 비춰 보기: 주인공보다 앞에 있는 큰 물건만 — 디더 점무늬 없이 깔끔한 원 구멍 + 1px 어두운 테
 	bool rim = false;
-	if (see_through && v_front > 0.15) {
-		float dpx = length(FRAGCOORD.xy - focus_screen.xy);
-		if (dpx < focus_screen.w) {
-			discard;
+	if (see_through) {
+		vec4 fs[4] = vec4[](focus_screen, focus_b, focus_c, focus_d);
+		for (int i = 0; i < 4; i++) {
+			if (fs[i].w <= 0.0 || fs[i].z - v_depth <= 0.15) {
+				continue;
+			}
+			float dpx = length(FRAGCOORD.xy - fs[i].xy);
+			if (dpx < fs[i].w) {
+				discard;
+			}
+			rim = rim || dpx < fs[i].w + 1.5;
 		}
-		rim = dpx < focus_screen.w + 1.5;
 	}
 	// 멀티메시만 인스턴스 색을 쓴다 (일반 메시는 정점 색이 없어서 COLOR 가 엉뚱한 값일 수 있다)
 	vec3 col = c.rgb * tint.rgb * (use_instance ? COLOR.rgb : vec3(1.0));

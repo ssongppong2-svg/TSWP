@@ -15,6 +15,7 @@ extends Node3D
 ## 셰이더 전역값을 스크립트에서도 읽을 수 있게 (global_shader_parameter_get 은 느리다)
 static var g_bb := 1.6
 static var g_fwd := Vector3(0, -0.8, -0.6)
+const FOCUS_EXTRA := ["focus_b", "focus_c", "focus_d"]
 
 const PPU := 16.0                    # 1m 당 픽셀
 const TOP_PITCH := deg_to_rad(52.0)  # 탑다운 3/4: 아래로 52도
@@ -171,6 +172,20 @@ func _physics_process(dt: float) -> void:
 		var sp := cam.unproject_position(tp)
 		var hz := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
 		RenderingServer.global_shader_parameter_set("focus_screen", Vector4(sp.x, sp.y, tp.dot(hz), 24.0))     # 반지름 24px (캐릭터 키만큼)
+	# 협동: 다른 파티원도 (최대 3명)
+	var nf := 0
+	var hz2 := Vector3(-basis.z.x, 0, -basis.z.z).normalized()
+	for t in targets:
+		if nf >= 3:
+			break
+		if t == target or not is_instance_valid(t) or (t is Fighter and (t as Fighter).dead):
+			continue
+		var tp2 := (t as Node3D).global_position + Vector3(0, 0.7, 0)
+		var sp2 := cam.unproject_position(tp2)
+		RenderingServer.global_shader_parameter_set(FOCUS_EXTRA[nf], Vector4(sp2.x, sp2.y, tp2.dot(hz2), 20.0))
+		nf += 1
+	for j in range(nf, 3):
+		RenderingServer.global_shader_parameter_set(FOCUS_EXTRA[j], Vector4(-1000, -1000, 0, 0))
 	view.sub_offset = Vector2((cr - sr) * PPU, -(cu - su) * PPU)
 	if view.rays:
 		var rm := view.rays.material as ShaderMaterial

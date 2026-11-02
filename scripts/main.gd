@@ -1281,10 +1281,23 @@ func _coop_tick() -> void:
 		if int(c["pad"]) < -1 and coop_nodes.has(c["slot"]):
 			_buddy_ai(coop_nodes[c["slot"]], get_physics_process_delta_time())
 	var many := not coop.is_empty()
+	var tags: Array = []
 	for f in get_tree().get_nodes_in_group("fighters"):
 		if f is Player:
 			(f as Player).update_nameplate(many)
 			(f as Player).leash = many
+			if many and (f as Player).nameplate and (f as Player).nameplate.visible:
+				tags.append(f)
+	# 이름표가 겹치면 위로 한 칸씩 쌓는다 (뭉쳐 있어도 누가 누군지 읽히게)
+	tags.sort_custom(func(a, b): return (a as Player).slot < (b as Player).slot)
+	for i in tags.size():
+		var lift := 0
+		var pi := (tags[i] as Player).global_position
+		for j in i:
+			var pj := (tags[j] as Player).global_position
+			if absf(pi.x - pj.x) < 1.6 and absf(pi.z - pj.z) < 1.0:
+				lift += 1
+		(tags[i] as Player).nameplate.position.y += 0.36 * lift
 var _pad_start := {}
 
 
