@@ -455,13 +455,64 @@ def wardrobe():
     return fin(a)
 
 
+# ------------------------------------------------------------------ 퍼즐 · 비밀 (발판 · 철창 · 누르지 마시오 버튼 · 금 간 바위)
+def plate(down):
+    W, H = 20, 14
+    a = canvas(W, H)
+    shade(a, ellm(0, 0, 19, 13, W, H), ["#4a4a52", "#6a6a72", "#8a8a92"])
+    top = ellm(3, 2 + (1 if down else 0), 16, 11, W, H)
+    shade(a, top, ["#5a8a4a", "#7ab86a", "#b8f0a0"] if down else ["#8a6a3a", "#c8a050", "#f0d080"])
+    px1(a, [(9, 6 + (1 if down else 0)), (10, 6 + (1 if down else 0))], "#fff8e0")
+    return fin(a)
+
+
+def cage(opened):
+    W, H = 30, 32
+    a = canvas(W, H)
+    shade(a, rectm(1, 27, 28, 31, W, H), ["#3a3a42", "#5a5a62", "#7a7a82"])     # 받침돌
+    if not opened:
+        for x in range(2, 28, 4):
+            shade(a, rectm(x, 3, x + 1, 27, W, H), ["#3a3e4a", "#6a7080", "#a8b0c0"])
+        shade(a, rectm(1, 1, 28, 4, W, H), ["#3a3e4a", "#6a7080", "#a8b0c0"])
+        shade(a, rectm(1, 15, 28, 16, W, H), ["#3a3e4a", "#6a7080", "#a8b0c0"])
+    else:
+        for x in range(2, 28, 4):
+            shade(a, rectm(x, 25, x + 1, 27, W, H), ["#3a3e4a", "#6a7080", "#a8b0c0"])
+    return fin(a)
+
+
+def troll_button():
+    W, H = 16, 22
+    a = canvas(W, H)
+    shade(a, rectm(3, 9, 12, 21, W, H), ["#4a4a52", "#6a6a72", "#8a8a92"])
+    shade(a, ellm(1, 3, 14, 11, W, H), ["#8a1a2a", "#e03a4a", "#ff9a9a"])
+    px1(a, [(5, 5), (6, 5)], "#ffffff")
+    for y in (13, 16):
+        a[y, 5:11] = hx("#ffd860")
+    return fin(a)
+
+
+def cracked_rock():
+    W, H = 30, 26
+    a = canvas(W, H)
+    m = ellm(1, 3, 28, 25, W, H) | ellm(6, 0, 22, 14, W, H)
+    shade(a, m, ["#4a4440", "#7a7268", "#a8a090"])
+    for pts in [[(8, 6), (10, 10), (9, 14), (12, 18)], [(18, 4), (17, 9), (20, 13)], [(13, 12), (16, 15), (15, 21)]]:
+        for i in range(len(pts) - 1):
+            paint(a, linem([pts[i], pts[i + 1]], 1, W, H) & m, "#2a2420")
+    px1(a, [(9, 7), (19, 5)], "#d8d0c0")
+    return fin(a)
+
+
 def main():
     items = [(k, f()) for k, f in ICONS.items()]
     at, pos = pack(items, os.path.join(OUT, "sprites", "items"), 256, keep_bottom=False, trim_cells=False)
     preview(at, "items_pv.png", 4, bg=(60, 70, 60))
     world = [("chest_closed", chest("closed")), ("chest_open", chest("open")), ("chest_mimic", chest("mimic")),
              ("pedestal", pedestal()), ("peel", peel()), ("merchant0", merchant(0)), ("merchant1", merchant(1)),
-             ("crown_hat", crown_hat()), ("wardrobe", wardrobe())]
+             ("crown_hat", crown_hat()), ("wardrobe", wardrobe()),
+             ("plate_up", plate(False)), ("plate_down", plate(True)), ("cage", cage(False)), ("cage_open", cage(True)),
+             ("troll_button", troll_button()), ("cracked_rock", cracked_rock())]
     at2, pos2 = pack(world, os.path.join(OUT, "sprites", "loot"), 128, keep_bottom=True, trim_cells=False)
     preview(at2, "loot_pv.png", 5, bg=(60, 90, 70))
     print(len(pos), at.shape, len(pos2), at2.shape)

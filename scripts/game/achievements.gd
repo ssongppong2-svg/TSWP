@@ -30,6 +30,7 @@ const GRADE_COL := {"일반": Color("#c8c8d0"), "희귀": Color("#5aa8ff"), "영
 static var stats := {}
 static var unlocked := {}
 static var _loaded := false
+static var run_new: Array = []           # 이번 판에 연 업적 이름 (결과 화면)
 
 
 static func _load() -> void:
@@ -57,6 +58,7 @@ static func add(tree: SceneTree, stat: String, n := 1) -> void:
 		var a: Array = LIST[id]
 		if a[3] == stat and not unlocked.has(id) and int(stats[stat]) >= int(a[4]):
 			unlocked[id] = true
+			run_new.append(String(a[0]))
 			if tree:
 				tree.call_group("hud", "notify", "업적: %s — 칭호 [%s]" % [a[0], a[5]], GRADE_COL.get(a[2], Color.WHITE))
 				Audio.play("item_e")
@@ -84,3 +86,10 @@ static func titles() -> Array:
 		if unlocked.has(id):
 			out.append([id, LIST[id][5]])
 	return out
+
+
+## 진행도 (업적 화면): [현재, 기준]
+static func progress(id: String) -> Array:
+	_load()
+	var a: Array = LIST[id]
+	return [mini(int(stats.get(a[3], 0)), int(a[4])), int(a[4])]

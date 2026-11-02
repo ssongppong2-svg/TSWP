@@ -104,10 +104,16 @@ func ghost(parent: Node, at: Vector3) -> void:
 	tw.tween_callback(g.queue_free)
 
 
+var _sq := Vector2.ONE
+var _sk := 0.0
+
+
 func update(dt: float) -> void:
 	t += dt
-	mat.set_shader_parameter("squash", Vector2(bone_sx.step(dt), bone_sy.step(dt)))
-	mat.set_shader_parameter("skew", bone_lean.step(dt))
+	_sq = Vector2(bone_sx.step(dt), bone_sy.step(dt))
+	_sk = bone_lean.step(dt)
+	mat.set_shader_parameter("squash", _sq)
+	mat.set_shader_parameter("skew", _sk)
 	var n: int = COUNT[anim]
 	var i := int(t * FPS[anim])
 	i = mini(i, n - 1) if anim in ONCE else i % n
@@ -121,14 +127,10 @@ func update(dt: float) -> void:
 ## 모자: 이 프레임의 머리 꼭대기에 (스프링 늘림·기울기·좌우 뒤집기까지 따라감)
 func _place_hat() -> void:
 	var hd: Array = _heads.get(_frame, [5, 12.0])
-	var v_sq: Variant = mat.get_shader_parameter("squash")
-	var v_sk: Variant = mat.get_shader_parameter("skew")
-	var v_bb: Variant = RenderingServer.global_shader_parameter_get("bb_stretch")
-	var v_f: Variant = RenderingServer.global_shader_parameter_get("cam_fwd")
-	var sq: Vector2 = v_sq if v_sq is Vector2 else Vector2.ONE
-	var sk: float = v_sk if v_sk is float else 0.0
-	var bb: float = v_bb if v_bb is float else 1.6
-	var f: Vector3 = v_f if v_f is Vector3 else Vector3(0, -0.8, -0.6)
+	var sq := _sq
+	var sk := _sk
+	var bb := CamRig.g_bb
+	var f := CamRig.g_fwd
 	var right := Vector3(-f.z, 0, f.x).normalized()
 	if right.length() < 0.5:
 		right = Vector3(1, 0, 0)

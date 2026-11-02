@@ -34,7 +34,7 @@ func _ready() -> void:
 
 
 func active() -> bool:
-	return main.state == "play" and main.map_name != "camp" and not main._switching
+	return main.state == "play" and main.map_name != "camp" and not main._switching and not main.afterparty
 
 
 func _process(dt: float) -> void:
@@ -144,6 +144,7 @@ func _meteor_hit(at: Vector3) -> void:
 	if not is_instance_valid(main.map):
 		return
 	Audio.play("explode_l", at, -4.0)
+	get_tree().call_group("breakable", "blast", at, 1.6)
 	Fx.pop(main.map, at + Vector3(0, 0.5, 0), ["boom0", "boom1", "boom2", "boom3", "boom4", "boom5"], 16.0)
 	Particles.burst(main.map, at + Vector3(0, 0.4, 0), Color("#fff0a0"), Color("#e05a2a"), 24, 6.0)
 	for f in Combat.in_radius(get_tree(), at, 1.6):

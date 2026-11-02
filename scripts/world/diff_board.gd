@@ -10,6 +10,7 @@ func _ready() -> void:
 	add_to_group("interact")
 	add_child(BB.make(Region.CAMP, "sign", {"unique": true, "up_normal": 0.7}))
 	label = Label3D.new()
+	label.add_to_group("world_tag")             # 타이틀 메뉴 뒤에서는 숨긴다
 	label.font = PixelFont.get_font("small")
 	label.font_size = PixelFont.size_of("small")
 	label.pixel_size = 1.0 / 16.0

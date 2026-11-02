@@ -81,6 +81,7 @@ func _pass_to_nearest() -> void:
 func _boom() -> void:
 	var at := holder.global_position
 	Audio.play("explode_l", at)
+	get_tree().call_group("breakable", "blast", at, 2.2)
 	Fx.pop(get_parent(), at + Vector3(0, 0.6, 0), ["boom0", "boom1", "boom2", "boom3", "boom4", "boom5"], 16.0)
 	Particles.burst(get_parent(), at + Vector3(0, 0.5, 0), Color("#fff0a0"), Color("#e05a2a"), 34, 7.0)
 	var h := Hit.make(holder.max_hp() * 0.35, null, Vector3(0, 14.0, 0), "bomb")

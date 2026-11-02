@@ -21,6 +21,7 @@ func _ready() -> void:
 
 func _mk(t: String, kind: String) -> Label3D:
 	var l := Label3D.new()
+	l.add_to_group("world_tag")             # 타이틀 메뉴 뒤에서는 숨긴다
 	l.text = t
 	l.font = PixelFont.get_font(kind)
 	l.font_size = PixelFont.size_of(kind)

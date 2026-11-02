@@ -93,6 +93,8 @@ func take(h: Hit) -> void:
 		hp = minf(max_hp(), hp + h.amount * stat("heal_taken"))
 		if hp > before + 0.5:
 			DmgNum.pop(self, hp - before, "heal")
+			if h.source is Player and team == 0:
+				get_tree().call_group("party", "record", h.source, "heal", hp - before)
 		return
 	if invuln > 0.0:
 		return
@@ -141,6 +143,7 @@ func take(h: Hit) -> void:
 	# 때린 플레이어에게 알림 (궁극기 충전 · 아이템 효과)
 	if amt > 0.0 and h.source is Player and h.source != self:
 		(h.source as Player).on_dealt(self, amt, h, friendly)
+		get_tree().call_group("party", "record", h.source, "ff" if friendly else "dmg", amt)
 	if hp <= 0.0:
 		hp = 0.0
 		_die()

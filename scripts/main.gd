@@ -15,6 +15,7 @@ extends Node
 ##    --selftest          화면 흐름 자가 시험 (tools/test_flow.gd) · --itemtest 아이템·궁극기 시험 (tools/test_items.gd)
 ##    --autostart=초      타이틀에서 몇 초 뒤 자동 시작 (영상용)
 ##    --give=id,id        (시험) 아이템을 넣고 시작 · --ultfull 궁극기 가득
+##    --menu=ach|credits|controls|keys   (시험) 타이틀에서 그 메뉴를 연다 · --result 는 가짜 기록을 채운다
 
 const MAPS := {"camp": "캠프", "forest": "속삭이는 숲", "nest": "거미 여왕의 둥지"}
 
@@ -204,7 +205,11 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	_refresh_targets()
 	walker.rig = rig
 	map.rig = rig
-	map.enemy_spawned.connect(func(e: Enemy): e.killed.connect(party.on_enemy_killed))
+	map.enemy_spawned.connect(func(e: Enemy):
+		if afterparty:
+			e.queue_free()
+			return
+		e.killed.connect(party.on_enemy_killed))
 	hud.boss = null
 	if map is NestMap:
 		(map as NestMap).boss_started.connect(func(q: Queen):
@@ -353,7 +358,18 @@ func _process(dt: float) -> void:
 	if args.has("wardrobe") and _frame == 40:
 		open_wardrobe(walker)
 	if args.has("result") and _frame == 40:
+		for m in party_members():
+			party.stats[m[0]] = {"kills": randi_range(5, 60), "deaths": randi_range(0, 6), "dmg": randf_range(200, 2400), "heal": randf_range(0, 900),
+				"ff": randf_range(0, 400), "items": randi_range(0, 8), "throws": randi_range(0, 5), "saves": randi_range(0, 3)}
 		_show_result(args["result"] == "win")
+	if args.has("menu") and _frame == 40:
+		match String(args["menu"]):
+			"ach": _open_achievements()
+			"credits": _open_credits()
+			"controls": _open_controls()
+			"keys":
+				_open_settings()
+				_settings_keys()
 	if (args.has("pause") or args.has("settings") or args.has("bag")) and _frame == 40:
 		_pause()
 		if args.has("settings"):
@@ -655,11 +671,13 @@ func _enter_title() -> void:
 	var m := PixelMenu.new("", [
 		{"label": "모험 시작", "do": _start_game},
 		{"label": "꾸미기", "do": func(): open_wardrobe(walker)},
+		{"label": "업적 · 칭호", "do": _open_achievements},
 		{"label": "설정", "do": _open_settings},
 		{"label": "조작법", "do": _open_controls},
+		{"label": "만든 사람들", "do": _open_credits},
 		{"label": "게임 종료", "do": func(): get_tree().quit()},
 	], 112)
-	m.top = 168.0
+	m.top = 142.0
 	m.boxless = true
 	m.back.connect(func(): pass)
 	_push_menu(m, false)
@@ -668,6 +686,8 @@ func _enter_title() -> void:
 func _title_tick(_dt: float) -> void:
 	if walker:
 		walker.ctrl.clear()
+	for n in get_tree().get_nodes_in_group("world_tag"):
+		(n as GeometryInstance3D).transparency = 1.0
 	# 로고가 천천히 숨 쉬듯 1px 오르내림
 	if title_ui and title_ui.has_node("Logo"):
 		var lg := title_ui.get_node("Logo") as Control
@@ -690,6 +710,8 @@ func _start_game() -> void:
 		hud.set_shown(true)
 		walker.local = true
 		Audio.music(map.music)
+		for n in get_tree().get_nodes_in_group("world_tag"):
+			(n as GeometryInstance3D).transparency = 0.0
 		_show_title(MAPS.get(map_name, map_name))
 		_hint_basics())
 	tw.tween_property(fade, "color:a", 0.0, 0.5)
@@ -705,6 +727,8 @@ func _back_to_title() -> void:
 		get_tree().paused = false
 		menu_dim.visible = false
 		state = "title"
+		afterparty = false
+		Achievements.run_new.clear()
 		party.setup(1 + coop.size())
 		_run_started = false
 		_play_t = 0.0
@@ -728,7 +752,11 @@ func _pause() -> void:
 		{"label": "설정", "do": _open_settings},
 		{"label": "조작법", "do": _open_controls},
 	]
-	if map_name != "camp":
+	if afterparty:
+		items.append({"label": "뒷풀이 끝내기 (캠프로)", "do": func():
+			_resume()
+			_result_to_camp()})
+	elif map_name != "camp":
 		items.append({"label": "캠프로 돌아가기", "do": func():
 			_resume()
 			_go("camp", Vector3(20, 0, 19.5))})
@@ -848,9 +876,9 @@ func _settings_stream() -> void:
 
 
 func _settings_keys() -> void:
-	var acts := [["move_up", "위"], ["move_down", "아래"], ["move_left", "왼쪽"], ["move_right", "오른쪽"], ["roll", "구르기 · 점프"], ["run", "달리기"],
-		["skill", "스킬"], ["ult", "궁극기"], ["use_item", "소비 아이템"], ["interact", "상호작용 · 들기"], ["emote", "이모트"], ["switch_job", "직업 바꾸기"]]
-	var items: Array = []
+	var acts := [["roll", "구르기 · 점프"], ["run", "달리기"], ["skill", "스킬"], ["ult", "궁극기"], ["use_item", "소비 아이템"],
+		["interact", "상호작용 · 들기"], ["emote", "이모트"], ["ping", "핑"], ["switch_job", "직업 바꾸기"]]
+	var items: Array = [{"label": "이동 키…", "do": _settings_move_keys, "value": "%s %s %s %s" % [_key_name("move_up").get_slice(" ", 0), _key_name("move_left").get_slice(" ", 0), _key_name("move_down").get_slice(" ", 0), _key_name("move_right").get_slice(" ", 0)]}]
 	for a in acts:
 		var act: String = a[0]
 		items.append({"label": a[1], "type": "key", "action": act, "get": func(): return _key_name(act)})
@@ -863,6 +891,23 @@ func _settings_keys() -> void:
 	items.append({"label": "뒤로", "do": func(): _pop_menu()})
 	var m := PixelMenu.new("키 바꾸기 (고르고 Enter → 새 키)", items, 260)
 	m.back.connect(func(): _pop_menu())
+	_push_menu(m)
+
+
+func _settings_move_keys() -> void:
+	var items: Array = []
+	for a in [["move_up", "위"], ["move_down", "아래"], ["move_left", "왼쪽"], ["move_right", "오른쪽"]]:
+		var act: String = a[0]
+		items.append({"label": a[1], "type": "key", "action": act, "get": func(): return _key_name(act)})
+	items.append({"label": "뒤로", "do": func():
+		_pop_menu()
+		_pop_menu()
+		_settings_keys()})
+	var m := PixelMenu.new("이동 키", items, 220)
+	m.back.connect(func():
+		_pop_menu()
+		_pop_menu()
+		_settings_keys())
 	_push_menu(m)
 
 
@@ -885,10 +930,61 @@ func _apply_quality() -> void:
 		_go(map_name, walker.global_position)
 
 
+## 업적 · 칭호 (쪽 넘김: 7개씩)
+var _ach_page := 0
+func _open_achievements(keep := false) -> void:
+	var ids: Array = Achievements.LIST.keys()
+	var per := 7
+	var pages := ceili(ids.size() / float(per))
+	_ach_page = clampi(_ach_page, 0, pages - 1)
+	var got := 0
+	for id in ids:
+		if Achievements.is_unlocked(id):
+			got += 1
+	var items: Array = []
+	for i in range(_ach_page * per, mini(ids.size(), (_ach_page + 1) * per)):
+		var id: String = ids[i]
+		var a: Array = Achievements.LIST[id]
+		var on := Achievements.is_unlocked(id)
+		var pr := Achievements.progress(id)
+		items.append({"label": ("★ " if on else "· ") + String(a[0]), "do": func(): pass,
+			"label_col": Achievements.GRADE_COL.get(a[2], Color.WHITE) if on else Color("#8a809a"),
+			"value": "칭호 획득" if on else "%d / %d" % [pr[0], pr[1]],
+			"value_col": Color("#9aff9a") if on else Color("#a89cb8"),
+			"desc": "%s\n등급 %s  ·  칭호 [%s]%s" % [a[1], a[2], a[5], "  — 꾸미기에서 달 수 있다" if on else ""],
+			"desc_col": Achievements.GRADE_COL.get(a[2], Color.WHITE) if on else Color("#d8ccb8")})
+	items.append({"label": "쪽", "type": "choice", "options": range(1, pages + 1).map(func(n): return "%d / %d" % [n, pages]),
+		"get": func(): return _ach_page,
+		"set": func(v):
+			_ach_page = v
+			_pop_menu()
+			_open_achievements(true)})
+	items.append({"label": "뒤로", "do": func(): _pop_menu()})
+	var m := PixelMenu.new("업적 · 칭호  (%d / %d)" % [got, ids.size()], items, 300)
+	m.sel = items.size() - 2 if keep else 0
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m, not keep)
+
+
+func _open_credits() -> void:
+	var rows := [["기획 · 원작", "TSWP 팀"], ["개발", "Claude 와 함께"], ["엔진", "Godot 4.7"], ["글꼴", "갈무리 © quiple"],
+		["", "SIL OFL 1.1"], ["그림 · 소리", "자체 제작"], ["", ""], ["함께해 준", "모든 시청자 여러분"]]
+	var items: Array = []
+	for r in rows:
+		items.append({"label": r[0], "type": "info", "value": r[1]})
+	items.append({"label": "뒤로", "do": func(): _pop_menu()})
+	var m := PixelMenu.new("만든 사람들", items, 280)
+	m.back.connect(func(): _pop_menu())
+	_push_menu(m)
+
+
 func _open_controls() -> void:
-	var rows := [["이동", "W A S D"], ["달리기", "Shift"], ["구르기 · 측면 점프", "Space"], ["공격", "왼쪽 클릭"],
-		["스킬", "Q · 오른쪽 클릭"], ["궁극기", "R"], ["소비 아이템", "F"], ["줍기 · 열기 · 사기", "E"], ["직업 바꾸기", "Tab"],
-		["시점 전환 (시험)", "F2"], ["지역 이동 (시험)", "1 · 2 · 3"]]
+	var mv := "%s %s %s %s" % [_key_name("move_up").get_slice(" ", 0), _key_name("move_left").get_slice(" ", 0), _key_name("move_down").get_slice(" ", 0), _key_name("move_right").get_slice(" ", 0)]
+	var rows := [["이동", mv], ["달리기", _key_name("run")], ["구르기 · 측면 점프", _key_name("roll")], ["공격", "왼쪽 클릭"],
+		["스킬", _key_name("skill") + " · 오른쪽 클릭"], ["궁극기", _key_name("ult")], ["소비 아이템", _key_name("use_item")],
+		["줍기 · 열기 · 사기", _key_name("interact")], ["친구 들기 → 던지기", _key_name("interact") + " → " + _key_name("interact")],
+		["이모트 (누른 채 방향)", _key_name("emote")], ["핑 찍기", _key_name("ping") + " · 휠 클릭"], ["직업 바꾸기 (캠프)", _key_name("switch_job")],
+		["협동 참가 (패드)", "Back / Select"]]
 	var items: Array = []
 	for r in rows:
 		items.append({"label": r[0], "value": r[1]})
@@ -987,7 +1083,7 @@ func _hints_tick() -> void:
 
 # ------------------------------------------------------------------ 결과 화면 (전멸 · 승리)
 func _show_result(win: bool) -> void:
-	if state != "play" or args.has("bot"):
+	if state != "play" or args.has("bot") or afterparty:
 		return
 	state = "result"
 	if walker:
@@ -996,22 +1092,61 @@ func _show_result(win: bool) -> void:
 	hud.set_shown(false)
 	menu_dim.visible = true
 	Audio.stinger("st_win" if win else "st_lose")
-	var st: Dictionary = party.stats.get(walker.slot, {"kills": 0, "deaths": 0, "dmg": 0.0, "heal": 0.0})
 	var mins := int(_play_t / 60.0)
-	var items: Array = [
-		{"label": "처치", "type": "info", "value": "%d" % int(st["kills"])},
-		{"label": "쓰러짐", "type": "info", "value": "%d" % int(st["deaths"])},
-		{"label": "모은 금화", "type": "info", "value": "%d" % party.gold},
-		{"label": "걸린 시간", "type": "info", "value": "%d:%02d" % [mins, int(_play_t) % 60]},
-		{"label": "캠프에서 다시" if not win else "캠프로 돌아가기", "do": _result_to_camp},
-		{"label": "타이틀로", "do": _back_to_title},
-	]
-	var m := PixelMenu.new("승리!  여왕을 쓰러뜨렸다" if win else "전멸했다…", items, 220)
+	var board := ResultBoard.new()
+	board.win = win
+	board.members = party_members()
+	board.stats = party.stats
+	board.sub = "난이도 %s  ·  %d:%02d  ·  금화 %d  ·  파티 %d명" % [Diff.NAMES[Diff.level()], mins, int(_play_t) % 60, party.gold, board.members.size()]
+	board.new_ach = Achievements.run_new.duplicate()
+	var items: Array = []
+	if win:
+		items.append({"label": "뒷풀이 (자유롭게 놀기)", "do": _start_afterparty, "desc": "적 없이 이 자리에서 마음껏 놀기\n끝내려면 Esc → 뒷풀이 끝내기"})
+	items.append({"label": "캠프에서 다시" if not win else "캠프로 돌아가기", "do": _result_to_camp})
+	items.append({"label": "타이틀로", "do": _back_to_title})
+	var m := PixelMenu.new("", items, 200)
+	m.top = 182.0 if win else 196.0
 	m.back.connect(func(): pass)
 	_push_menu(m)
+	m.add_child(board)
+	m.move_child(board, 0)
+
+
+## 결과 화면용 파티원 목록: [[파티 번호, 이름, 색], …]
+func party_members() -> Array:
+	var out: Array = []
+	if walker:
+		out.append([walker.slot, walker.nick if walker.nick != "" else "나", walker.team_color])
+	for c in coop:
+		var sl: int = int(c["slot"])
+		out.append([sl, String(c["nick"]), TEAM_COLS[sl % TEAM_COLS.size()]])
+	return out
+
+
+## 뒷풀이: 결과 화면 뒤 바로 로비로 가지 않고 그 자리에서 자유롭게 (적 없음 · 부활 무한)
+var afterparty := false
+func _start_afterparty() -> void:
+	_close_all_menus()
+	menu_dim.visible = false
+	afterparty = true
+	state = "play"
+	hud.set_shown(true)
+	walker.local = true
+	party.lives = 99
+	party.over = false
+	for e in get_tree().get_nodes_in_group("fighters"):
+		if e is Enemy:
+			(e as Enemy).queue_free()
+	for p in get_tree().get_nodes_in_group("fighters"):
+		if p is Player and (p as Player).dead:
+			(p as Player).revive((p as Player).global_position)
+	hud.banner("뒷풀이 시간!", 3.0)
+	hud.notify("뒷풀이 — 마음껏 놀다가 Esc → '뒷풀이 끝내기'", Color("#ffd860"))
 
 
 func _result_to_camp() -> void:
+	afterparty = false
+	Achievements.run_new.clear()
 	_close_all_menus()
 	menu_dim.visible = false
 	party.setup(1 + coop.size())

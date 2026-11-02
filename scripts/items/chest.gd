@@ -17,6 +17,7 @@ var _label: Label3D
 
 func _ready() -> void:
 	add_to_group("interact")
+	add_to_group("chests")
 	collision_layer = 1 if solid else 0
 	var cs := CollisionShape3D.new()
 	var b := BoxShape3D.new()

@@ -1,5 +1,6 @@
 class_name CamRig
 extends Node3D
+
 ## 도트 카메라: 직교 투영, 1칸(1m) = 16픽셀.
 ##  · 탑다운 3/4 시점(위에서 비스듬히) ↔ 측면 시점(옆에서)을 카메라가 돌아가며 부드럽게 전환한다.
 ##  · 위치는 화면 픽셀 단위로 끊고, 남은 소수점은 PixelView 가 화면을 밀어 처리 (도트 흔들림 없음).
@@ -10,6 +11,10 @@ extends Node3D
 ##        상자 끝을 밀 때만 정확히 같이 움직인다 (지연 보간이 없어 캐릭터가 픽셀 사이에서 떨리지 않음)
 ##      - 높이는 발 디딘 땅 기준으로만 천천히 (점프·계단에 화면이 위아래로 튀지 않게)
 ##      - 여럿(로컬 협동)이면 살아 있는 사람들의 가운데
+
+## 셰이더 전역값을 스크립트에서도 읽을 수 있게 (global_shader_parameter_get 은 느리다)
+static var g_bb := 1.6
+static var g_fwd := Vector3(0, -0.8, -0.6)
 
 const PPU := 16.0                    # 1m 당 픽셀
 const TOP_PITCH := deg_to_rad(52.0)  # 탑다운 3/4: 아래로 52도
@@ -172,7 +177,9 @@ func _physics_process(dt: float) -> void:
 		rm.set_shader_parameter("cam_px", Vector2(sr * PPU, su * PPU))
 		rm.set_shader_parameter("time", Time.get_ticks_msec() / 1000.0)
 	cam.size = float(PixelView.GH + PixelView.MARGIN * 2) / PPU / zoom
-	RenderingServer.global_shader_parameter_set("bb_stretch", 1.0 / maxf(0.2, cos(p)))
+	g_bb = 1.0 / maxf(0.2, cos(p))
+	g_fwd = -basis.z
+	RenderingServer.global_shader_parameter_set("bb_stretch", g_bb)
 	RenderingServer.global_shader_parameter_set("cam_pitch", p)
 	RenderingServer.global_shader_parameter_set("cam_fwd", -basis.z)
 	# 단면: 측면으로 갈수록 멀리서부터 선 앞(CUT_NEAR)까지 다가온다

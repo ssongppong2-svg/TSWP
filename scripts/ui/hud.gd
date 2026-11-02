@@ -761,7 +761,7 @@ func _mm_marks_rebuild(players: Array) -> void:
 
 # ---- 알림 (우측 상단): 아이템 · 보스 등장 · 쓰러짐/부활 · 업적
 var feed: Control
-var _feed: Array = []              # [Control, 남은 시간]
+var _feed: Array = []              # [Control, 남은 시간, 줄 높이]
 
 
 func _build_feed() -> void:
@@ -777,7 +777,9 @@ func notify(text: String, col := Color("#fff4d6"), icon: Texture2D = null) -> vo
 	var f := PixelFont.get_font("small")
 	var tw := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, PixelFont.size_of("small")).x
 	var w := minf(150.0, tw + (22.0 if icon else 10.0))
-	row.add_child(UiKit.panel("panel_dark", Vector2(150 - w, 0), Vector2(w, 16)))
+	var two := tw + (22.0 if icon else 10.0) > 150.0         # 길면 두 줄로 (잘리지 않게)
+	var rh := 27.0 if two else 16.0
+	row.add_child(UiKit.panel("panel_dark", Vector2(150 - w, 0), Vector2(w, rh)))
 	var x := 150 - w + 5
 	if icon:
 		var ic := TextureRect.new()
@@ -789,21 +791,30 @@ func notify(text: String, col := Color("#fff4d6"), icon: Texture2D = null) -> vo
 		x += 15
 	var l := PixelFont.label(text, "small", col)
 	l.position = Vector2(x, 2)
-	l.size = Vector2(w - 8, 12)
-	l.clip_text = true
+	l.size = Vector2(w - (x - (150 - w)) - 3, 23 if two else 12)
+	if two:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.add_theme_constant_override("line_spacing", -1)
+	else:
+		l.clip_text = true
 	row.add_child(l)
 	feed.add_child(row)
-	_feed.push_front([row, 3.6])
-	while _feed.size() > 4:
+	_feed.push_front([row, 4.4 if two else 3.6, rh + 1.0])
+	while _feed.size() > 4 or (_feed.size() > 1 and _feed.reduce(func(t, e): return t + float(e[2]), 0.0) > 86.0):
 		(_feed.pop_back()[0] as Control).queue_free()
 
 
 func _feed_tick(dt: float) -> void:
+	var ys: Array = []
+	var acc := 0.0
+	for e in _feed:
+		ys.append(acc)
+		acc += float(e[2])
 	for i in range(_feed.size() - 1, -1, -1):
 		var e: Array = _feed[i]
 		e[1] = float(e[1]) - dt
 		var row := e[0] as Control
-		row.position.y = lerpf(row.position.y, i * 17.0, 1.0 - exp(-14.0 * dt))
+		row.position.y = lerpf(row.position.y, float(ys[i]), 1.0 - exp(-14.0 * dt))
 		row.position.y = roundf(row.position.y)
 		row.modulate.a = clampf(float(e[1]) / 0.4, 0.0, 1.0)
 		if float(e[1]) <= 0.0:

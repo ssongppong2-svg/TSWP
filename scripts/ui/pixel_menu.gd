@@ -58,6 +58,7 @@ func build() -> void:
 	var h := head + items.size() * ROW_H + 8 + (DESC_H if _has_desc else 0)
 	var x0 := left if left >= 0.0 else roundf((PixelView.GW - width) / 2.0)
 	var y0 := top if top >= 0.0 else roundf((PixelView.GH - h) / 2.0) + 18
+	y0 = clampf(y0, 2.0, maxf(2.0, PixelView.GH - h - 2.0))      # 긴 메뉴도 화면 안에
 	_box = Control.new()
 	_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_box)
@@ -91,6 +92,7 @@ func build() -> void:
 		v.position = _origin + Vector2(width - 12 - 96 - 6, i * ROW_H + 1)
 		v.size = Vector2(96, 14)
 		v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		v.grow_horizontal = Control.GROW_DIRECTION_BEGIN        # 긴 값은 왼쪽으로 자란다 (판 밖으로 안 나가게)
 		_box.add_child(v)
 		if String(it.get("type", "button")) == "button":
 			l.size = Vector2(width - 40, 14)

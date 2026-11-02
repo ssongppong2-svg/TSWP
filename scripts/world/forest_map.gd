@@ -123,6 +123,34 @@ func _decorate() -> void:
 	chest_at(RUINS + Vector2(3.0, -2.4))
 	chest_at(POND + Vector2(-5.2, -3.6))
 	chest_at(Vector2(RIDGE.position.x + 11.5, 26.0), 0.0, 1.2, true)
+	# 협동 퍼즐: 발판 둘 + 철창 + 밀 수 있는 상자 + '누르지 마시오' 버튼 (동쪽 풀밭)
+	var pz := PlatePuzzle.new()
+	pz.region = self
+	var pa := find_spot(Vector2(49.0, 35.5), 1.5)
+	var pb := find_spot(Vector2(58.0, 35.5), 1.5)
+	var cg := find_spot(Vector2(53.5, 33.0), 1.0)
+	pz.plate_pos = [pa, pb]
+	pz.cage_pos = cg
+	add_child(pz)
+	for v in [pa, pb, cg]:
+		_mark(terrain.cell_of(v), 3)
+	var cr := PushCrate.new()
+	cr.terrain = terrain
+	add_child(cr)
+	cr.position = find_spot(Vector2(51.5, 38.0), 1.5) + Vector3(0, 0.1, 0)
+	var tb := TrollButton.new()
+	tb.region = self
+	add_child(tb)
+	tb.position = find_spot(Vector2(55.5, 38.5), 1.5)
+	solid(tb.position, 0.3)
+	_mark(terrain.cell_of(tb.position), 2)
+	# 비밀: 금 간 바위 (폭발로만 부서짐) — 서쪽 숲 가장자리 · 북쪽 고원
+	for near in [Vector2(5.5, 24.0), Vector2(44.0, 9.0)]:
+		var rk := CrackedRock.new()
+		rk.region = self
+		add_child(rk)
+		rk.position = find_spot(near, 2.5, 7)
+		_mark(terrain.cell_of(rk.position), 3)
 	scatter_trees(2600)
 	scatter_props([["rock0", 4], ["rock1", 6], ["rock2", 3], ["stump0", 3], ["log0", 2], ["bush_light", 4], ["bush1", 5]])
 	scatter_grass()

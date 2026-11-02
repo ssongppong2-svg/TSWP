@@ -92,7 +92,31 @@ func _process(dt: float) -> void:
 		22:
 			check(main.state == "play" and main.map_name == "camp", "결과 → 캠프")
 			check(main.party.lives == 3 and main.party.gold == 0, "새 판으로 초기화")
+			main._show_result(true)
+			step = 50
+			return
+		50:
+			check(main.state == "result" and main.menu_stack.size() == 1, "승리 → 결과 화면 (MVP 판)")
+			key(KEY_ENTER)                                  # 뒷풀이
+		51:
+			check(main.state == "play" and main.afterparty and main.party.lives >= 99, "결과 → 뒷풀이")
 			key(KEY_ESCAPE)
+		52:
+			var m: PixelMenu = main.menu_stack[-1]
+			var idx := -1
+			for i in m.items.size():
+				if String(m.items[i]["label"]).begins_with("뒷풀이 끝내기"):
+					idx = i
+			check(idx >= 0, "일시정지에 '뒷풀이 끝내기'")
+			m.sel = maxi(idx, 0)
+			key(KEY_ENTER)
+		53, 54:
+			pass
+		55:
+			check(main.state == "play" and main.map_name == "camp" and not main.afterparty, "뒷풀이 끝 → 캠프")
+			key(KEY_ESCAPE)
+			step = 23
+			return
 		23:
 			key(KEY_UP)
 			key(KEY_UP)                                     # 게임 종료 바로 위 = 타이틀로

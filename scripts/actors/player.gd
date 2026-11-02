@@ -807,6 +807,7 @@ func pick_up(id: String) -> void:
 		get_tree().call_group("hud", "toast_item", id)
 		Achievements.add(get_tree(), "items")
 	get_tree().call_group("hud", "notify", "%s: %s" % [nick, Items.get_item(id).get("name", id)], Items.color(id), Hud._item_tex(id))
+	get_tree().call_group("party", "record", self, "items", 1)
 
 
 ## 장비 하나 내려놓기 (메뉴에서 — 친구에게 주거나 버리기)
@@ -906,6 +907,7 @@ func _ult() -> void:
 			velocity = Vector3(to.x / t, 0.5 * GRAV * t, to.z / t)
 			_leap = true
 			_leap_t = 0.0
+			_leap_u = u
 			_coyote = 0.0
 			invuln = maxf(invuln, t)
 			spr.stretch(1.2)
@@ -933,6 +935,7 @@ func _ult() -> void:
 				if fi.team == team and fi != self:
 					if fi.dead and fi is Player:
 						(fi as Player).revive(fi.global_position)
+						get_tree().call_group("party", "record", self, "saves", 1)
 					var h := Hit.make(fi.max_hp(), self, Vector3.ZERO, "item")
 					h.heal = true
 					fi.take(h)
@@ -972,9 +975,10 @@ func _ult() -> void:
 				rig.shake(4.0)
 
 
+var _leap_u := {}
 func _leap_land() -> void:
 	_leap = false
-	var u: Dictionary = J["ult"]
+	var u: Dictionary = _leap_u if _leap_u.has("dmg") else DB.JOBS["warrior"]["ult"]   # 뛰는 사이 직업이 바뀌어도
 	var c := global_position
 	Audio.play("smash", c)
 	Audio.play("land_heavy", c)
@@ -1052,8 +1056,10 @@ func _throw() -> void:
 	_drop_carry()
 	var dir := aim if aim.length() > 0.1 else facing
 	c.throw_from(self, dir.normalized() * 11.0 + Vector3(0, 6.5, 0))
-	if c is Player and local:
-		Achievements.add(get_tree(), "ally_throws")
+	if c is Player:
+		get_tree().call_group("party", "record", self, "throws", 1)
+		if local:
+			Achievements.add(get_tree(), "ally_throws")
 	Audio.play("throw", global_position)
 	Audio.play("troll", global_position, -8.0)
 	spr.play("attack", true)

@@ -11,6 +11,7 @@ func _ready() -> void:
 	add_child(BB.make("res://assets/sprites/loot.png", "wardrobe", {"unique": true, "up_normal": 0.7}))
 	add_child(BB.blob(0.7, 0.3, 0.9))
 	_label = Label3D.new()
+	_label.add_to_group("world_tag")             # 타이틀 메뉴 뒤에서는 숨긴다
 	_label.text = "[E] 꾸미기"
 	_label.font = PixelFont.get_font("small")
 	_label.font_size = PixelFont.size_of("small")

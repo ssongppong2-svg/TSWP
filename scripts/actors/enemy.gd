@@ -348,6 +348,7 @@ func _explode() -> void:
 		return
 	_exploded = true
 	var r := float(E.get("blast", 1.8)) * (2.0 if Diff.meme("double_boom") else 1.0)
+	get_tree().call_group("breakable", "blast", global_position, r)
 	Audio.play("explode_s", global_position)
 	Fx.pop(get_parent(), global_position + Vector3(0, 0.4, 0), ["boom0", "boom1", "boom2", "boom3", "boom4"], 16.0)
 	Particles.burst(get_parent(), global_position + Vector3(0, 0.4, 0), Color("#fff0a0"), Color("#e05a2a"), 26, 6.0)
