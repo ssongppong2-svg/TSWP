@@ -102,6 +102,7 @@ func _ready() -> void:
 
 # ------------------------------------------------------------------ 지역
 func _load_map(name_: String, at: Variant = null) -> void:
+	coop_nodes.clear()
 	if world:
 		Audio.detach_world()
 		world.queue_free()
@@ -188,6 +189,9 @@ func _load_map(name_: String, at: Variant = null) -> void:
 	bd.build(map.WM, env.P)
 	rig.target = walker
 	rig.focus = walker.position + Vector3(0, 0.6, 0)
+	for c in coop:
+		_spawn_coop(c)
+	_refresh_targets()
 	walker.rig = rig
 	map.rig = rig
 	map.enemy_spawned.connect(func(e: Enemy): e.killed.connect(party.on_enemy_killed))
@@ -199,6 +203,13 @@ func _load_map(name_: String, at: Variant = null) -> void:
 			_show_title("부화의 여왕"))
 		(map as NestMap).victory.connect(func():
 			hud.banner("부화의 여왕을 쓰러뜨렸다!", 6.0)
+			Achievements.add(get_tree(), "boss_kills")
+			if int(party.stats.get(walker.slot, {}).get("deaths", 0)) == 0:
+				Achievements.add(get_tree(), "boss_nodeath")
+			if Prefs.difficulty == 3:
+				Achievements.add(get_tree(), "meme_wins")
+			elif Prefs.difficulty == 2:
+				Achievements.add(get_tree(), "god_wins")
 			get_tree().create_timer(5.0).timeout.connect(func(): _show_result(true))
 			if args.has("bot"):
 				args["quit"] = str(_game_t + 4.0))
@@ -355,15 +366,19 @@ func _process(dt: float) -> void:
 			air.global_position = Vector3(rig.focus.x, rig.focus.y, rig.focus.z)
 		map.spawn_check([walker])
 		map.tick([walker])
+	_wheel_tick()
 	if state != "play":
 		return
 	_play_t += dt
+	_coop_tick()
 	_hints_tick()
 	if Input.is_action_just_pressed("debug_side"):
 		_manual_side = rig.side_goal < 0.5
+	if wheel:
+		return                                   # 이모트 휠이 열려 있으면 숫자 키는 이모트
 	if Input.is_key_pressed(KEY_1) and (map_name != "camp" or party.over):
 		if party.over:
-			party.setup(1)
+			party.setup(1 + coop.size())
 		_go("camp", Vector3(20, 0, 19.5))
 	if Input.is_key_pressed(KEY_2) and map_name != "forest":
 		_go("forest", Vector3(32, 0, 44))
@@ -667,7 +682,7 @@ func _back_to_title() -> void:
 		get_tree().paused = false
 		menu_dim.visible = false
 		state = "title"
-		party.setup(1)
+		party.setup(1 + coop.size())
 		_play_t = 0.0
 		_load_map("camp", null)
 		_enter_title())
@@ -930,6 +945,12 @@ func _hints_tick() -> void:
 				_hint_once("job", [["E", "이 직업으로"], ["Tab", "직업 돌려 보기"]], 5.0)
 	if walker.hp < walker.max_hp() * 0.35:
 		_hint_once("low", [["Space", "구르면 잠깐 무적"]], 4.0)
+	if not Input.get_connected_joypads().is_empty() and coop.size() < 3:
+		_hint_once("coop", [["패드 Back", "같이 하기 (최대 4명)"]], 6.0)
+	if not coop.is_empty():
+		_hint_once("grab", [["E", "친구 들기"], ["클릭", "던지기"], ["T", "이모트"], ["휠클릭", "핑"]], 6.0)
+	else:
+		_hint_once("social", [["T", "이모트"], ["휠클릭", "핑"], ["E", "약한 적 들기"]], 5.0)
 	if walker.inv and walker.inv.cons != "":
 		_hint_once("cons", [["F", "%s 쓰기" % Items.get_item(walker.inv.cons).get("name", "")]], 4.0)
 	if walker.ult >= DB.ULT_MAX:
@@ -969,7 +990,7 @@ func _show_result(win: bool) -> void:
 func _result_to_camp() -> void:
 	_close_all_menus()
 	menu_dim.visible = false
-	party.setup(1)
+	party.setup(1 + coop.size())
 	state = "play"
 	_play_t = 0.0
 	hud.set_shown(true)
@@ -1031,6 +1052,10 @@ func open_wardrobe(p: Node) -> void:
 		for e in arr:
 			out.append(e[0])
 		return out
+	var tlist := Achievements.titles()
+	var tnames: Array = []
+	for e in tlist:
+		tnames.append(e[1])
 	var m := PixelMenu.new("꾸미기", [
 		{"label": "이름", "type": "text", "get": func(): return Prefs.player_name, "set": func(v):
 			Prefs.player_name = String(v).substr(0, 12) if String(v).strip_edges() != "" else Prefs.player_name
@@ -1040,6 +1065,12 @@ func open_wardrobe(p: Node) -> void:
 		{"label": "옷", "type": "choice", "options": names.call(CharLook.CLOTH), "get": func(): return Prefs.look_cloth, "set": func(v): Prefs.look_cloth = v; upd.call(),
 			"desc": "직업색: 파랑 용사 · 주황 폭탄마 · 초록 의사 · 갈색 궁수 (같은 색으로 바꾸면 헷갈릴 수 있다!)"},
 		{"label": "모자", "type": "choice", "options": names.call(CharLook.HATS), "get": func(): return Prefs.look_hat, "set": func(v): Prefs.look_hat = v; upd.call()},
+		{"label": "칭호", "type": "choice", "options": tnames, "get": func():
+			for i in tlist.size():
+				if tlist[i][0] == Prefs.title_id:
+					return i
+			return 0, "set": func(v): Prefs.title_id = String(tlist[v][0]),
+			"desc": "업적을 이루면 칭호가 열린다 (이름 앞에 붙는다). 열린 칭호 %d / %d" % [tlist.size() - 1, Achievements.LIST.size()]},
 		{"label": "무작위", "do": func():
 			var r := RandomNumberGenerator.new()
 			r.randomize()
@@ -1063,3 +1094,152 @@ func _close_wardrobe(from_play: bool) -> void:
 		_resume()
 	else:
 		_pop_menu()
+
+
+# ------------------------------------------------------------------ 로컬 협동 (패드 Back 버튼으로 참가, 최대 4명)
+const TEAM_COLS := [Color("#ffe066"), Color("#6ad8ff"), Color("#ff8ad0"), Color("#8aff8a")]
+var coop: Array = []                         # [{pad, slot, job, look, nick}] — 지역을 옮겨도 다시 세운다
+var coop_nodes := {}                         # slot → Player
+
+
+func _coop_tick() -> void:
+	# 참가: 아직 안 쓰는 패드의 Back(View) 버튼
+	for dev in Input.get_connected_joypads():
+		var used := false
+		for c in coop:
+			if int(c["pad"]) == dev:
+				used = true
+		if not used and coop.size() < 3 and Input.is_joy_button_pressed(dev, JOY_BUTTON_BACK):
+			_join(dev)
+		# 패드 Start = 일시정지
+		if used and Input.is_joy_button_pressed(dev, JOY_BUTTON_START) and not _pad_start.get(dev, false):
+			_pause()
+		_pad_start[dev] = Input.is_joy_button_pressed(dev, JOY_BUTTON_START)
+	if args.has("coop") and coop.size() < int(args["coop"]):
+		_join(-10 - coop.size())                   # 시험·영상용 가짜 패드 (따라다니며 싸우는 친구)
+	for c in coop:
+		if int(c["pad"]) < -1 and coop_nodes.has(c["slot"]):
+			_buddy_ai(coop_nodes[c["slot"]], get_physics_process_delta_time())
+	var many := not coop.is_empty()
+	for f in get_tree().get_nodes_in_group("fighters"):
+		if f is Player:
+			(f as Player).update_nameplate(many)
+			(f as Player).leash = many
+var _pad_start := {}
+
+
+func _join(dev: int) -> void:
+	var r := RandomNumberGenerator.new()
+	r.randomize()
+	var slot := coop.size() + 1
+	var c := {"pad": dev, "slot": slot, "job": DB.JOB_ORDER[r.randi_range(0, 3)], "look": CharLook.random_look(r), "nick": "P%d" % (slot + 1)}
+	coop.append(c)
+	if Controls.pads_for_p1:
+		Controls.pads_for_p1 = false               # 이제 패드는 각자 — 1P 는 키보드·마우스
+		Controls.ensure()
+	party.lives += 3                             # 공유 부활 = 인원 × 3
+	_spawn_coop(c)
+	_refresh_targets()
+	hud.notify("%s 참가! %s" % [c["nick"], ("(패드 %d)" % (dev + 1)) if dev >= 0 else "(자동)"], TEAM_COLS[slot])
+	Audio.play("ui_start")
+
+
+func _spawn_coop(c: Dictionary) -> void:
+	var p := Player.new()
+	p.local = false
+	p.pad = int(c["pad"])
+	p.slot = int(c["slot"])
+	p.job = String(c["job"])
+	p.look = c["look"]
+	p.nick = String(c["nick"])
+	p.team_color = TEAM_COLS[p.slot % TEAM_COLS.size()]
+	p.terrain = map.terrain
+	world.add_child(p)
+	var at := walker.global_position + Vector3(randf_range(-1.2, 1.2), 0.2, randf_range(0.6, 1.4))
+	at.y = map.terrain.height_at(at) + 0.2
+	p.global_position = at
+	p.spawn_point = at
+	p.rig = rig
+	p.job_changed.connect(func(pl: Player): c["job"] = pl.job)
+	coop_nodes[p.slot] = p
+	Fx.pop(world, at, ["spark0", "spark1", "spark2"], 12.0)
+
+
+func _refresh_targets() -> void:
+	var ts: Array = [walker]
+	for slot in coop_nodes:
+		if is_instance_valid(coop_nodes[slot]):
+			ts.append(coop_nodes[slot])
+	rig.targets = ts
+
+
+# ------------------------------------------------------------------ 핑 · 이모트 휠
+func ping_at(p: Node, at: Vector3) -> void:
+	if map == null:
+		return
+	PingMark.place(map, at, p as Player)
+	if p == walker:
+		Achievements.add(get_tree(), "pings")
+
+
+var wheel: EmoteWheel
+func _wheel_tick() -> void:
+	if state != "play" or args.has("bot"):
+		if wheel:
+			wheel.queue_free()
+			wheel = null
+		return
+	if Input.is_action_just_pressed("emote") and wheel == null:
+		wheel = EmoteWheel.new()
+		wheel.center = Vector2(240, 135)
+		pv.ui.add_child(wheel)
+	if wheel == null:
+		return
+	var mp := pv.to_ui(get_tree().root.get_mouse_position())
+	wheel.pick_dir(mp - wheel.center)
+	for i in Emote.IDS.size():
+		if Input.is_key_pressed(KEY_1 + i):
+			wheel.sel = i
+	if not Input.is_action_pressed("emote"):
+		var id := wheel.chosen()
+		wheel.queue_free()
+		wheel = null
+		if id != "":
+			walker.emote(id)
+			Achievements.add(get_tree(), "emotes")
+
+
+
+## 가짜 친구 (시험·영상): 1P 를 따라다니고 가까운 적을 친다 · 가끔 장난 (이모트 · 1P 를 들어 던지기)
+var _buddy_t := {}
+func _buddy_ai(p: Player, dt: float) -> void:
+	if p == null or not is_instance_valid(p) or p.dead:
+		return
+	var c := p.ctrl
+	c.clear()
+	var t: float = _buddy_t.get(p.slot, 0.0) + dt
+	_buddy_t[p.slot] = t
+	var best: Node3D = null
+	var bd := 7.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not (e as Fighter).dead:
+			var d := (e as Node3D).global_position.distance_to(p.global_position)
+			if d < bd:
+				bd = d
+				best = e
+	var goal := walker.global_position + Vector3(cos(p.slot * 2.1), 0, sin(p.slot * 2.1)) * 1.8
+	if best:
+		goal = best.global_position
+		c.has_aim = true
+		c.aim_world = best.global_position
+		c.attack_held = bd < (1.6 if p.job == "warrior" else 5.0)
+		c.skill = fmod(t, 4.0) < dt and bd < 4.0
+		c.ult = p.ult >= DB.ULT_MAX
+	var to := goal - p.global_position
+	to.y = 0.0
+	var want_d := 1.0 if best and p.job == "warrior" else (4.0 if best else 0.6)
+	if to.length() > want_d:
+		c.move = Vector2(to.x, to.z).normalized()
+		c.run = to.length() > 4.0
+	if fmod(t, 9.0) < dt:
+		p.emote(["lol", "thumb", "smile", "what"][p.slot % 4])

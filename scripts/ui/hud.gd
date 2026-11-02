@@ -752,6 +752,8 @@ func _mm_marks_rebuild(players: Array) -> void:
 			_mm_dot(np, Color("#ffd860"))
 	if boss and is_instance_valid(boss) and not boss.dead:
 		_mm_dot(boss.global_position, Color("#ff4a4a"), 3)
+	for pg in get_tree().get_nodes_in_group("pings"):
+		_mm_dot((pg as Node3D).global_position, (pg as PingMark).col, 3)
 	for p in players:
 		var pl := p as Player
 		_mm_dot(pl.global_position, Color(0.5, 0.5, 0.5) if pl.dead else pl.team_color, 3)

@@ -45,6 +45,7 @@ func _physics_process(dt: float) -> void:
 		Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 14.0)
 		Fx.pop(get_parent(), fi.center() + Vector3(0, 0.7, 0), ["spark0", "spark1", "spark2"], 10.0)
 		if fi is Player and (fi as Player).local:
+			Achievements.add(get_tree(), "slips")
 			get_tree().call_group("hud", "toast_text", "미끄덩!", Color("#ffe060"))
 		queue_free()
 		return

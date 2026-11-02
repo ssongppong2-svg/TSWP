@@ -71,6 +71,8 @@ func interact(p: Node) -> void:
 		(mesh.material_override as ShaderMaterial).set_shader_parameter("region", BB.region_uv(ATLAS, "chest_mimic"))
 		Audio.play("troll", global_position)
 		Audio.play("spider_bite", global_position)
+		if p is Player and (p as Player).local:
+			Achievements.add(get_tree(), "mimic_bites")
 		if p is Fighter:
 			var pf := p as Fighter
 			var push := Combat.push(global_position, pf.global_position, 9.0, 0.5)

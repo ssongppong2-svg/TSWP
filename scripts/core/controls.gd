@@ -29,6 +29,9 @@ const PAD_AXIS := {"move_left": [JOY_AXIS_LEFT_X, -1.0], "move_right": [JOY_AXIS
 	"move_up": [JOY_AXIS_LEFT_Y, -1.0], "move_down": [JOY_AXIS_LEFT_Y, 1.0]}
 
 
+static var pads_for_p1 := true          # 로컬 협동이 시작되면 패드는 각자 몫 → 1P 는 키보드·마우스만
+
+
 static func ensure() -> void:
 	var names := {}
 	for k in DEFAULT:
@@ -50,11 +53,11 @@ static func ensure() -> void:
 			var m := InputEventMouseButton.new()
 			m.button_index = MOUSE[a]
 			InputMap.action_add_event(a, m)
-		if PAD_BTN.has(a):
+		if PAD_BTN.has(a) and pads_for_p1:
 			var j := InputEventJoypadButton.new()
 			j.button_index = PAD_BTN[a]
 			InputMap.action_add_event(a, j)
-		if PAD_AXIS.has(a):
+		if PAD_AXIS.has(a) and pads_for_p1:
 			var ax := InputEventJoypadMotion.new()
 			ax.axis = PAD_AXIS[a][0]
 			ax.axis_value = PAD_AXIS[a][1]

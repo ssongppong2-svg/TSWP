@@ -80,6 +80,8 @@ func on_enemy_killed(e: Enemy, by: Node) -> void:
 	if by is Player:
 		_stat(by, "kills", 1)
 		(by as Player).on_kill(e)
+		if (by as Player).local:
+			Achievements.add(get_tree(), "kills")
 	# 아이템 떨어뜨리기 (적 시스템.md: 일반 몬스터도 낮은 확률로)
 	if e.is_inside_tree():
 		if rng.randf() < DROP_ITEM:

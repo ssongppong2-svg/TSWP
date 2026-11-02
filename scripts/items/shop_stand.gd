@@ -81,6 +81,8 @@ func interact(p: Node) -> void:
 			get_tree().call_group("hud", "toast_text", "금화가 모자라다 (%d G 필요)" % cost, Color("#ff9a8a"))
 		return
 	party.add_gold(-cost)
+	if (p as Player).local:
+		Achievements.add(get_tree(), "spent", cost)
 	Audio.play("coin", global_position)
 	(p as Player).pick_up(id)
 	sold = true

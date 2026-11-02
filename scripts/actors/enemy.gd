@@ -74,6 +74,10 @@ func _physics_process(dt: float) -> void:
 	tick_status(dt)
 	if dead:
 		return
+	if held:
+		_set_anim("attack", 0)
+		_anim_tick(dt)
+		return
 	st_t -= dt
 	_think -= dt
 	if _think <= 0.0:

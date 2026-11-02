@@ -6,6 +6,7 @@ var f: Fighter
 var mat: ShaderMaterial
 var ghost := 1.0
 var show_t := 0.0
+var always := false                # 로컬 협동 플레이어: 늘 보이고 낮으면 색이 바뀐다 (UI 시스템.md)
 
 
 static func attach(fighter: Fighter, width_px := 16) -> HpBar:
@@ -32,8 +33,10 @@ func _process(dt: float) -> void:
 		visible = false
 		return
 	show_t -= dt
-	visible = show_t > 0.0
+	visible = show_t > 0.0 or always
 	var r := f.ratio()
+	if always:
+		mat.set_shader_parameter("fill", Color("#6ad07a") if r > 0.4 else (Color("#e8c050") if r > 0.2 else (Color("#e0504a") if int(Time.get_ticks_msec() / 200) % 2 == 0 else Color("#ffffff"))))
 	ghost = move_toward(ghost, r, dt * 0.8) if ghost > r else r
 	mat.set_shader_parameter("ratio", r)
 	mat.set_shader_parameter("ghost", ghost)

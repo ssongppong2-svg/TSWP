@@ -23,6 +23,13 @@ var local := true
 var slot := 0                         # 파티 안 번호 (기록·팀색 — 온라인이면 접속 순서)
 var nick := "용사"                    # 닉네임 (문서: 스팀 닉네임 — 지금은 설정의 이름)
 var look := {}                        # 꾸미기 (CharLook) — 1P 는 설정값, 나머지는 무작위
+var pad := -1                         # 로컬 협동: 이 사람의 패드 번호 (-1 = 키보드·마우스 1P)
+var carrying: Fighter                 # 들고 있는 것 (아군·적)
+var carried_by: Player                # 나를 들고 있는 사람
+var _carry_t := 0.0
+var _mash := 0                        # 들렸을 때 버둥거린 횟수 (5번이면 빠져나온다)
+var leash := false                    # 로컬 협동: 화면 밖으로 못 나가게
+var nameplate: Label3D
 var job := "warrior"
 var J: Dictionary
 var spr: CharSprite
@@ -57,6 +64,7 @@ var _leap_t := 0.0
 var _ult_lock := 0.0                  # 궁극기 시전 중 (궁수 겨누기)
 var crown: MeshInstance3D             # 저주받은 왕관 (머리 위)
 var _was_hidden := false
+var _shove_t := 0.0
 # 패시브 상태
 var _passive_t := 0.0
 var _blast_t := 0.0                   # 폭풍 질주 남은 시간
@@ -141,6 +149,11 @@ func _physics_process(dt: float) -> void:
 		return
 	if local:
 		ctrl.poll_local(rig, global_position.y + 0.5)
+	elif pad >= 0:
+		ctrl.poll_pad(pad, self)
+	if carried_by:
+		_carried_tick(dt)
+		return
 	var sd := side()
 	var yaw := rig.yaw if rig else 0.0
 	var fwd := Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
@@ -164,6 +177,8 @@ func _physics_process(dt: float) -> void:
 	var spd := (RUN if ctrl.run else WALK) * float(J["speed"]) * move_mul()
 	if attack_t > 0.0:
 		spd *= 0.4
+	if carrying:
+		spd *= 0.75
 	# ---- 중력·점프
 	if is_on_floor():
 		_coyote = COYOTE
@@ -202,12 +217,17 @@ func _physics_process(dt: float) -> void:
 			roll_dir = dir.normalized()
 			spr.stretch(-0.8)
 			invuln = maxf(invuln, 0.18 * stat("iframe"))
+			_shove_t = ROLL_T
 			if inv and inv.fx("roll_stealth") > 0:
 				hidden_t = maxf(hidden_t, ROLL_T + 1.0)
 			Audio.play("dash", global_position)
 			Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 16.0)
 	# ---- 공격 · 스킬
-	if ctrl.attack_held and attack_cd <= 0.0 and roll_t <= 0.0 and _ult_lock <= 0.0 and not _leap:
+	if carrying and ctrl.attack:
+		_throw()
+	elif carrying:
+		pass
+	elif ctrl.attack_held and attack_cd <= 0.0 and roll_t <= 0.0 and _ult_lock <= 0.0 and not _leap:
 		_basic()
 	if ctrl.skill and skill_cd <= 0.0 and roll_t <= 0.0 and _ult_lock <= 0.0 and not _leap:
 		_skill()
@@ -218,6 +238,10 @@ func _physics_process(dt: float) -> void:
 			Audio.play("ui_denied")
 	if ctrl.use_item:
 		use_consumable()
+	if ctrl.emote:
+		emote("lol")
+	if ctrl.ping:
+		get_tree().call_group("game", "ping_at", self, aim_point)
 	if ctrl.interact:
 		# 가장 가까운 것 하나 (아이템·상자·진열대·표지가 겹쳐 있어도 손 닿는 것부터)
 		var pick: Node = null
@@ -227,8 +251,12 @@ func _physics_process(dt: float) -> void:
 			if d < float(n.get("reach")) and d < pd:
 				pd = d
 				pick = n
-		if pick:
+		if carrying:
+			_throw()
+		elif pick:
 			pick.interact(self)
+		else:
+			_try_grab()
 	if ctrl.switch_job:
 		var i := DB.JOB_ORDER.find(job)
 		set_job(DB.JOB_ORDER[(i + 1) % DB.JOB_ORDER.size()])
@@ -246,9 +274,16 @@ func _physics_process(dt: float) -> void:
 		var off := global_position.dot(n) - rig.lane_z
 		velocity -= n * velocity.dot(n)
 		velocity -= n * off * 8.0
+	if leash:
+		_leash()
 	move_and_slide()
 	velocity.x -= kv.x
 	velocity.z -= kv.z
+	if _shove_t > 0.0:
+		_shove_t -= dt
+		_shove()
+	if carrying:
+		_carry_hold(dt)
 	_after_move(dt)
 
 
@@ -373,6 +408,8 @@ func _on_damaged(_f: Fighter, h: Hit, amt: float) -> void:
 func _die() -> void:
 	super._die()
 	get_tree().call_group("hud", "notify", "%s 쓰러짐!" % nick, Color("#ff8a7a"))
+	if local:
+		Achievements.add(get_tree(), "deaths")
 	_leap = false
 	_ult_lock = 0.0
 	Audio.play("die", global_position)
@@ -759,6 +796,7 @@ func pick_up(id: String) -> void:
 	Fx.pop(get_parent(), center() + Vector3(0, 0.5, 0), ["spark0", "spark1", "spark2"], 16.0)
 	if local:
 		get_tree().call_group("hud", "toast_item", id)
+		Achievements.add(get_tree(), "items")
 	get_tree().call_group("hud", "notify", "%s: %s" % [nick, Items.get_item(id).get("name", id)], Items.color(id), Hud._item_tex(id))
 
 
@@ -944,3 +982,161 @@ func _leap_land() -> void:
 	if rig:
 		rig.shake(7.0)
 	Combat.hitstop(get_tree(), 0.08)
+
+
+
+# ------------------------------------------------------------------ 파티: 들기 · 던지기 · 밀치기 · 이모트
+## 손 닿는 곳의 아군(또는 작은 적)을 번쩍 든다 — 상호작용할 게 없을 때 E
+func _try_grab() -> void:
+	var best: Fighter = null
+	var bd := 1.1
+	for f in get_tree().get_nodes_in_group("fighters"):
+		var o := f as Fighter
+		if o == self or o.dead or o.held or o is Queen:
+			continue
+		if o is Player and (o as Player).carrying:
+			continue
+		var d := o.global_position.distance_to(global_position)
+		if d < bd:
+			bd = d
+			best = o
+	if best == null:
+		return
+	carrying = best
+	best.held = true
+	_carry_t = 0.0
+	if best is Player:
+		(best as Player).carried_by = self
+		(best as Player)._mash = 0
+	Audio.play("pickup", global_position)
+	spr.stretch(-0.5)
+	if best is Player:
+		get_tree().call_group("hud", "notify", "%s 이(가) %s 을(를) 번쩍!" % [nick, (best as Player).nick], Color("#ffd860"))
+
+
+func _carry_hold(dt: float) -> void:
+	_carry_t += dt
+	if not is_instance_valid(carrying) or carrying.dead or dead:
+		_drop_carry()
+		return
+	carrying.global_position = global_position + Vector3(0, 1.25, 0)
+	carrying.velocity = Vector3.ZERO
+	# 적은 4초, 아군은 버둥거리면 빠져나간다
+	if carrying is Enemy and _carry_t > 4.0:
+		_drop_carry()
+
+
+func _drop_carry() -> void:
+	if is_instance_valid(carrying):
+		carrying.held = false
+		if carrying is Player:
+			(carrying as Player).carried_by = null
+	carrying = null
+
+
+## 조준한 쪽으로 던지기 (아군 피해는 없지만 부딪힌 것들은 아프다 · 절벽 너머로도…)
+func _throw() -> void:
+	if not is_instance_valid(carrying):
+		carrying = null
+		return
+	var c := carrying
+	_drop_carry()
+	var dir := aim if aim.length() > 0.1 else facing
+	c.throw_from(self, dir.normalized() * 11.0 + Vector3(0, 6.5, 0))
+	if c is Player and local:
+		Achievements.add(get_tree(), "ally_throws")
+	Audio.play("throw", global_position)
+	Audio.play("troll", global_position, -8.0)
+	spr.play("attack", true)
+	attack_t = 0.25
+	spr.wobble(1.0, 1.2)
+	Fx.pop(get_parent(), global_position + dir * 0.5, ["dust0", "dust1", "dust2", "dust3"], 16.0)
+
+
+## 들려 있을 때: 꼼짝 못 하고 구르기 연타 5번이면 빠져나간다
+func _carried_tick(dt: float) -> void:
+	if not is_instance_valid(carried_by) or carried_by.dead or carried_by.carrying != self:
+		carried_by = null
+		held = false
+		return
+	velocity = Vector3.ZERO
+	spr.play("fall")
+	if ctrl.roll or ctrl.attack:
+		_mash += 1
+		spr.wobble(1.0 if _mash % 2 == 0 else -1.0, 1.0)
+		if _mash >= 5:
+			var by := carried_by
+			by._drop_carry()
+			throw_from(by, Vector3(randf_range(-2, 2), 6.0, randf_range(-2, 2)))
+			thrown_t = 0.0
+			Audio.play("jump", global_position)
+	spr.update(dt)
+
+
+## 구르면서 아군에 부딪히면 밀쳐 낸다 (트롤)
+func _shove() -> void:
+	for f in Combat.in_radius(get_tree(), global_position + roll_dir * 0.3, 0.45, 1.0):
+		var o := f as Fighter
+		if o == self or o.team != team or o.held:
+			continue
+		if o.kv.length() > 5.0:
+			continue
+		o.kv += roll_dir * 8.0 + Vector3(0, 2.5, 0)
+		o.flash = 0.06
+		Audio.play("troll", global_position, -10.0)
+
+
+## 로컬 협동: 다른 사람들 가운데에서 너무 멀어지지 못하게 (한 화면 안에)
+func _leash() -> void:
+	var c := Vector3.ZERO
+	var n := 0
+	for f in get_tree().get_nodes_in_group("fighters"):
+		if f is Player and f != self and not (f as Player).dead:
+			c += (f as Node3D).global_position
+			n += 1
+	if n == 0:
+		return
+	c /= n
+	var d := global_position - c
+	var lim := Vector2(12.5, 7.5)
+	if absf(d.x) > lim.x and signf(velocity.x) == signf(d.x):
+		velocity.x = 0.0
+	if absf(d.z) > lim.y and signf(velocity.z) == signf(d.z):
+		velocity.z = 0.0
+
+
+## 이모트: 머리 위 말풍선 그림 (UI 시스템.md)
+func emote(id: String) -> void:
+	Emote.pop_on(self, id)
+
+
+## 머리 위 이름 + 체력바 (여럿일 때) — 체력이 낮으면 바 색이 바뀌고 깜빡인다
+var _hpbar: HpBar
+func update_nameplate(show: bool) -> void:
+	if not show:
+		if nameplate:
+			nameplate.visible = false
+		if _hpbar:
+			_hpbar.always = false
+		return
+	if nameplate == null:
+		nameplate = Label3D.new()
+		nameplate.font = PixelFont.get_font("small")
+		nameplate.font_size = PixelFont.size_of("small")
+		nameplate.pixel_size = 1.0 / 16.0
+		nameplate.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		nameplate.no_depth_test = true
+		nameplate.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		nameplate.outline_modulate = Color(0.1, 0.08, 0.12)
+		nameplate.outline_size = 3
+		nameplate.render_priority = 4
+		nameplate.outline_render_priority = 3
+		add_child(nameplate)
+		_hpbar = HpBar.attach(self, 18)
+	_hpbar.always = true
+	_hpbar.position.y = 1.62 if not crown or not crown.visible else 1.95
+	nameplate.visible = not dead
+	var title := ("[%s] " % Achievements.title_name(Prefs.title_id)) if local and Prefs.title_id != "" else ""
+	nameplate.text = title + nick
+	nameplate.modulate = team_color
+	nameplate.position.y = _hpbar.position.y + 0.38

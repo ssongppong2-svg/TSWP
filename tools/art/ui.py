@@ -351,6 +351,75 @@ def logo():
     return a
 
 
+# ------------------------------------------------------------------ 이모트 (말풍선 14x14: 흰 풍선 + 그림)
+def bubble():
+    a = canvas(16, 16)
+    m = ell(16, 16, 8, 7, 7.4, 6.8)
+    m[13:16, 4:7] = True
+    m[13, 4:9] = True
+    paint(a, m, "#fffaf0")
+    paint(a, m & ~nb(m, 0, 1), "#d8d0c0")
+    outline(a, OUTL)
+    return a
+
+
+def emote(kind):
+    a = bubble()
+    Y = "#ffd860"
+    face = ell(16, 16, 8, 7, 4.6, 4.4)
+    if kind in ("smile", "lol", "cry"):
+        paint(a, face, Y)
+        paint(a, face & ~nb(face, 0, 1), "#d8a030")
+        if kind == "smile":
+            for (x, y) in [(6, 6), (10, 6), (6, 9), (7, 10), (8, 10), (9, 10), (10, 9)]:
+                a[y, x] = hx(OUTL)
+        elif kind == "lol":
+            for (x, y) in [(5, 6), (6, 5), (7, 6), (9, 6), (10, 5), (11, 6)]:
+                a[y, x] = hx(OUTL)
+            a[8:11, 6:11] = hx("#8a2a3a")
+            a[8, 6:11] = hx("#ffffff")
+            a[7:10, 3] = hx("#7ac8ff")
+            a[7:10, 12] = hx("#7ac8ff")
+        else:
+            for (x, y) in [(5, 6), (6, 6), (10, 6), (11, 6), (6, 10), (7, 9), (8, 9), (9, 9), (10, 10)]:
+                a[y, x] = hx(OUTL)
+            a[7:11, 5] = hx("#5ab0ff")
+            a[7:11, 11] = hx("#5ab0ff")
+    elif kind == "thumb" or kind == "down":
+        t = canvas(16, 16)
+        t[6:11, 5:11] = hx("#f4c8a0")
+        t[2:6, 6:8] = hx("#f4c8a0")
+        t[6:11, 10] = hx("#c88a64")
+        if kind == "down":
+            t = t[::-1].copy()
+            t = np.roll(t, -2, axis=0)
+        outline(t, OUTL)
+        over(a, t, 0, 0)
+    elif kind == "skull":
+        sk = ell(16, 16, 8, 6.5, 4.4, 3.8)
+        paint(a, sk, "#e8e4dc")
+        a[9:11, 6:11] = hx("#e8e4dc")
+        a[6:8, 5:7] = hx(OUTL)
+        a[6:8, 9:11] = hx(OUTL)
+        a[10, 7] = hx(OUTL)
+        a[10, 9] = hx(OUTL)
+    elif kind == "heart":
+        h = canvas(16, 16)
+        for (x, y) in [(5, 4), (6, 4), (9, 4), (10, 4)]:
+            h[y, x] = hx("#e8505e")
+        h[5:8, 4:12] = hx("#e8505e")
+        h[8, 5:11] = hx("#e8505e")
+        h[9, 6:10] = hx("#e8505e")
+        h[10, 7:9] = hx("#e8505e")
+        h[5, 5] = hx("#ffb8b8")
+        over(a, h, 0, 0)
+    elif kind == "what":
+        for (x, y) in [(6, 4), (7, 3), (8, 3), (9, 3), (10, 4), (10, 5), (9, 6), (8, 7), (8, 8), (8, 10)]:
+            a[y, x] = hx("#e05a5a")
+            a[y, x - 1 if x > 8 else x] = hx("#e05a5a")
+    return a
+
+
 def main():
     items = [
         ("panel", panel()),
@@ -368,6 +437,8 @@ def main():
         items.append(("job_" + j, job_icon(j)))
         items.append(("skill_" + j, skill_icon(j)))
         items.append(("ult_" + j, ult_icon(j)))
+    for k in ["smile", "lol", "cry", "thumb", "down", "skull", "heart", "what"]:
+        items.append(("emote_" + k, emote(k)))
     at, pos = pack(items, os.path.join(OUT, "sprites", "ui"), 256, keep_bottom=False, trim_cells=False)
     preview(at, "ui_pv.png", 4, bg=(60, 70, 60))
     lg = logo()

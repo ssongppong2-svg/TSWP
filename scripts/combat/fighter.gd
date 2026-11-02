@@ -31,6 +31,10 @@ var last_hit_by: Node = null
 var stun_t := 0.0                  # 넘어짐·기절 (바나나 껍질 등): 움직이지도 공격하지도 못한다
 var hidden_t := 0.0                # 숨음 (연막·그림자 망토): 적이 노리지 않는다
 var _timed := {}                   # 잠깐 걸린 능력치: 출처 → 남은 시간 (set_timed_mod)
+var held := false                  # 누가 들고 있다 (움직임·생각 멈춤 — 들고 있는 쪽이 자리를 정한다)
+var thrown_by: Fighter             # 던져진 중: 날아가며 부딪힌 것에 피해 (사람 볼링)
+var thrown_t := 0.0
+var _thrown_hit := {}
 
 
 func _enter_tree() -> void:
@@ -100,6 +104,8 @@ func take(h: Hit) -> void:
 			set_timed_mod("prank", {"speed": 0.5}, 1.0)
 			Audio.play("troll", global_position, -6.0)
 	amt *= stat("dmg_taken")
+	if friendly and h.source is Player and (h.source as Player).local:
+		Achievements.add(get_tree(), "ff_hits")
 	knock *= stat("knock_taken")
 	if amt <= 0.0 and knock == Vector3.ZERO:
 		return
@@ -139,6 +145,8 @@ func _die() -> void:
 func tick_status(dt: float) -> void:
 	invuln = maxf(0.0, invuln - dt)
 	stun_t = maxf(0.0, stun_t - dt)
+	if thrown_t > 0.0:
+		_thrown_tick(dt)
 	hidden_t = maxf(0.0, hidden_t - dt)
 	if not _timed.is_empty():
 		for src in _timed.keys():
@@ -174,3 +182,35 @@ func move_mul() -> float:
 ## 중심 (맞는 판정용)
 func center() -> Vector3:
 	return global_position + Vector3(0, body_h * 0.5, 0)
+
+
+
+## 던져짐: 날아가는 동안 부딪힌 것들에 피해 · 내려앉으면 나도 아프고 잠깐 넘어짐
+func throw_from(by: Fighter, v: Vector3) -> void:
+	held = false
+	thrown_by = by
+	thrown_t = 1.0
+	_thrown_hit.clear()
+	kv = Vector3(v.x, 0.0, v.z)
+	velocity.y = v.y
+	if self is CharacterBody3D:
+		position.y += 0.2
+
+
+func _thrown_tick(dt: float) -> void:
+	thrown_t -= dt
+	for f in Combat.in_radius(get_tree(), global_position, 0.55, 1.2):
+		var fi := f as Fighter
+		if fi == self or fi == thrown_by or _thrown_hit.has(fi):
+			continue
+		_thrown_hit[fi] = true
+		var src: Node = thrown_by if is_instance_valid(thrown_by) else null
+		fi.take(Hit.make(14.0, src, (kv.normalized() if kv.length() > 0.1 else Vector3.RIGHT) * 7.0 + Vector3(0, 3, 0), "smash"))
+		Audio.play("smash", global_position, -6.0)
+	if (thrown_t < 0.8 and is_on_floor()) or thrown_t <= 0.0:
+		thrown_t = 0.0
+		stun_t = maxf(stun_t, 0.5)
+		var h := Hit.make(10.0 if team == 1 else 4.0, null, Vector3.ZERO, "smash")
+		take(h)
+		Audio.play("land_heavy", global_position)
+		Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 14.0)
