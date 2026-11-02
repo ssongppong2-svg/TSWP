@@ -875,3 +875,42 @@ func _party_tick() -> void:
 		var bf := row.get_node("B") as ColorRect
 		bf.size.x = roundf(36.0 * p.ratio())
 		bf.color = Color("#5cc870") if p.ratio() > 0.4 else (Color("#e8c050") if p.ratio() > 0.2 else Color("#e0504a"))
+
+
+# ---- 시청자 투표 (돌발 이벤트) — 화면 위 가운데
+var vote_box: Control
+func vote_update(choices: Array, votes: Array, t: float, live: bool) -> void:
+	if vote_box == null:
+		vote_box = Control.new()
+		vote_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_root.add_child(vote_box)
+	for c in vote_box.get_children():
+		c.queue_free()
+	if choices.is_empty():
+		vote_box.visible = false
+		return
+	vote_box.visible = true
+	var w := 236.0
+	var h := 20.0 + choices.size() * 13.0 + 4.0
+	vote_box.position = Vector2(roundf((PixelView.GW - w) / 2.0), 40)
+	vote_box.add_child(UiKit.panel("panel", Vector2.ZERO, Vector2(w, h)))
+	var tl := PixelFont.label("시청자 투표! %s  %d초" % ["채팅 !1 !2 !3" if live else "(가짜 시청자)", ceili(t)], "small", Color("#ffd860"))
+	tl.position = Vector2(6, 3)
+	vote_box.add_child(tl)
+	var total := 0
+	for v in votes:
+		total += int(v)
+	for i in choices.size():
+		var y := 18.0 + i * 13.0
+		var k := float(votes[i]) / maxf(1.0, float(total))
+		var bar := ColorRect.new()
+		bar.color = Color(1.0, 0.85, 0.4, 0.25)
+		bar.position = Vector2(6, y)
+		bar.size = Vector2(roundf((w - 12) * k), 11)
+		vote_box.add_child(bar)
+		var l := PixelFont.label("!%d  %s" % [i + 1, EventDirector.EVENTS[choices[i]][0]], "small", Color("#fff4d6"))
+		l.position = Vector2(8, y)
+		vote_box.add_child(l)
+		var n := PixelFont.label("%d표" % int(votes[i]), "small", Color("#ffd860"))
+		n.position = Vector2(w - 40, y)
+		vote_box.add_child(n)

@@ -8,6 +8,7 @@ signal died(f: Fighter)
 signal damaged(f: Fighter, hit: Hit, amount: float)
 
 const GRAV := 26.0
+static var grav_k := 1.0           # 밈 모드 '달 중력' (0.45)
 
 var team := 0                      # 0 플레이어 · 1 적
 var hp := 100.0
@@ -31,6 +32,12 @@ var last_hit_by: Node = null
 var stun_t := 0.0                  # 넘어짐·기절 (바나나 껍질 등): 움직이지도 공격하지도 못한다
 var hidden_t := 0.0                # 숨음 (연막·그림자 망토): 적이 노리지 않는다
 var _timed := {}                   # 잠깐 걸린 능력치: 출처 → 남은 시간 (set_timed_mod)
+var status := {}                  # 상태이상 이름 → 남은 시간 (상태이상 시스템.md)
+var status_src := {}               # 이름 → 건 쪽 (공포: 그 반대로 도망)
+var immune: Array = []             # 이 상태이상은 안 걸린다 (보스·엘리트)
+var _status_l: Label3D             # 머리 위 상태 글자
+var _st_sig := ""
+var _bleed_p := Vector3.ZERO
 var held := false                  # 누가 들고 있다 (움직임·생각 멈춤 — 들고 있는 쪽이 자리를 정한다)
 var thrown_by: Fighter             # 던져진 중: 날아가며 부딪힌 것에 피해 (사람 볼링)
 var thrown_t := 0.0
@@ -80,6 +87,8 @@ func take(h: Hit) -> void:
 	if dead:
 		return
 	if h.heal:
+		if has_status("healblock"):
+			return
 		var before := hp
 		hp = minf(max_hp(), hp + h.amount * stat("heal_taken"))
 		if hp > before + 0.5:
@@ -120,6 +129,11 @@ func take(h: Hit) -> void:
 	if h.slow > 0.0:
 		slow_t = 2.0
 		slow_k = h.slow
+	for st in h.status:
+		apply_status(String(st), float(h.status[st]), h.source)
+	if amt > 0.0 and has_status("freeze"):
+		status.erase("freeze")                      # 빙결: 맞으면 깨진다
+		Audio.play("crystal_ping", global_position, -6.0)
 	if amt > 0.0:
 		DmgNum.pop(self, amt, "ally" if friendly else ("player" if team == 0 else "enemy"))
 	damaged.emit(self, h, amt)
@@ -145,6 +159,7 @@ func _die() -> void:
 func tick_status(dt: float) -> void:
 	invuln = maxf(0.0, invuln - dt)
 	stun_t = maxf(0.0, stun_t - dt)
+	_status_tick(dt)
 	if thrown_t > 0.0:
 		_thrown_tick(dt)
 	hidden_t = maxf(0.0, hidden_t - dt)
@@ -176,7 +191,19 @@ func tick_status(dt: float) -> void:
 
 
 func move_mul() -> float:
-	return stat("speed") * (1.0 - slow_k if slow_t > 0.0 else 1.0)
+	var k := stat("speed") * (1.0 - slow_k if slow_t > 0.0 else 1.0)
+	if has_status("slow"):
+		k *= 0.55
+	if has_status("shock"):
+		k *= 0.7
+	if has_status("root") or has_status("freeze"):
+		k = 0.0
+	return k
+
+
+## 움직일 수 없는가 (기절·빙결·넘어짐)
+func disabled() -> bool:
+	return stun_t > 0.0 or has_status("stun") or has_status("freeze")
 
 
 ## 중심 (맞는 판정용)
@@ -214,3 +241,99 @@ func _thrown_tick(dt: float) -> void:
 		take(h)
 		Audio.play("land_heavy", global_position)
 		Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 14.0)
+
+
+
+# ------------------------------------------------------------------ 상태이상 (상태이상 시스템.md)
+## 이름: burn 화상 · poison 중독 · freeze 빙결 · shock 감전 · bleed 출혈 · fear 공포 · confuse 혼란 · silence 침묵
+##       slow 둔화 · root 속박 · stun 기절 · weak 약화 · vuln 취약 · healblock 회복 불가
+## 같은 상태이상은 시간만 갱신 (겹치지 않음) · 서로 다른 것은 동시에
+const STATUS := {
+	"burn": ["화상", Color("#ff8a3a")], "poison": ["중독", Color("#7ad06a")], "freeze": ["빙결", Color("#9ae0ff")],
+	"shock": ["감전", Color("#ffe060")], "bleed": ["출혈", Color("#ff4a5a")], "fear": ["공포", Color("#b08ad8")],
+	"confuse": ["혼란", Color("#d08aff")], "silence": ["침묵", Color("#a8a8b8")], "slow": ["둔화", Color("#7aa8ff")],
+	"root": ["속박", Color("#c8a070")], "stun": ["기절", Color("#ffffff")], "weak": ["약화", Color("#a89a8a")],
+	"vuln": ["취약", Color("#ff6a8a")], "healblock": ["회복 불가", Color("#c84a4a")],
+}
+
+
+func has_status(n: String) -> bool:
+	return float(status.get(n, 0.0)) > 0.0
+
+
+func apply_status(n: String, t: float, src: Node = null) -> void:
+	if dead or n in immune or not STATUS.has(n):
+		return
+	status[n] = maxf(float(status.get(n, 0.0)), t)
+	if src:
+		status_src[n] = src
+	match n:
+		"weak":
+			set_timed_mod("st_weak", {"attack": -0.3}, t)
+		"vuln":
+			set_timed_mod("st_vuln", {"dmg_taken": 0.3}, t)
+		"shock":
+			set_timed_mod("st_shock", {"atk_rate": -0.3}, t)
+		"bleed":
+			_bleed_p = global_position
+
+
+func clear_status() -> void:
+	status.clear()
+	poison_t = 0.0
+	slow_t = 0.0
+
+
+func _status_tick(dt: float) -> void:
+	if status.is_empty():
+		if _status_l and _status_l.visible:
+			_status_l.visible = false
+		return
+	for n in status.keys():
+		status[n] = float(status[n]) - dt
+		if float(status[n]) <= 0.0:
+			status.erase(n)
+			if n == "freeze" and spr_mat:
+				spr_mat.set_shader_parameter("tint", Color.WHITE)
+	if dead:
+		return
+	# 지속 피해: 화상 초당 4 (짧고 아픔) · 출혈은 움직인 만큼
+	if has_status("burn"):
+		hp -= 4.0 * dt
+	if has_status("bleed"):
+		var moved := Vector2(global_position.x - _bleed_p.x, global_position.z - _bleed_p.z).length()
+		hp -= moved * 2.2
+	_bleed_p = global_position
+	if hp <= 0.0 and not dead:
+		hp = 0.0
+		_die()
+		return
+	# 머리 위 글자 (두 개까지)
+	var keys: Array = status.keys()
+	var sig := ",".join(keys)
+	if sig != _st_sig:
+		_st_sig = sig
+		if _status_l == null:
+			_status_l = Label3D.new()
+			_status_l.font = PixelFont.get_font("small")
+			_status_l.font_size = PixelFont.size_of("small")
+			_status_l.pixel_size = 1.0 / 16.0
+			_status_l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			_status_l.no_depth_test = true
+			_status_l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+			_status_l.outline_modulate = Color(0.1, 0.08, 0.12)
+			_status_l.outline_size = 3
+			_status_l.render_priority = 5
+			add_child(_status_l)
+		var names: Array = []
+		for k in keys.slice(0, 2):
+			names.append(STATUS[k][0])
+		_status_l.text = " · ".join(names)
+		if not keys.is_empty():
+			_status_l.modulate = STATUS[keys[0]][1]
+		_status_l.position.y = body_h + 0.75
+	_status_l.visible = not keys.is_empty()
+	if spr_mat and has_status("freeze"):
+		spr_mat.set_shader_parameter("tint", Color(0.6, 0.85, 1.0))
+	elif spr_mat and has_status("burn") and int(Time.get_ticks_msec() / 120) % 2 == 0:
+		spr_mat.set_shader_parameter("flash", 0.25)

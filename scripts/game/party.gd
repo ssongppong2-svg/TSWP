@@ -83,8 +83,11 @@ func on_enemy_killed(e: Enemy, by: Node) -> void:
 		if (by as Player).local:
 			Achievements.add(get_tree(), "kills")
 	# 아이템 떨어뜨리기 (적 시스템.md: 일반 몬스터도 낮은 확률로)
-	if e.is_inside_tree():
-		if rng.randf() < DROP_ITEM:
+	if e.is_inside_tree() and (e.elite or bool(e.E.get("loot", false))):
+		# 엘리트·황금 거미: 좋은 것을 꼭 하나
+		ItemDrop.spawn(e.get_parent(), Items.roll(rng, false, 1.0, "uncommon"), e.global_position + Vector3(0, 0.5, 0), e.terrain)
+	elif e.is_inside_tree():
+		if rng.randf() < DROP_ITEM * Diff.LOOT[Diff.level()]:
 			ItemDrop.spawn(e.get_parent(), Items.roll(rng), e.global_position + Vector3(0, 0.5, 0), e.terrain)
 		elif rng.randf() < DROP_CONS:
 			ItemDrop.spawn(e.get_parent(), Items.roll(rng, true), e.global_position + Vector3(0, 0.5, 0), e.terrain)

@@ -49,6 +49,9 @@ var _quality_dirty := false
 var _seen_hints := {}
 var _cross_tex: Texture2D
 var _play_t := 0.0                  # 이번 판 시간 (결과 화면)
+var chat: ChzzkChat
+var director: EventDirector
+var _run_started := false           # 이번 판에 숲에 들어갔나 (시작 아이템 · 밈 규칙)
 
 
 func _ready() -> void:
@@ -68,6 +71,13 @@ func _ready() -> void:
 	party.game_over.connect(func():
 		get_tree().create_timer(1.6).timeout.connect(func(): _show_result(false)))
 	_build_ui()
+	chat = ChzzkChat.new()
+	add_child(chat)
+	director = EventDirector.new()
+	director.main = self
+	director.chat = chat
+	director.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(director)
 	var at: Variant = null
 	if args.has("at"):
 		var p := String(args["at"]).split(",")
@@ -200,6 +210,10 @@ func _load_map(name_: String, at: Variant = null) -> void:
 		(map as NestMap).boss_started.connect(func(q: Queen):
 			hud.boss = q
 			hud.notify("보스 등장: 부화의 여왕", Color("#ff6a8a"))
+			if Diff.meme("boss_size"):
+				var k := randf_range(0.55, 1.9)
+				q.scale = Vector3(k, k, k)
+				hud.notify("여왕 크기 × %.1f" % k, Color("#d08aff"))
 			_show_title("부화의 여왕"))
 		(map as NestMap).victory.connect(func():
 			hud.banner("부화의 여왕을 쓰러뜨렸다!", 6.0)
@@ -220,6 +234,7 @@ func _load_map(name_: String, at: Variant = null) -> void:
 			map.terrain.clear_cut())
 	Audio.attach_world(world, pv.vp, func(_p): return {"room": "forest", "occl": 0})
 	Audio.ambience(map.ambience)
+	_on_map_ready(name_)
 	if state == "title":
 		walker.local = false
 		Audio.music("menu")
@@ -370,6 +385,13 @@ func _process(dt: float) -> void:
 	if state != "play":
 		return
 	_play_t += dt
+	if args.has("allevents"):                 # 시험: 돌발 이벤트를 3초마다 차례로
+		var ks: Array = EventDirector.EVENTS.keys()
+		var i := int(_play_t / 3.0)
+		if i != int((_play_t - dt) / 3.0) and i - 1 < ks.size() and i >= 1:
+			director.run(String(ks[i - 1]))
+	if args.has("vote") and _frame == 30:
+		director.t = 0.0                        # 시험: 투표를 바로
 	_coop_tick()
 	_hints_tick()
 	if Input.is_action_just_pressed("debug_side"):
@@ -379,6 +401,7 @@ func _process(dt: float) -> void:
 	if Input.is_key_pressed(KEY_1) and (map_name != "camp" or party.over):
 		if party.over:
 			party.setup(1 + coop.size())
+			_run_started = false
 		_go("camp", Vector3(20, 0, 19.5))
 	if Input.is_key_pressed(KEY_2) and map_name != "forest":
 		_go("forest", Vector3(32, 0, 44))
@@ -683,6 +706,7 @@ func _back_to_title() -> void:
 		menu_dim.visible = false
 		state = "title"
 		party.setup(1 + coop.size())
+		_run_started = false
 		_play_t = 0.0
 		_load_map("camp", null)
 		_enter_title())
@@ -991,6 +1015,7 @@ func _result_to_camp() -> void:
 	_close_all_menus()
 	menu_dim.visible = false
 	party.setup(1 + coop.size())
+	_run_started = false
 	state = "play"
 	_play_t = 0.0
 	hud.set_shown(true)
@@ -1243,3 +1268,39 @@ func _buddy_ai(p: Player, dt: float) -> void:
 		c.run = to.length() > 4.0
 	if fmod(t, 9.0) < dt:
 		p.emote(["lol", "thumb", "smile", "what"][p.slot % 4])
+
+
+# ------------------------------------------------------------------ 판 시작 · 밈 규칙 (게임 시작과 선택, 직업, 플레이.md)
+func _on_map_ready(name_: String) -> void:
+	Fighter.grav_k = 1.0
+	if name_ == "camp":
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	if not _run_started:
+		_run_started = true
+		Diff.roll_meme(rng)
+		if Diff.level() == 3:
+			hud.banner("밈 모드: " + " · ".join(Diff.meme_rules.map(func(r): return Diff.MEME[r])), 4.0)
+			for r in Diff.meme_rules:
+				hud.notify("밈 규칙: " + String(Diff.MEME[r]), Color("#d08aff"))
+		# 시작 아이템: 인원 × 3 / 5 (최소 1) — 첫 경쟁
+		var n := maxi(1, (1 + coop.size()) * 3 / 5)
+		var cursed := ["glass_cannon", "cursed_crown", "blood_pact", "berserk_helm", "echo_bell"]
+		for k in n:
+			var id: String = cursed[k % cursed.size()] if Diff.meme("cursed_start") else Items.roll(rng, false, 0.5)
+			var at := walker.global_position + Vector3((k - (n - 1) * 0.5) * 1.4, 0.6, -2.6)
+			ItemDrop.spawn(map, id, at, map.terrain, Vector3(0, 0, -1))
+		if n > 0:
+			hud.notify("시작 아이템 %d개! 먼저 줍는 사람이 임자" % n, Color("#ffd860"))
+	if Diff.meme("same_job"):
+		var j: String = DB.JOB_ORDER[rng.randi_range(0, 3)]
+		for f in get_tree().get_nodes_in_group("fighters"):
+			if f is Player:
+				(f as Player).set_job(j)
+	if Diff.meme("moon"):
+		Fighter.grav_k = 0.45
+	if Diff.meme("banana_rain"):
+		for k in 30:
+			var p := Vector3(rng.randf_range(3, map.WM - 3), 0, rng.randf_range(3, map.HM - 3))
+			Peel.drop(map, p, null, map.terrain)

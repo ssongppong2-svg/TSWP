@@ -102,6 +102,14 @@ func _decorate() -> void:
 		_mark(c, 3)
 	# ---- 떠돌이 상인 (광장 서쪽, 천막 사이) — 들를 때마다 물건이 바뀐다
 	shop_at(Vector2(6.4, 15.2))
+	# ---- 난이도 표지판 (직업 표지 오른쪽)
+	var db := DiffBoard.new()
+	add_child(db)
+	var dp := Vector3(27.6, 0, 21.6)
+	dp.y = terrain.height_at(dp)
+	db.position = dp
+	solid(dp, 0.25)
+	_mark(terrain.cell_of(dp), 3)
 	# ---- 옷장 (꾸미기)
 	var wd := Wardrobe.new()
 	add_child(wd)

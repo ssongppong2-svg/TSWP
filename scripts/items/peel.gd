@@ -19,7 +19,7 @@ static func drop(parent: Node, at: Vector3, owner_: Fighter, terrain: Terrain) -
 
 
 func _ready() -> void:
-	var m := BB.make(ATLAS, "peel", {"unique": true, "up_normal": 1.0})
+	var m := BB.make(ATLAS, "peel", {"unique": true, "up_normal": 1.0, "receive_shade": false, "emission": 0.15})
 	add_child(m)
 
 

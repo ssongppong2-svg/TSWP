@@ -51,4 +51,16 @@ const ENEMIES := {
 		"windup": 0.5, "recover": 1.4, "knock": 2.0, "height": 1.3, "radius": 0.35, "gold": 2, "shot": 5.5},
 	"spider": {"name": "숲 거미", "hp": 22.0, "speed": 3.6, "dmg": 9.0, "range": 3.2, "aggro": 11.0, "role": "lunger",
 		"windup": 0.32, "recover": 0.7, "knock": 4.0, "height": 0.9, "radius": 0.4, "gold": 3, "lunge": 8.5},
+	# ---- 특수 적 (적 시스템.md: 고유 능력 — 일반 적과 섞여 나온다). sprite = 그림은 기본 적 것을 색만 바꿔 쓴다
+	"boomer": {"name": "자폭 도토리", "sprite": "acorn", "tint": Color("#ff9a8a"), "hp": 18.0, "speed": 3.3, "dmg": 26.0, "range": 1.2, "aggro": 11.0,
+		"role": "bomber", "windup": 0.7, "recover": 0.5, "knock": 10.0, "height": 1.3, "radius": 0.35, "gold": 3, "blast": 2.0},
+	"healer": {"name": "치유 버섯", "sprite": "shroom", "tint": Color("#a8ffb8"), "hp": 30.0, "speed": 1.2, "dmg": 0.0, "range": 7.0, "aggro": 10.0,
+		"role": "healer", "windup": 0.8, "recover": 2.6, "knock": 0.0, "height": 1.3, "radius": 0.35, "gold": 4, "heal": 14.0, "heal_r": 4.5},
+	"frost": {"name": "서리 거미", "sprite": "spider", "tint": Color("#b0e0ff"), "hp": 26.0, "speed": 3.3, "dmg": 8.0, "range": 3.2, "aggro": 11.0,
+		"role": "lunger", "windup": 0.36, "recover": 0.8, "knock": 3.0, "height": 0.9, "radius": 0.4, "gold": 4, "lunge": 8.0, "bite_status": {"freeze": 1.1}},
+	"goldbug": {"name": "황금 거미", "sprite": "spider", "tint": Color("#ffe070"), "hp": 45.0, "speed": 4.4, "dmg": 0.0, "range": 0.0, "aggro": 14.0,
+		"role": "thief", "windup": 1.0, "recover": 1.0, "knock": 0.0, "height": 0.9, "radius": 0.4, "gold": 18, "loot": true},
 }
+
+## 특수 적으로 바뀔 확률 (기본 적 → 특수)
+const SPECIAL := {"acorn": ["boomer", 0.16], "shroom": ["healer", 0.22], "spider": ["frost", 0.18]}

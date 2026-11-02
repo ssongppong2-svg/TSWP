@@ -12,6 +12,7 @@ var explosive := false
 var heal := false                 # 회복 (amount 만큼)
 var poison := 0.0                 # 초당 독 피해 (3초)
 var slow := 0.0                   # 느려짐 (0~1, 2초)
+var status := {}                  # 상태이상 이름 → 시간 (Fighter.apply_status)
 var ff_cur := -1.0                # 아군에게 '현재 체력의 n%' (예: 거대 폭탄 0.2)
 var self_ratio := 1.0             # 시전자 본인이 맞을 때 비율
 var kind := "hit"                 # 소리·효과 고르기용 (slash · bomb · arrow · bite · spore …)

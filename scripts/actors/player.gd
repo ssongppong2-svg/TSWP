@@ -158,6 +158,14 @@ func _physics_process(dt: float) -> void:
 	var yaw := rig.yaw if rig else 0.0
 	var fwd := Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
 	var right := Vector3(1, 0, 0).rotated(Vector3.UP, yaw)
+	# 혼란: 좌우가 바뀐다 · 공포: 앞뒤좌우 모두 반대
+	if has_status("confuse") != Diff.meme("reverse"):
+		ctrl.move.x = -ctrl.move.x
+	if has_status("fear"):
+		ctrl.move = -ctrl.move
+	if has_status("silence"):
+		ctrl.skill = false
+		ctrl.ult = false
 	var dir := right * ctrl.move.x - fwd * ctrl.move.y
 	if sd:
 		dir = right * ctrl.move.x
@@ -165,8 +173,8 @@ func _physics_process(dt: float) -> void:
 		dir = auto_dir
 	if dir.length() > 1.0:
 		dir = dir.normalized()
-	if stun_t > 0.0:
-		dir = Vector3.ZERO                       # 넘어짐: 아무것도 못 한다
+	if disabled():
+		dir = Vector3.ZERO                       # 넘어짐·기절·빙결: 아무것도 못 한다
 		ctrl.clear()
 	_update_aim(right, fwd, sd)
 	_items_tick(dt)
@@ -184,7 +192,7 @@ func _physics_process(dt: float) -> void:
 		_coyote = COYOTE
 	else:
 		_coyote = maxf(0.0, _coyote - dt)
-		velocity.y -= GRAV * dt
+		velocity.y -= GRAV * grav_k * dt
 		_fall_v = minf(_fall_v, velocity.y)
 	_buffer = maxf(0.0, _buffer - dt)
 	if sd and ctrl.roll:
@@ -212,7 +220,7 @@ func _physics_process(dt: float) -> void:
 			acc = 40.0
 		velocity.x = move_toward(velocity.x, want.x, acc * dt)
 		velocity.z = move_toward(velocity.z, want.z, acc * dt)
-		if not sd and ctrl.roll and dir != Vector3.ZERO:
+		if not sd and ctrl.roll and dir != Vector3.ZERO and not has_status("root"):
 			roll_t = ROLL_T
 			roll_dir = dir.normalized()
 			spr.stretch(-0.8)
@@ -340,7 +348,7 @@ func _after_move(dt: float) -> void:
 	spr.lean_to(velocity.dot(scr_right) * 0.022)
 	(ring.material_override as ShaderMaterial).set_shader_parameter("aim", atan2(aim.z, aim.x))
 	ring.visible = not side()
-	if flash > 0.08 or stun_t > 0.0:
+	if flash > 0.08 or disabled():
 		spr.play("hurt")
 	elif attack_t > 0.0:
 		spr.play("attack")
@@ -711,12 +719,13 @@ func on_dealt(target: Fighter, amt: float, h: Hit, friendly: bool) -> void:
 	# 불꽃 부적 · 독사의 이빨: 맞은 쪽에 지속 피해 (센 쪽이 남는다)
 	var burn := inv.fx("burn") * 3.0
 	var venom := inv.fx("venom") * 2.5
-	if burn + venom > 0.0 and not target.dead:
+	if burn > 0.0 and not target.dead:
+		target.apply_status("burn", 3.0, self)
+		Fx.pop(target.get_parent(), target.center(), ["spark0", "spark1"], 16.0)
+	if venom > 0.0 and not target.dead:
 		target.poison_t = 3.0
-		target.poison_dps = maxf(target.poison_dps if target.poison_t > 0.0 else 0.0, burn + venom)
+		target.poison_dps = maxf(target.poison_dps if target.poison_t > 0.0 else 0.0, venom)
 		target.poison_src = self
-		if burn > 0.0:
-			Fx.pop(target.get_parent(), target.center(), ["spark0", "spark1"], 16.0)
 	# 폭풍 반지: 20% 확률로 번개가 둘레 3명에게 (아군도!)
 	var chain := inv.fx("chain")
 	if chain > 0 and randf() < 0.2 * chain:
@@ -735,7 +744,9 @@ func _chain_lightning(from: Fighter, dmg: float) -> void:
 		var to := fi.center()
 		for k in 4:
 			Fx.pop(get_parent(), prev.lerp(to, (k + 0.5) / 4.0) + Vector3(randf_range(-0.15, 0.15), randf_range(-0.15, 0.15), 0), ["spark0", "spark1", "spark2"], 24.0)
-		fi.take(Hit.make(dmg, self, Vector3.ZERO, "chain"))
+		var hc := Hit.make(dmg, self, Vector3.ZERO, "chain")
+		hc.status = {"shock": 2.0}
+		fi.take(hc)
 		prev = to
 	if not cands.is_empty():
 		Audio.play("crystal_ping", from.global_position)
@@ -770,9 +781,7 @@ func _items_on_hurt(h: Hit, _amt: float) -> void:
 			party.add_gold(-1)
 			Coin.burst(get_parent(), global_position, 1, terrain)
 	if inv.fx("burn") > 0 and randf() < 0.2:
-		poison_t = 2.0
-		poison_dps = maxf(poison_dps, 3.0)
-		poison_src = self
+		apply_status("burn", 2.0, self)
 
 
 ## 금화 줍기 (행운의 동전·왕관만큼 더)

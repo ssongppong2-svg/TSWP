@@ -110,11 +110,16 @@ func spawn_check(players: Array) -> void:
 			if pl.global_position.distance_to(g["at"]) < float(g["r"]):
 				g["done"] = true
 				var i := 0
-				for k in g["kinds"]:
+				var elite_i := rng.randi_range(0, (g["kinds"] as Array).size() - 1) if rng.randf() < Diff.ELITE[Diff.level()] else -1
+				for k0 in g["kinds"]:
+					var k := String(k0)
+					# 특수 적으로 바뀜 (적 시스템.md: 같은 적만 계속 나오지 않게)
+					if DB.SPECIAL.has(k) and rng.randf() < float(DB.SPECIAL[k][1]):
+						k = String(DB.SPECIAL[k][0])
 					var ang := TAU * i / float((g["kinds"] as Array).size()) + rng.randf() * 0.5
 					var pos: Vector3 = g["at"] + Vector3(cos(ang), 0, sin(ang)) * rng.randf_range(1.0, 2.6)
 					pos.y = terrain.height_at(pos) + 0.2
-					var e := Enemy.spawn(self, k, pos, terrain, rig)
+					var e := Enemy.spawn(self, k, pos, terrain, rig, i == elite_i)
 					enemy_spawned.emit(e)
 					i += 1
 				Audio.play("spawn", g["at"])

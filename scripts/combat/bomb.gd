@@ -76,6 +76,8 @@ func _physics_process(dt: float) -> void:
 
 
 func _explode() -> void:
+	if Diff.meme("double_boom"):
+		radius *= 2.0                              # 밈 모드: 모든 폭발 두 배
 	var at := global_position + Vector3(0, 0.3, 0)
 	var tree := get_tree()
 	for f in Combat.in_radius(tree, at, radius, radius):

@@ -12,7 +12,11 @@ const ATLAS := "res://assets/sprites/enemies.png"
 const FPS := {"idle": 3.0, "move": 9.0, "attack": 10.0, "hurt": 1.0}
 
 var kind := "acorn"
+var sk := "acorn"                  # 그림·소리 이름 (특수 적은 기본 적 그림을 색만 바꿔 쓴다)
+var elite := false                 # 엘리트: 크고 질기고 일부 상태이상 면역 · 좋은 것을 떨어뜨린다
+var viewer := ""                   # 방송: 이 적에 붙은 시청자 이름
 var E: Dictionary
+var _life := 0.0
 var mesh: MeshInstance3D
 var state := "idle"
 var st_t := 0.0
@@ -31,9 +35,11 @@ var bone_sy := SpringBone.new(1.0, 240.0, 12.0)
 var bone_lean := SpringBone.new(0.0, 150.0, 10.0)
 
 
-static func spawn(parent: Node, k: String, at: Vector3, terrain_: Terrain, rig_: CamRig) -> Enemy:
+static func spawn(parent: Node, k: String, at: Vector3, terrain_: Terrain, rig_: CamRig, elite_ := false, viewer_ := "") -> Enemy:
 	var e := Enemy.new()
 	e.kind = k
+	e.elite = elite_
+	e.viewer = viewer_
 	e.terrain = terrain_
 	e.rig = rig_
 	parent.add_child(e)
@@ -44,8 +50,19 @@ static func spawn(parent: Node, k: String, at: Vector3, terrain_: Terrain, rig_:
 
 func _ready() -> void:
 	team = 1
-	E = DB.ENEMIES[kind]
-	base_max_hp = float(E["hp"])
+	E = (DB.ENEMIES[kind] as Dictionary).duplicate()
+	sk = String(E.get("sprite", kind))
+	var lv := Diff.level()
+	E["dmg"] = float(E["dmg"]) * Diff.DMG[lv]
+	base_max_hp = float(E["hp"]) * Diff.HP[lv]
+	if Diff.meme("tiny_foes"):
+		E["speed"] = float(E["speed"]) * 1.5
+		base_max_hp *= 0.6
+	if elite:
+		base_max_hp *= 2.6
+		E["dmg"] = float(E["dmg"]) * 1.4
+		E["gold"] = int(E["gold"]) * 3
+		immune = ["stun", "freeze", "fear", "confuse"]
 	hp = base_max_hp
 	body_r = float(E["radius"])
 	body_h = float(E["height"])
@@ -58,16 +75,37 @@ func _ready() -> void:
 	cs.shape = sph
 	cs.position.y = 0.3
 	add_child(cs)
-	mesh = BB.make(ATLAS, "%s_idle0" % kind, {"unique": true, "up_normal": 0.7, "shade_k": 0.6})
+	mesh = BB.make(ATLAS, "%s_idle0" % sk, {"unique": true, "up_normal": 0.7, "shade_k": 0.6})
 	spr_mat = mesh.material_override
 	add_child(mesh)
+	if E.has("tint"):
+		spr_mat.set_shader_parameter("tint", E["tint"])
+	if elite or Diff.meme("tiny_foes"):
+		var sc := 1.32 if elite else 0.7
+		mesh.scale = Vector3(sc, sc, 1)
+		body_h *= sc
+	if elite or E.has("tint") or viewer != "":
+		var nl := Label3D.new()
+		nl.text = viewer if viewer != "" else ("엘리트 " + String(E["name"]) if elite else String(E["name"]))
+		nl.font = PixelFont.get_font("small")
+		nl.font_size = PixelFont.size_of("small")
+		nl.pixel_size = 1.0 / 16.0
+		nl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		nl.no_depth_test = true
+		nl.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		nl.outline_modulate = Color(0.1, 0.08, 0.12)
+		nl.outline_size = 3
+		nl.modulate = Color("#ffd860") if elite else (Color("#e8f4ff") if viewer != "" else (E["tint"] as Color).lightened(0.2))
+		nl.position.y = body_h + 0.55
+		add_child(nl)
 	add_child(BB.blob(body_r + 0.1, (body_r + 0.1) * 0.5, 0.9))
 	HpBar.attach(self, 14)
 	wander = home
 	st_t = randf() * 2.0
 	# 나타남: 아래에서 솟듯
-	mesh.scale = Vector3(1.0, 0.1, 1.0)
-	create_tween().tween_property(mesh, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK)
+	var s0 := mesh.scale.x
+	mesh.scale = Vector3(s0, 0.1, 1.0)
+	create_tween().tween_property(mesh, "scale", Vector3(mesh.scale.x, mesh.scale.x, 1), 0.25).set_trans(Tween.TRANS_BACK)
 
 
 func _physics_process(dt: float) -> void:
@@ -80,6 +118,12 @@ func _physics_process(dt: float) -> void:
 		return
 	st_t -= dt
 	_think -= dt
+	_life += dt
+	if String(E["role"]) == "thief" and _life > 22.0:
+		Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 12.0)
+		get_tree().call_group("hud", "notify", "황금 거미가 도망쳤다…", Color("#ffe070"))
+		queue_free()
+		return
 	if _think <= 0.0:
 		_think = 0.25
 		_pick_target()
@@ -91,12 +135,22 @@ func _physics_process(dt: float) -> void:
 		to = target.global_position - global_position
 		to.y = 0.0
 		dist = to.length()
-	if stun_t > 0.0:
-		# 넘어짐 (바나나 껍질 등): 하던 공격이 끊기고 가만히
+	if disabled() or has_status("fear") or has_status("confuse"):
+		# 넘어짐·기절·빙결: 하던 공격이 끊기고 가만히 · 공포: 건 쪽에서 도망 · 혼란: 아무 데나
 		if state in ["windup", "strike"]:
 			state = "recover"
 			st_t = 0.3
 			spr_mat.set_shader_parameter("flash", 0.0)
+		if has_status("fear") and not disabled():
+			var src: Variant = status_src.get("fear", null)
+			if src is Node3D and is_instance_valid(src):
+				var away := global_position - (src as Node3D).global_position
+				away.y = 0.0
+				want = away.normalized() * spd
+				_set_anim("move")
+		elif has_status("confuse") and not disabled():
+			want = Vector3(cos(st_t * 3.0 + home.x), 0, sin(st_t * 2.3 + home.z)) * spd * 0.7
+			_set_anim("move")
 	else:
 		match state:
 			"idle":
@@ -117,7 +171,11 @@ func _physics_process(dt: float) -> void:
 				else:
 					_set_anim("move")
 					var role := String(E["role"])
-					if role == "ranged":
+					if role == "thief":
+						# 황금 거미: 사람에게서 도망 (잡으면 금화 · 아이템)
+						want = -to.normalized() * spd
+						want = want.rotated(Vector3.UP, sin(_life * 1.7) * 0.8)
+					elif role == "ranged" or role == "healer":
 						# 알맞은 거리 유지: 너무 가까우면 물러나고, 멀면 다가간다
 						var ideal := float(E["range"]) * 0.75
 						if dist < ideal - 1.0:
@@ -140,7 +198,8 @@ func _physics_process(dt: float) -> void:
 							_windup()
 			"windup":
 				_set_anim("attack", 0)
-				spr_mat.set_shader_parameter("flash", 0.45 if int(st_t * 20.0) % 2 == 0 else 0.0)
+				var fr := 30.0 if String(E["role"]) == "bomber" else 20.0
+				spr_mat.set_shader_parameter("flash", 0.45 if int(st_t * fr) % 2 == 0 else 0.0)
 				if target:
 					_face(to)
 				if st_t <= 0.0:
@@ -173,7 +232,7 @@ func _physics_process(dt: float) -> void:
 		want -= n * want.dot(n)
 		want -= n * (global_position.dot(n) - rig.lane_z) * 6.0
 	if not is_on_floor():
-		velocity.y -= GRAV * dt
+		velocity.y -= GRAV * grav_k * dt
 	velocity.x = move_toward(velocity.x, want.x, 30.0 * dt) + kv.x
 	velocity.z = move_toward(velocity.z, want.z, 30.0 * dt) + kv.z
 	if kv.y > 0.5:
@@ -227,6 +286,22 @@ func _strike(to: Vector3) -> void:
 	spr_mat.set_shader_parameter("flash", 0.0)
 	var dir := to.normalized() if to.length() > 0.01 else Vector3(1, 0, 0)
 	match String(E["role"]):
+		"bomber":
+			_explode()
+			hp = 0.0
+			_die()
+			return
+		"healer":
+			st_t = 0.3
+			Audio.play("heal_pulse", global_position, -4.0)
+			var ring := Fx.flat_at(get_parent(), global_position, 0.0, ["ring_heal0", "ring_heal1", "ring_heal2", "ring_heal3"], 10.0)
+			ring.scale = Vector3(float(E["heal_r"]) / 1.25, 1, float(E["heal_r"]) / 1.25)
+			for f in Combat.in_radius(get_tree(), global_position, float(E["heal_r"])):
+				var fi := f as Fighter
+				if fi.team == team and fi != self:
+					var h := Hit.make(float(E["heal"]), self)
+					h.heal = true
+					fi.take(h)
 		"melee":
 			st_t = 0.18
 			Audio.play("acorn_swing", global_position)
@@ -258,9 +333,33 @@ func _bite_check() -> void:
 		var fi := f as Fighter
 		if fi.team != team and not _bitten.has(fi):
 			_bitten[fi] = true
-			fi.take(Hit.make(float(E["dmg"]), self, lunge_dir * float(E["knock"]), "bite"))
+			var hb := Hit.make(float(E["dmg"]), self, lunge_dir * float(E["knock"]), "bite")
+			if E.has("bite_status"):
+				hb.status = E["bite_status"]
+			fi.take(hb)
 	if state != "strike":
 		_bitten.clear()
+
+
+## 자폭: 둘레 모두(적끼리도)에게 폭발 — 죽을 때도 터진다 (근처에서 잡으면 같이 휘말림)
+var _exploded := false
+func _explode() -> void:
+	if _exploded:
+		return
+	_exploded = true
+	var r := float(E.get("blast", 1.8)) * (2.0 if Diff.meme("double_boom") else 1.0)
+	Audio.play("explode_s", global_position)
+	Fx.pop(get_parent(), global_position + Vector3(0, 0.4, 0), ["boom0", "boom1", "boom2", "boom3", "boom4"], 16.0)
+	Particles.burst(get_parent(), global_position + Vector3(0, 0.4, 0), Color("#fff0a0"), Color("#e05a2a"), 26, 6.0)
+	for f in Combat.in_radius(get_tree(), global_position, r):
+		var fi := f as Fighter
+		if fi == self:
+			continue
+		var h := Hit.make(float(E["dmg"]), self, Combat.push(global_position, fi.global_position, float(E["knock"]), 0.5), "bomb")
+		h.explosive = true
+		fi.take(h)
+	if rig:
+		rig.shake(3.0)
 
 
 func _face(v: Vector3) -> void:
@@ -288,17 +387,17 @@ func _anim_tick(dt: float) -> void:
 	spr_mat.set_shader_parameter("squash", Vector2(bone_sx.step(dt), bone_sy.step(dt)))
 	spr_mat.set_shader_parameter("skew", bone_lean.step(dt))
 	var counts := {"idle": 2, "move": 4, "attack": 3, "hurt": 1}
-	var a := "hurt" if flash > 0.06 or stun_t > 0.0 else anim
+	var a := "hurt" if flash > 0.06 or disabled() else anim
 	var i: int = int(anim_t * float(FPS[a])) % int(counts[a])
 	if a == "attack":
 		i = int({"windup": 0, "strike": 1, "recover": 2}.get(state, 0))
-	spr_mat.set_shader_parameter("region", BB.region_uv(ATLAS, "%s_%s%d" % [kind, a, i]))
+	spr_mat.set_shader_parameter("region", BB.region_uv(ATLAS, "%s_%s%d" % [sk, a, i]))
 	spr_mat.set_shader_parameter("flip", 1.0 if flip else 0.0)
 
 
 func _on_hurt(h: Hit, amt: float) -> void:
 	if amt > 0.0:
-		Audio.play("%s_hurt" % kind, global_position)
+		Audio.play("%s_hurt" % sk, global_position)
 		var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
 		bone_lean.kick(signf(h.knock.dot(scr_r) + 0.001) * 3.5)
 		Particles.burst(get_parent(), center(), Color("#fff4d0"), Color("#c88a4a"), 8, 3.5)
@@ -314,10 +413,12 @@ func _on_hurt(h: Hit, amt: float) -> void:
 
 func _die() -> void:
 	super._die()
-	Audio.play("%s_die" % kind, global_position)
+	Audio.play("%s_die" % sk, global_position)
 	killed.emit(self, last_hit_by if is_instance_valid(last_hit_by) else null)
 	var pc := {"acorn": [Color("#e8b070"), Color("#6e4426")], "shroom": [Color("#ffb0b0"), Color("#8a2e4e")], "spider": [Color("#c0a0e0"), Color("#2e1e3e")]}
-	var cc: Array = pc.get(kind, [Color.WHITE, Color.GRAY])
+	var cc: Array = pc.get(sk, [Color.WHITE, Color.GRAY])
+	if String(E["role"]) == "bomber":
+		_explode()
 	Particles.burst(get_parent(), center(), cc[0], cc[1], 22, 5.0)
 	Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 12.0)
 	Fx.pop(get_parent(), global_position + Vector3(0, 0.3, 0), ["spark0", "spark1", "spark2"], 12.0)
