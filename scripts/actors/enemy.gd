@@ -459,7 +459,7 @@ func _die() -> void:
 		_explode()
 	Particles.burst(get_parent(), center(), cc[0], cc[1], 22, 5.0)
 	Fx.pop(get_parent(), center(), ["kpop0", "kpop1", "kpop2", "kpop3"], 16.0)
-	if last_hit_by is Player:
+	if is_instance_valid(last_hit_by) and last_hit_by is Player:
 		Combat.hitstop(get_tree(), 0.05 if not elite else 0.12)
 		if rig:
 			rig.shake(1.2 if not elite else 3.0)
