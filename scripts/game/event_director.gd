@@ -1,6 +1,6 @@
 class_name EventDirector
 extends Node
-## 돌발 이벤트 (게임 성경: "30초 안에는 반드시 새로운 상황") — 탐험 지역에서 35~50초마다
+## 돌발 이벤트 (게임 성경: "30초 안에는 반드시 새로운 상황") — 탐험 지역에서 28~40초마다
 ##  · 시청자 투표(설정에서 켬): 세 가지를 띄우고 10초 동안 채팅 !1 !2 !3 으로 고른다 (치지직 · 없으면 가짜 시청자)
 ##  · 투표를 끄면 무작위로 바로
 ## main 이 players()/map/world 를 알려 준다
@@ -52,7 +52,7 @@ func _process(dt: float) -> void:
 		return
 	t -= dt
 	if t <= 0.0:
-		t = _rng.randf_range(35.0, 50.0)
+		t = _rng.randf_range(28.0, 40.0)
 		var keys: Array = EVENTS.keys()
 		keys.shuffle()
 		choices = keys.slice(0, 3)

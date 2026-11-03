@@ -10,8 +10,8 @@ extends Fighter
 signal job_changed(p: Player)
 signal skill_used(p: Player)
 
-const WALK := 3.4
-const RUN := 5.6
+const WALK := 3.8
+const RUN := 6.2
 const ROLL := 9.0
 const ROLL_T := 0.32
 const JUMP := 8.6
@@ -111,6 +111,7 @@ func _ready() -> void:
 	add_child(pl)
 	var party := get_tree().get_first_node_in_group("party")
 	inv = party.inv_of(slot) if party else Inventory.new()
+	_level = party.level if party else 1
 	inv.changed.connect(_apply_items)
 	crown = BB.make("res://assets/sprites/loot.png", "crown_hat", {"unique": true, "receive_shade": false, "emission": 0.4})
 	crown.position.y = 1.55
@@ -118,6 +119,13 @@ func _ready() -> void:
 	add_child(crown)
 	set_job(job)
 	damaged.connect(_on_damaged)
+
+
+## 파티 레벨 보너스 (Party 가 레벨 업 때 부른다 · 직업을 바꿔도 다시 넣는다)
+var _level := 1
+func apply_level(lv: int) -> void:
+	_level = lv
+	set_mod("level", {"attack": 0.04 * (lv - 1), "max_hp": 0.05 * (lv - 1)} if lv > 1 else {})
 
 
 func set_job(j: String) -> void:
@@ -132,6 +140,7 @@ func set_job(j: String) -> void:
 	mods.clear()
 	base_max_hp = float(J["hp"])
 	_apply_items()
+	apply_level(_level)
 	hp = max_hp()
 	skill_cd = 0.0
 	job_changed.emit(self)

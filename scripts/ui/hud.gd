@@ -13,6 +13,9 @@ extends Control
 
 var player: Player
 var party: Party
+var xp_fill: ColorRect
+var lv_badge: Control
+var lv_l: Label
 var boss: Queen
 
 const HP_W := 92
@@ -223,6 +226,16 @@ func _build_main() -> void:
 	hp_text.size = Vector2(HP_W, 11)
 	hp_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_cur.add_child(hp_text)
+	# 경험치 줄 (체력바 아래 2px) + 초상 위 레벨 딱지
+	_rect(Vector2(38, 34), Vector2(HP_W + 2, 2), Color("#0e0b12"))
+	xp_fill = _rect(Vector2(39, 34), Vector2(0, 2), Color("#7af0b0"))
+	lv_badge = UiKit.panel("panel_dark", Vector2(5, 27), Vector2(20, 10))
+	_cur.add_child(lv_badge)
+	lv_l = PixelFont.label("1", "small", Color("#9affc0"), Color("#0e0b12"))
+	lv_l.position = Vector2(5, 27)
+	lv_l.size = Vector2(20, 10)
+	lv_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_cur.add_child(lv_l)
 
 
 func _build_skill() -> void:
@@ -494,6 +507,13 @@ func _process(dt: float) -> void:
 		q_name.text = String(J["skill"]["name"])
 		_qname_t = 4.0
 		u_icon.texture = UiKit.tex("ult_" + player.job)
+	# 경험치 · 레벨
+	if party:
+		var xk := clampf(float(party.xp) / float(party.xp_need()), 0.0, 1.0)
+		xp_fill.size.x = move_toward(xp_fill.size.x, roundf(HP_W * xk), dt * 120.0) if roundf(HP_W * xk) >= xp_fill.size.x else roundf(HP_W * xk)
+		var lt := "Lv%d" % party.level
+		if lv_l.text != lt:
+			lv_l.text = lt
 	# 체력
 	var r := player.ratio()
 	_ghost = move_toward(_ghost, r, dt * 0.7) if _ghost > r else r

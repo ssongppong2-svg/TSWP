@@ -262,7 +262,22 @@ func _enter_tree() -> void:
 	add_to_group("enemies")
 
 
+## 무리 경보: 한 마리가 누군가를 보면 둘레 7m 동료도 같이 덤빈다 (하나씩 끌려오는 지루함 없애기)
+func alert(t: Fighter) -> void:
+	if target == null and not dead and t and not t.dead:
+		target = t
+
+
 func _pick_target() -> void:
+	var had := target != null
+	_pick_target_inner()
+	if not had and target != null:
+		for e in get_tree().get_nodes_in_group("enemies"):
+			if e != self and (e as Node3D).global_position.distance_to(global_position) < 7.0:
+				(e as Enemy).alert(target)
+
+
+func _pick_target_inner() -> void:
 	var best: Fighter = null
 	var bd := float(E["aggro"]) * (1.6 if target else 1.0)
 	for f in get_tree().get_nodes_in_group("fighters"):

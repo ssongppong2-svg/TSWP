@@ -406,12 +406,17 @@ func _process(dt: float) -> void:
 		_check_zones(wp)
 		if air and is_instance_valid(air) and rig:
 			air.global_position = Vector3(rig.focus.x, rig.focus.y, rig.focus.z)
-		map.spawn_check([walker])
+		var everyone: Array = [walker]
+		for sl in coop_nodes:
+			if is_instance_valid(coop_nodes[sl]):
+				everyone.append(coop_nodes[sl])
+		map.spawn_check(everyone)                 # 협동 친구가 먼저 가도 무리가 깨어난다
 		map.tick([walker])
 	_wheel_tick()
 	if state != "play":
 		return
 	_play_t += dt
+	_patrol_tick(dt)
 	if args.has("allevents"):                 # 시험: 돌발 이벤트를 3초마다 차례로
 		var ks: Array = EventDirector.EVENTS.keys()
 		var i := int(_play_t / 3.0)
@@ -1108,7 +1113,7 @@ func _show_result(win: bool) -> void:
 	board.win = win
 	board.members = party_members()
 	board.stats = party.stats
-	board.sub = "난이도 %s  ·  %d:%02d  ·  금화 %d  ·  파티 %d명" % [Diff.NAMES[Diff.level()], mins, int(_play_t) % 60, party.gold, board.members.size()]
+	board.sub = "난이도 %s  ·  %d:%02d  ·  Lv.%d  ·  금화 %d  ·  파티 %d명" % [Diff.NAMES[Diff.level()], mins, int(_play_t) % 60, party.level, party.gold, board.members.size()]
 	board.new_ach = Achievements.run_new.duplicate()
 	var items: Array = []
 	if win:
@@ -1463,3 +1468,47 @@ func _on_map_ready(name_: String) -> void:
 		for k in 30:
 			var p := Vector3(rng.randf_range(3, map.WM - 3), 0, rng.randf_range(3, map.HM - 3))
 			Peel.drop(map, p, null, map.terrain)
+
+
+# ------------------------------------------------------------------ 순찰대 (지루한 구간 없애기)
+## 탐험 지역에서 18초 넘게 싸움이 없으면 화면 밖에서 작은 무리가 몰려온다 (지역마다 5번까지)
+var _quiet_t := 0.0
+var _patrols := 0
+var _patrol_map := ""
+const PATROL_KINDS := [["acorn", "acorn", "spider"], ["shroom", "acorn", "acorn"], ["spider", "spider", "boomer"], ["acorn", "healer", "acorn", "spider"]]
+
+
+func _patrol_tick(dt: float) -> void:
+	if _patrol_map != map_name:
+		_patrol_map = map_name
+		_patrols = 0
+		_quiet_t = 0.0
+	if map_name == "camp" or afterparty or map is NestMap or walker == null or walker.dead or _switching:
+		return
+	var fighting := false
+	for e in get_tree().get_nodes_in_group("enemies"):
+		var en := e as Enemy
+		if not en.dead and en.target != null:
+			fighting = true
+			break
+	_quiet_t = 0.0 if fighting else _quiet_t + dt
+	if _quiet_t < 18.0 or _patrols >= 5:
+		return
+	_quiet_t = 0.0
+	_patrols += 1
+	var r := RandomNumberGenerator.new()
+	r.randomize()
+	var ang := r.randf() * TAU
+	var c := walker.global_position + Vector3(cos(ang), 0, sin(ang)) * 13.0
+	var spot: Vector3 = map.find_spot(Vector2(c.x, c.z), 4.0)
+	var kinds: Array = PATROL_KINDS[r.randi_range(0, PATROL_KINDS.size() - 1)]
+	for k in kinds.size():
+		var a2 := TAU * k / float(kinds.size())
+		var at := spot + Vector3(cos(a2), 0, sin(a2)) * 1.4
+		at.y = map.terrain.height_at(at) + 0.2
+		var e := Enemy.spawn(map, String(kinds[k]), at, map.terrain, rig, k == 0 and r.randf() < Diff.ELITE[Diff.level()])
+		e.target = walker
+		e.home = walker.global_position              # 순찰대는 플레이어 쪽이 집 (중간에 돌아가지 않게)
+		map.enemy_spawned.emit(e)
+	Audio.play("spawn", spot)
+	hud.notify("순찰대가 다가온다!", Color("#ffb070"))
