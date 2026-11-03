@@ -14,70 +14,131 @@ EYE = "#ff5a3a"
 
 
 def queen(anim, i, shell=False):
-    W, H = 112, 64
+    """v2: 셀 음영 + 색 외곽선. 뒤 배(알주머니 빛) · 가슴 · 머리(왕관 · 눈 6 · 송곳니) · 마디 다리 8"""
+    from shade import blob, bands, sphere_t, selout, line_mask, poly_mask, put, fill
+    from px import dilate
+    W, H = 124, 76
     a = canvas(W, H)
     xs, ys = grid(W, H)
     cols = SHELL if shell else CARA
-    bob = {"idle": [0, 1], "walk": [0, -1, 0, -1], "ready": [2], "slam": [-4], "charge": [-1, 0], "hurt": [1], "shell": [2]}[anim][i]
-    lean = {"ready": [-4], "slam": [6], "charge": [6, 7], "hurt": [-3]}.get(anim, [0] * 4)[i]
-    cx, cy = 56 + lean, 34 + bob
-    # 다리 8개: 몸 가운데에서 바깥으로 꺾여 땅으로
-    ph = i if anim == "walk" else 0
+    bob = {"idle": [0, 0, 1, 1], "walk": [0, -1, -2, 0, -1, -2], "ready": [2, 3], "slam": [-5, 1], "charge": [-1, 0], "hurt": [1, 2]}[anim][i]
+    lean = {"ready": [-4, -6], "slam": [7, 8], "charge": [6, 8], "hurt": [-3, -4]}.get(anim, [0] * 6)[i]
+    cx, cy = 62 + lean, 38 + bob
+    floor = H - 2
     raise_front = anim in ("ready", "slam")
-    for k in range(4):
-        for side in (-1, 1):                      # -1 뒤(어둡게) · 1 앞
-            base_x = cx - 10 + k * 8
-            lift = ((k + ph) % 2) * 3 if anim == "walk" else 0
-            spread = (k - 1.5)
-            knee = (cx + spread * 15 + side * 3 - 4, cy - 17 - lift - abs(spread) * 1.5)
-            foot = (cx + spread * 25 + side * 4 - 4 + (lift * (1 if spread > 0 else -1)), H - 2 - lift)
+    def legs(side):
+        for k in range(4):
+            spread = k - 1.5
+            ph = (k + (0 if side > 0 else 1)) % 2
+            gait = [0, 1, 2, 1, 0, -1][(i + ph * 3) % 6] if anim == "walk" else 0
+            root = (cx - 2 + spread * 5, cy - 2)
+            knee = (cx - 2 + spread * 19 + side * 2 + gait * 1.5, cy - 31 + abs(spread) * 4 - (2 if gait > 0 else 0) - (1 if anim == "idle" and i >= 2 else 0) + (3 if side < 0 else 0))
+            foot = (cx - 2 + spread * 33 + side * 3 + gait * 2.5, floor - (3 if gait > 1 else 0) - (2 if side < 0 else 0))
             if raise_front and k >= 2:
-                knee = (base_x + 8, cy - 22 + (6 if anim == "slam" else 0))
-                foot = (base_x + 14, cy - 8 + (16 if anim == "slam" else 0))
-            col = cols[1] if side < 0 else cols[3]
-            for (p0, p1, th) in (((cx + (k - 1.5) * 4, cy - 2), knee, 1.7), (knee, foot, 1.25)):
-                n = 24
-                for s in range(n + 1):
-                    u = s / n
-                    x = p0[0] + (p1[0] - p0[0]) * u
-                    y = p0[1] + (p1[1] - p0[1]) * u
-                    m = ell(W, H, x, y, th, th)
-                    paint(a, m, col)
-            # 다리 마디 장식
-            paint(a, ell(W, H, knee[0], knee[1], 1.9, 1.9), cols[4] if side > 0 else cols[2])
-    # 알주머니 배 (뒤)
-    abd = ell(W, H, cx - 18, cy - 4, 17, 14)
-    lam = -((xs - cx) / 20) * 0.4 - ((ys - cy) / 14) * 0.6
-    ramp(a, abd, cols, 0.45 + lam * 0.45, 0.4)
-    # 배 무늬: 빛나는 알 주머니 (껍질이 굳으면 가려짐)
+                lift = 0 if anim == "ready" else 1
+                knee = (cx + 12 + k * 6, cy - 30 + lift * 10 - i * 2)
+                foot = (cx + 24 + k * 6, cy - 16 + lift * 28)
+            dark = side < 0
+            c_main = cols[1] if dark else cols[2]
+            c_lite = cols[2] if dark else cols[3]
+            th = 3.0 if dark else 3.6
+            mid = (knee[0] + (foot[0] - knee[0]) * 0.45 + spread * 1.2, knee[1] + (foot[1] - knee[1]) * 0.45)
+            if not dark:                                         # 앞다리는 몸 위에 그리므로 어두운 테를 먼저 (몸과 섞이지 않게)
+                lm = line_mask(W, H, root, knee, th) | line_mask(W, H, knee, mid, th * 0.75) | line_mask(W, H, mid, foot, th * 0.5)
+                fill(a, dilate(lm) & ~lm, OUTL)
+            fill(a, line_mask(W, H, root, knee, th), c_main)
+            fill(a, line_mask(W, H, (root[0] - 0.8, root[1] - 1), (knee[0] - 0.8, knee[1] - 1), 1.0), c_lite)
+            # 정강이: 무릎에서 살짝 바깥으로 휘었다 발끝으로 (가늘어짐)
+            fill(a, line_mask(W, H, knee, mid, th * 0.75), c_main)
+            fill(a, line_mask(W, H, mid, foot, th * 0.5), c_main)
+            fill(a, line_mask(W, H, (knee[0] - 0.6, knee[1]), (mid[0] - 0.6, mid[1]), 0.6), c_lite)
+            # 무릎 가시 + 마디 · 발톱
+            fill(a, poly_mask(W, H, [(knee[0] - 1.6, knee[1] - 1), (knee[0] + 1.6, knee[1] - 1), (knee[0] + 0.8, knee[1] - 5)]), cols[0] if dark else cols[2])
+            fill(a, ell(W, H, knee[0], knee[1], 2.3, 2.3), cols[2] if dark else cols[4])
+            put(a, knee[0] - 1, knee[1] - 1, cols[3] if dark else cols[-1])
+            put(a, foot[0], foot[1], "#e8dcc8" if not dark else cols[2])
+
+    legs(-1)                                                     # 뒤쪽 다리 (몸 뒤)
+    # ---- 배 (뒤, 크게): 마디 줄 + 알주머니
+    ab = (cx - 21, cy - 5)
+    pulse = (i % 2) if anim == "idle" else 0
+    abd = blob(a, ab[0], ab[1], 20 + pulse * 0.4, 16 + pulse * 0.3, cols[1:6], cut=[0.22, 0.45, 0.68, 0.88])
+    for k in range(5):                                           # 마디 띠 (아래쪽 어두운 곡선)
+        xk = ab[0] - 14 + k * 7
+        seg = abd & (np.abs(xs + 0.5 - xk - (ys - ab[1]) * 0.15) < 0.6) & (ys > ab[1] - 10)
+        fill(a, seg, cols[1])
     if not shell:
-        sac = ell(W, H, cx - 20, cy - 2, 9, 7)
-        ramp(a, sac, SAC, 0.6 - (ys - cy) / 12 - (xs - cx + 20) / 30, 0.4)
-        for (dx, dy) in ((-4, -2), (2, 1), (-1, 3), (4, -3)):
-            paint(a, ell(W, H, cx - 20 + dx, cy - 2 + dy, 1.6, 1.4), SAC[4])
+        # 등의 무늬: 빛나는 알주머니 (속이 비치는 막 + 안의 알들)
+        sac = ell(W, H, ab[0] - 1, ab[1] + 3, 11, 8.5) & abd
+        glow = 0.12 * pulse + (0.25 if anim in ("ready", "slam") else 0.0)
+        bands(a, sac, SAC[1:], np.clip(sphere_t(W, H, ab[0] - 3, ab[1] + 1, 11, 8.5, amb=0.45) + glow, 0, 1), cut=[0.35, 0.6, 0.85])
+        fill(a, sac & ~nb(sac, 0, -1), SAC[3])                  # 윗가장자리 빛
+        for (dx, dy, r) in ((-6, 0, 2.0), (-1, 3, 2.3), (4, 0, 1.9), (-3, -3, 1.7), (2, -4, 1.5), (-7, 5, 1.6), (5, 5, 1.7)):
+            e = ell(W, H, ab[0] - 1 + dx, ab[1] + 3 + dy, r, r * 0.9) & sac
+            fill(a, e, "#ffe0a8")
+            fill(a, e & ~nb(e, 0, 1), SAC[3])
+            put(a, ab[0] - 1 + dx - 0.6, ab[1] + 2.2 + dy, "#ffffff")
     else:
-        for k in range(5):
-            paint(a, abd & (np.abs(xs - (cx - 30 + k * 6)) < 0.7), SHELL[0])
-    # 가슴 + 머리
-    tho = ell(W, H, cx + 4, cy - 2, 11, 9)
-    ramp(a, tho, cols, 0.5 + lam * 0.45, 0.4)
-    head = ell(W, H, cx + 16, cy - 4, 8, 7)
-    ramp(a, head, cols, 0.55 + lam * 0.45, 0.4)
-    # 왕관 (가시 셋)
-    for k, h in enumerate((7, 10, 7)):
-        bx = int(cx + 12 + k * 4)
-        for t in range(h):
-            w_ = max(0, 2 - t // 3)
-            a[int(cy - 10 - t), bx - w_:bx + w_ + 1] = hx(GOLD[2] if t < h - 2 else GOLD[3])
-        a[int(cy - 10), bx - 2:bx + 3] = hx(GOLD[1])
-    # 눈 (넷, 빨갛게 빛남)
-    for (dx, dy) in ((5, -5), (7, -4), (4, -2), (6, -1)):
-        a[int(cy + dy - 1), int(cx + 16 + dx)] = hx(EYE)
-    # 송곳니
-    fang = 3 if anim in ("slam", "charge") else 1
-    for dx in (2, 5):
-        a[int(cy + 2):int(cy + 3 + fang), int(cx + 18 + dx)] = hx("#f0e8d8")
-    outline(a, OUTL)
+        for k in range(4):                                       # 굳은 껍질 판
+            plate = ell(W, H, ab[0] - 10 + k * 7, ab[1] - 4 + (k % 2) * 3, 6, 7) & abd
+            bands(a, plate, SHELL[1:], sphere_t(W, H, ab[0] - 12 + k * 7, ab[1] - 6, 6, 7), cut=[0.3, 0.6, 0.85])
+            fill(a, plate & ~nb(plate, 0, 1), SHELL[0])
+    # 털 (가장자리 몇 가닥)
+    for (dx, dy) in ((-19, -9), (-14, -15), (-6, -16), (-21, 0), (-17, 9)):
+        put(a, ab[0] + dx, ab[1] + dy, cols[3])
+        put(a, ab[0] + dx - 1, ab[1] + dy - 1, cols[2])
+    # ---- 가슴 · 머리
+    tho = blob(a, cx + 2, cy - 3, 11, 9, cols[1:6], cut=[0.22, 0.45, 0.68, 0.88])
+    hdx, hdy = cx + 17, cy - 5 + (2 if anim == "slam" and i == 0 else 0)
+    head = blob(a, hdx, hdy, 10.5, 9.0, cols[1:6], cut=[0.2, 0.42, 0.66, 0.86])
+    fill(a, dilate(head) & ~head & (xs > hdx - 6), OUTL)                 # 머리 윤곽 (가슴과 나뉘게)
+    legs(1)                                                      # 앞쪽 다리 (몸 앞)
+    # 더듬이 다리(촉지) 둘
+    for k, dy in enumerate((4, 6)):
+        p0 = (hdx + 5, hdy + dy - 2)
+        p1 = (hdx + 10 + k * 2, hdy + dy + 3 - (3 if anim in ("ready", "charge") else 0))
+        fill(a, line_mask(W, H, p0, p1, 1.6), cols[2])
+        put(a, p1[0], p1[1], cols[4])
+    # 왕관 (가시 셋 + 보석)
+    for k, h in enumerate((7, 11, 7)):
+        bx = hdx - 4 + k * 4
+        spike = poly_mask(W, H, [(bx - 2, hdy - 8), (bx + 2, hdy - 8), (bx + 0.3, hdy - 8 - h)])
+        fill(a, spike, GOLD[2])
+        fill(a, spike & (xs + 0.5 < bx), GOLD[3])
+        put(a, bx, hdy - 8 - h + 1, "#ffffff")
+    band_ = (np.abs(ys + 0.5 - (hdy - 8)) < 1.2) & (np.abs(xs + 0.5 - hdx) < 7)
+    fill(a, band_, GOLD[1])
+    fill(a, ell(W, H, hdx, hdy - 8, 1.5, 1.3), "#e04a6a")
+    put(a, hdx - 0.5, hdy - 8.5, "#ffb0c0")
+    # 눈 6 (큰 둘 + 작은 넷) — 맞으면 질끈
+    eye_c = EYE if not shell else "#c86a4a"
+    if anim == "hurt":
+        for (dx, dy) in ((3, -2), (6, -1)):
+            for k in range(3):
+                put(a, hdx + dx + k - 1, hdy + dy + (1 if k == 1 else 0), "#1a1220")
+    else:
+        for (dx, dy, r) in ((3.5, -1.5, 2.0), (8.0, -0.5, 2.0)):
+            fill(a, ell(W, H, hdx + dx, hdy + dy, r + 0.7, r * 1.1 + 0.7), "#1a1220")
+            fill(a, ell(W, H, hdx + dx, hdy + dy, r, r * 1.1), eye_c)
+            put(a, hdx + dx - 0.7, hdy + dy - 1.0, "#ffffff")
+            put(a, hdx + dx + 0.6, hdy + dy + 0.8, "#ffc0a0")
+        for (dx, dy) in ((1, -4.5), (5, -5), (9, -4), (10.5, 2)):
+            put(a, hdx + dx, hdy + dy, eye_c)
+    # 송곳니 (협각) — 공격 때 벌어짐
+    gap = 3 if anim in ("slam", "charge", "ready") else 1
+    for k, dx in enumerate((3, 7)):
+        p0 = (hdx + dx, hdy + 4)
+        p1 = (hdx + dx + (k * 2 - 1) * gap * 0.6, hdy + 9 + gap)
+        fill(a, line_mask(W, H, p0, p1, 1.8), "#2a1a24")
+        fill(a, line_mask(W, H, (p0[0], p0[1] + 2), p1, 0.8), "#f4ecdc")
+    if anim == "slam" and i == 0:                                  # 내려찍기 잔상
+        for k in range(3):
+            fill(a, line_mask(W, H, (cx + 34 + k * 4, 6 + k * 3), (cx + 34 + k * 4, 20 + k * 3), 0.6), "#fff4d6")
+    if anim == "charge":
+        for k in range(4):
+            yy = cy - 12 + k * 6
+            fill(a, line_mask(W, H, (4 + k * 3, yy), (16 + k * 3, yy), 0.6), "#e8dcff")
+    selout(a, OUTL, k=0.35, mix_ink=0.6)
     return a
 
 
@@ -166,7 +227,7 @@ def crown():
     return a
 
 
-ANIMS = {"idle": 2, "walk": 4, "ready": 1, "slam": 1, "charge": 2, "hurt": 1}
+ANIMS = {"idle": 4, "walk": 6, "ready": 2, "slam": 2, "charge": 2, "hurt": 2}
 
 
 def main():
@@ -183,11 +244,11 @@ def main():
     items.append(("lever_on", lever(True)))
     items.append(("crown", crown()))
     at, pos = pack(items, os.path.join(OUT, "sprites", "boss"), 1024, keep_bottom=False, trim_cells=False)
-    pv = canvas(116 * 6, 140)
+    pv = canvas(128 * 6, 160)
     for k, n in enumerate(["queen_idle0", "queen_walk1", "queen_ready0", "queen_slam0", "queen_charge0", "queenS_idle0"]):
-        over(pv, dict(items)[n], k * 116, 0)
+        over(pv, dict(items)[n], k * 128, 0)
     for k, n in enumerate(["cocoon0", "cocoon1", "web_field", "pillar", "lever_off", "lever_on", "crown"]):
-        over(pv, dict(items)[n], k * 70, 70)
+        over(pv, dict(items)[n], k * 70, 82)
     preview(pv, "boss_pv.png", 3)
     print(len(pos), at.shape)
 

@@ -471,12 +471,14 @@ func _set_anim(a: String) -> void:
 
 func _anim_tick(dt: float) -> void:
 	anim_t += dt
-	var counts := {"idle": 2, "walk": 4, "ready": 1, "slam": 1, "charge": 2, "hurt": 1}
-	var fps := {"idle": 2.5, "walk": 7.0, "ready": 1.0, "slam": 1.0, "charge": 10.0, "hurt": 1.0}
+	var counts := {"idle": 4, "walk": 6, "ready": 2, "slam": 2, "charge": 2, "hurt": 2}
+	var fps := {"idle": 4.0, "walk": 10.0, "ready": 4.0, "slam": 8.0, "charge": 12.0, "hurt": 8.0}
 	var a := anim
 	if flash > 0.08 and state != "busy" and state != "charge":
 		a = "hurt"
 	var i: int = int(anim_t * float(fps[a])) % int(counts[a])
+	if a in ["ready", "slam"]:
+		i = mini(int(anim_t * float(fps[a])), int(counts[a]) - 1)     # 한 번만 (반복하면 덜컹)
 	var pre := "queenS_" if shell else "queen_"
 	spr_mat.set_shader_parameter("region", BB.region_uv(ATLAS, "%s%s%d" % [pre, a, i]))
 	spr_mat.set_shader_parameter("flip", 1.0 if flip else 0.0)

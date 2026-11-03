@@ -1022,6 +1022,8 @@ func _combo_tick(dt: float) -> void:
 	combo_box.scale = Vector2(roundf(k * 4.0) / 4.0, roundf(k * 4.0) / 4.0)
 	var live := player != null and is_instance_valid(player) and player.combo >= 3
 	if live:
+		if _combo_n.text != str(player.combo):
+			combo_show(player.combo)                   # 신호를 놓쳐도 (봇·관전) 숫자가 맞게
 		_combo_fade = 1.0
 		_combo_bar.size.x = roundf((WIDGETS["combo"]["rect"].size.x - 20) * clampf(player.combo_t / Player.COMBO_KEEP, 0.0, 1.0))
 	else:
