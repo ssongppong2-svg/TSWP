@@ -810,6 +810,7 @@ func notify(text: String, col := Color("#fff4d6"), icon: Texture2D = null) -> vo
 	l.size = Vector2(w - (x - (150 - w)) - 3, 23 if two else 12)
 	row.add_child(l)
 	feed.add_child(row)
+	l.size = Vector2(w - (x - (150 - w)) - 3, 23 if two else 12)        # 트리에 들어간 뒤 다시 (들어가며 글 폭으로 늘어남)
 	_feed.push_front([row, 4.4 if two else 3.6, rh + 1.0])
 	while _feed.size() > 4 or (_feed.size() > 1 and _feed.reduce(func(t, e): return t + float(e[2]), 0.0) > 86.0):
 		(_feed.pop_back()[0] as Control).queue_free()

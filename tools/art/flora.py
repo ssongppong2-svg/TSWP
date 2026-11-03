@@ -29,41 +29,39 @@ def blob_mask(w, h, cx, cy, r, seed, bump=0.12, squash=0.9):
 
 
 def leaf_clump(a, cx, cy, r, cols, seed, bright=0.0, rim_dark=None, tex=1.0, squash=0.9):
-    """잎 뭉치 하나: 왼쪽 위 밝고 오른쪽 아래 어둡게 + 작은 잎 결 + 아래 테두리 그늘"""
+    """잎 뭉치 v2: 디더 없는 3~4단 띠 + 띠 경계에 작은 잎 끝(ㅅ) 무늬 + 아래 테 1px
+    (빛 왼쪽 위) — 흐린 점무늬 대신 또렷한 덩어리로 읽힌다"""
     h, w = a.shape[:2]
     m, dx, dy = blob_mask(w, h, cx, cy, r, seed, squash=squash)
-    lam = -(dx * LX + dy * LY)
+    lam = dx * LX + dy * LY                    # +: 빛 쪽 (왼쪽 위)
     n = len(cols)
-    # 뭉치 안은 2~3단 평평한 톤 (레퍼런스처럼 깔끔하게) — 잎 결은 작은 노이즈로만 살짝
-    t = 0.40 + lam * 0.36 + bright
-    nz = vnoise(w, h, 3, seed + 3)
-    t += (nz - 0.5) * 0.07 * tex
-    ramp(a, m, cols, t, dither=0.12)
-    # 아래·오른쪽 가장자리 띠 = 그늘 (2~3px)
-    sh = m & ~nb(m, 2, 3)
-    t_sh = t - 0.3
-    ramp(a, sh & (lam < 0.35), cols, t_sh, dither=0.1)
-    # 왼쪽 위 가장자리 = 빛 받는 볼록한 잎 (오돌토돌한 하이라이트)
-    hi = m & ~nb(m, -2, -3) & (lam > -0.1)
-    jag = vnoise(w, h, 2, seed + 11) > 0.42
-    ramp(a, hi & jag, cols, t + 0.28, dither=0.2)
-    # 잎 결: 안쪽 윗부분에 밝은 'ㅅ' 모양 잎 끝 몇 개
+    # 뭉치마다 3단만 (많으면 줄무늬처럼 보인다): 밝기(bright)로 사다리 위치를 고르고 그 안에서 빛 방향으로 3단
+    base = int(np.clip(round((0.3 + bright * 1.6) * (n - 3)), 0, n - 3))
+    tb = np.clip(0.45 + lam * 0.55, 0, 0.999)
+    k = base + np.floor(tb * 3).astype(int)
+    pal = np.array([hx(c) for c in cols], np.uint8)
+    a[m] = pal[np.clip(k, 0, n - 1)[m]]
     R = random.Random(seed + 99)
-    ys_, xs_ = np.nonzero(erode(m, 3) & (dy < 0.2))
-    for _ in range(int(r * 0.5)):
+    inner = erode(m, 1)
+    ys_, xs_ = np.nonzero(inner)
+    # 잎 끝 무늬: 띠 경계 근처에 한 단 밝은/어두운 ㅅ 모양 (빛 쪽은 밝게, 그늘 쪽은 어둡게)
+    for _ in range(int(r * r * 0.07)):
         if len(xs_) == 0:
             break
         i = R.randrange(len(xs_))
         x, y = xs_[i], ys_[i]
-        k = int(np.clip(np.floor(t[y, x] * n) + 1, 0, n - 1))
-        c = hx(cols[k])
-        a[y, x] = c
-        if x + 1 < w and m[y + 1 if y + 1 < h else y, x + 1]:
-            a[min(h - 1, y + 1), x + 1] = c
-        if x - 1 >= 0 and y + 1 < h and m[y + 1, x - 1]:
-            a[y + 1, x - 1] = c
+        kk = int(k[y, x])
+        up = R.random() < (0.35 + lam[y, x] * 0.4)
+        kk2 = int(np.clip(kk + (1 if up else -1), 0, n - 1))
+        c = pal[kk2]
+        for (ddx, ddy) in ((0, 0), (-1, 1), (1, 1), (-2, 2), (2, 2)):
+            xx, yy = x + ddx, y + ddy
+            if 0 <= xx < w and 0 <= yy < h and inner[yy, xx]:
+                a[yy, xx] = c
+    # 빛 받는 윗가장자리 한 줄 더 밝게 (볼록)
+    top = m & ~nb(m, 0, -1) & (lam > 0.0)
+    a[top] = pal[np.clip(k + 1, 0, n - 1)[top]]
     if rim_dark:
-        # 아래 테두리 1px 짙게 (앞 뭉치와 뒤 뭉치 구분)
         e = m & ~nb(m, 0, 1) & (dy > -0.1)
         paint(a, e, rim_dark)
     return m
@@ -90,10 +88,10 @@ def tree_broad(seed, W=112, H=132, cols=None, trunk_h=34, light=False):
             root = ell(W, H, rx, base - 1 - k, 3.0 - k * 0.6, 2.0)
             trunk |= root
     u = (xs + 0.5 - (cx - tw / 2 - 6)) / (tw + 12)
-    t = 0.75 - u * 0.75 + (vnoise(W, H, 2, seed) - 0.5) * 0.25
-    # 세로 결
-    t -= ((xs.astype(int) + (ys.astype(int) // 5)) % 4 == 0) * 0.12
-    ramp(a, trunk, BARK[1:7], t, 0.5)
+    t = 0.8 - u * 0.8
+    # 세로 결 (몇 줄만, 어두운 쪽은 길게)
+    t -= (((xs.astype(int) * 7 + (ys.astype(int) // 6) * 3) % 11) == 0) * 0.18
+    ramp(a, trunk, BARK[1:7], t, 0.0)
     # ---- 잎 뭉치: 뒤(위·가장자리) → 앞(아래·가운데) 순서로
     crown_cy = top - 4
     # 뒤(위) 줄 → 앞(아래) 줄: 줄마다 큰 둥근 뭉치 몇 개 — 앞 뭉치의 밝은 윗머리가 덩어리 경계를 만든다
@@ -129,31 +127,42 @@ def tree_broad(seed, W=112, H=132, cols=None, trunk_h=34, light=False):
 
 
 def tree_pine(seed, W=56, H=104):
+    """전나무 v2: 겹겹 가지 층 (아래 가장자리가 늘어진 톱니) · 왼쪽 빛 3단 · 층 아래 짙은 그늘"""
     a = canvas(W, H)
     R = random.Random(seed)
     cx = W / 2
     base = H - 2
     xs, ys = grid(W, H)
-    trunk = (np.abs(xs + 0.5 - cx) < 3.5) & (ys > base - 18) & (ys <= base)
-    trunk |= ell(W, H, cx - 4, base - 1, 2.4, 1.6) | ell(W, H, cx + 4, base - 1, 2.4, 1.6)
-    ramp(a, trunk, BARK[1:6], 0.7 - (xs - cx + 4) / 9.0, 0.4)
-    cols = ["#14261f", "#1d3429", "#284534", "#335640", "#41684c", "#527c58", "#6a9466"]
+    trunk = (np.abs(xs + 0.5 - cx) < 3.0) & (ys > base - 18) & (ys <= base)
+    trunk |= ell(W, H, cx - 3.5, base - 1, 2.2, 1.5) | ell(W, H, cx + 3.5, base - 1, 2.2, 1.5)
+    ramp(a, trunk, BARK[1:6], 0.75 - (xs - cx + 3) / 8.0, 0.0)
+    cols = ["#122320", "#1b3128", "#25412f", "#2f523a", "#3d6646", "#4f7b52", "#669460", "#84ac72"]
+    pal = np.array([hx(c) for c in cols], np.uint8)
     tiers = 6
     for i in range(tiers):
         k = i / (tiers - 1)                         # 0 꼭대기 … 1 아래
-        ty = 6 + k * (H - 34)
-        half = 6 + k * (W * 0.42)
-        hgt = 18 + k * 8
-        m = (ys >= ty) & (ys <= ty + hgt) & (np.abs(xs + 0.5 - cx) <= half * (ys - ty) / hgt + 1)
-        # 아래 가장자리 톱니
-        saw = ((xs.astype(int) + i * 2) % 5) < 2
-        m &= ~((ys > ty + hgt - 2) & saw)
-        lam = -((xs - cx) / (half + 1)) * 0.55 - ((ys - ty) / hgt - 0.5) * 0.3
-        t = 0.55 + lam * 0.5 - k * 0.12 + (vnoise(W, H, 3, seed + i) - 0.5) * 0.1
-        ramp(a, m, cols, t, 0.2)
+        ty = 4 + k * (H - 32)
+        half = 5 + k * (W * 0.43)
+        hgt = 17 + k * 9
+        u = (xs + 0.5 - cx) / (half + 0.01)
+        bottom = ty + hgt - 3 + 2.5 * np.abs(np.sin(u * math.pi * (2 + i * 0.5)))   # 늘어진 가지 끝
+        m = (ys >= ty) & (ys <= bottom) & (np.abs(xs + 0.5 - cx) <= half * (ys - ty) / hgt + 1)
+        lam = -u * 0.6 - ((ys - ty) / hgt - 0.4) * 0.35
+        t = np.clip(0.5 + lam * 0.45 - k * 0.1, 0, 0.999)
+        kk = np.clip(np.floor(t * 6).astype(int) + 1, 0, len(cols) - 1)
+        a[m] = pal[kk[m]]
+        # 가지 결: 가운데에서 바깥 아래로 뻗는 밝은 줄 몇 개 (왼쪽만)
+        for j in range(3):
+            bx = cx - half * (0.25 + j * 0.25)
+            by = ty + hgt * (0.45 + j * 0.15)
+            seg = (np.abs((ys - by) - (xs - bx) * -0.45) < 0.6) & (xs < cx - 1) & (xs > bx - 3) & m
+            a[seg] = pal[np.clip(kk[seg] + 1, 0, len(cols) - 1)]
         under = m & ~nb(m, 0, 1)
-        paint(a, under, cols[0])
+        a[under] = pal[0]
+        # 다음 층이 드리울 그늘 (이 층 바로 아래 두 줄)
     outline(a, INK_G)
+    # 꼭대기 빛
+    top = np.nonzero(a[..., 3] > 0)
     return a
 
 
@@ -298,22 +307,39 @@ def log(seed, W=40, H=16):
 
 
 def rock(seed, W=24, H=16, cols=None, flat=True):
-    """납작한 크림색 바위 (레퍼런스)"""
-    cols = cols or ["#4a4440", "#625a52", "#7a7064", "#948876", "#ac9f8a", "#c4b8a0"]   # 바위: 중간 명도 (아이템처럼 튀지 않게)
+    """바위 v2: 둥근 덩어리 두세 개를 겹친 모양 · 디더 없는 4단 · 금 · 위에 이끼(가끔)"""
+    cols = cols or ["#3e3a38", "#57514a", "#716858", "#8c8170", "#a89c86", "#c4b8a0"]
     a = canvas(W, H)
     R = random.Random(seed)
-    m, dx, dy = blob_mask(W, H, W / 2, H / 2 + 1, W * 0.42, seed, bump=0.08, squash=(0.55 if flat else 0.85))
-    lam = -(dx * LX + dy * LY)
-    t = 0.55 + lam * 0.35 + (vnoise(W, H, 3, seed) - 0.5) * 0.2
-    ramp(a, m, cols, t, 0.6)
-    # 금 한 줄
+    xs, ys = grid(W, H)
+    pal = np.array([hx(c) for c in cols], np.uint8)
+    lumps = [(W * 0.45, H * 0.6, W * 0.36, H * 0.42)]
+    for _ in range(R.randint(1, 2)):
+        lumps.append((W * R.uniform(0.3, 0.7), H * R.uniform(0.55, 0.7), W * R.uniform(0.2, 0.28), H * R.uniform(0.3, 0.4)))
+    lumps.sort(key=lambda l: l[1])
+    for (lx, ly, rx, ry) in lumps:
+        m = ell(W, H, lx, ly, rx, ry * (0.75 if flat else 1.0) + 1)
+        nx = (xs + 0.5 - lx) / rx
+        ny = (ys + 0.5 - ly) / ry
+        t = np.clip(0.55 - nx * 0.3 - ny * 0.45, 0, 0.999)
+        kk = np.clip(np.floor(t * (len(cols) - 1)).astype(int) + 1, 0, len(cols) - 1)
+        a[m] = pal[kk[m]]
+        a[m & ~nb(m, 0, 1)] = pal[0]
+        top = m & ~nb(m, 0, -1) & (nx < 0.3)
+        a[top] = pal[-1]
+    m = a[..., 3] > 0
+    # 금
     x0 = R.randrange(W // 3, W * 2 // 3)
     for i in range(4):
-        y = int(H / 2 - 1 + i)
-        if 0 <= y < H and m[y, x0 + i // 2]:
-            a[y, x0 + i // 2] = hx(cols[0])
-    # 아래 그늘
-    paint(a, m & ~nb(m, 0, 1), cols[0])
+        y = int(H * 0.45 + i)
+        x = x0 + (i // 2) * (1 if seed % 2 else -1)
+        if 0 <= y < H and 0 <= x < W and m[y, x]:
+            a[y, x] = pal[1]
+    # 이끼
+    if seed % 3 != 2:
+        moss = m & (ys < H * 0.5) & (vnoise(W, H, 3, seed + 5) > 0.5) & ~nb(~m, 0, -2)
+        a[moss] = hx(GRASS[4])
+        a[moss & ~nb(moss, 0, -1)] = hx(GRASS[6])
     outline(a, INK_B)
     return a
 
