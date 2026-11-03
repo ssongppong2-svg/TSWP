@@ -231,6 +231,23 @@ def _(v):
     return mix(crack * 1.2, body * 0.9, (ring, 0.002))
 
 
+@snd("crit", 3)
+def _(v):
+    # 치명타: 날카로운 금속 '팅' + 묵직한 쿵 + 짧은 반짝 꼬리
+    ring = metal(r(2300, 2700), 0.4, 1.2) * 0.45
+    crack = bp(noise(0.06), 2000, 11000) * env_exp(0.06, 0.006) * 1.4
+    body = thump(r(160, 190), 50, 0.22, 0.07) * 1.1
+    shine = chime(r(1800, 2100), 0.35, 1.6) * 0.18
+    return mix(crack, body, (ring, 0.003), (shine, 0.02))
+
+
+@snd("combo", 1)
+def _(v):
+    # 콤보 단계: 올라가는 짧은 두 음 (변주마다 한 음씩 높게)
+    base = 784.0
+    return notes([base, base * 1.5], 0.06, lambda f: chime(f, 0.2, 1.4) * 0.5)
+
+
 @snd("smash", 3)
 def _(v):
     d = 0.6

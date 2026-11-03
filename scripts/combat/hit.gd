@@ -16,6 +16,7 @@ var status := {}                  # 상태이상 이름 → 시간 (Fighter.appl
 var ff_cur := -1.0                # 아군에게 '현재 체력의 n%' (예: 거대 폭탄 0.2)
 var self_ratio := 1.0             # 시전자 본인이 맞을 때 비율
 var kind := "hit"                 # 소리·효과 고르기용 (slash · bomb · arrow · bite · spore …)
+var crit := false                 # 치명타 (Fighter.take 에서 정함 — 플레이어가 적을 때릴 때만)
 
 
 static func make(amount_: float, source_: Node, knock_ := Vector3.ZERO, kind_ := "hit") -> Hit:

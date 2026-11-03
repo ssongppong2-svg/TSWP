@@ -32,6 +32,7 @@ const WIDGETS := {
 	"toast": {"name": "아이템 설명", "rect": Rect2(4, 168, 196, 68)},
 	"boss": {"name": "보스", "rect": Rect2(122, 226, 236, 40)},
 	"vote": {"name": "시청자 투표", "rect": Rect2(156, 40, 168, 48)},
+	"combo": {"name": "콤보", "rect": Rect2(398, 170, 78, 34)},
 }
 # 왼쪽 위
 var portrait: TextureRect
@@ -145,6 +146,8 @@ func _ready() -> void:
 	_build_feed()
 	_begin("party")
 	_build_party()
+	_begin("combo")
+	_build_combo()
 	_begin("vote")
 	vote_box = Control.new()
 	vote_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -471,6 +474,7 @@ func _process(dt: float) -> void:
 	_tick_hint(dt)
 	_tick_toast(dt)
 	_feed_tick(dt)
+	_combo_tick(dt)
 	if _root.visible:
 		_mm_tick(dt)
 		_party_tick()
@@ -797,12 +801,13 @@ func notify(text: String, col := Color("#fff4d6"), icon: Texture2D = null) -> vo
 		x += 15
 	var l := PixelFont.label(text, "small", col)
 	l.position = Vector2(x, 2)
-	l.size = Vector2(w - (x - (150 - w)) - 3, 23 if two else 12)
+	# 줄바꿈·자르기를 먼저 켜야 크기가 글자 폭으로 늘어나지 않는다
 	if two:
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		l.add_theme_constant_override("line_spacing", -1)
 	else:
 		l.clip_text = true
+	l.size = Vector2(w - (x - (150 - w)) - 3, 23 if two else 12)
 	row.add_child(l)
 	feed.add_child(row)
 	_feed.push_front([row, 4.4 if two else 3.6, rh + 1.0])
@@ -933,3 +938,94 @@ func vote_update(choices: Array, votes: Array, t: float, live: bool) -> void:
 		n.size = Vector2(20, 10)
 		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		vote_box.add_child(n)
+
+
+# ---- 콤보 (오른쪽): 숫자가 튀어 오르고 단계마다 색이 달아오른다 · 아래 줄 = 끊기기까지 남은 시간
+var combo_box: Control
+var _combo_n: Label
+var _combo_l: Label
+var _combo_bar: ColorRect
+var _combo_msg: Label
+var _combo_pop := 0.0
+var _combo_fade := 0.0
+var _combo_msg_t := 0.0
+const COMBO_COLS := [Color("#fff4d6"), Color("#ffe14a"), Color("#ffa040"), Color("#ff5a4a"), Color("#ff6ad0")]
+
+
+func _build_combo() -> void:
+	var r: Rect2 = WIDGETS["combo"]["rect"]
+	combo_box = Control.new()
+	combo_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	combo_box.position = r.position
+	combo_box.size = r.size
+	combo_box.pivot_offset = Vector2(r.size.x - 10, 12)
+	combo_box.modulate.a = 0.0
+	_cur.add_child(combo_box)
+	_combo_n = PixelFont.label("", "big", COMBO_COLS[0])
+	_combo_n.size = Vector2(r.size.x - 24, 14)
+	_combo_n.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_combo_n.add_theme_color_override("font_outline_color", Color("#140e1a"))
+	_combo_n.add_theme_constant_override("outline_size", 4)
+	combo_box.add_child(_combo_n)
+	_combo_l = PixelFont.label("콤보", "small", Color("#d8ccb8"))
+	_combo_l.position = Vector2(r.size.x - 22, 3)
+	_combo_l.add_theme_color_override("font_outline_color", Color("#140e1a"))
+	_combo_l.add_theme_constant_override("outline_size", 3)
+	combo_box.add_child(_combo_l)
+	var bg := ColorRect.new()
+	bg.color = Color(0.08, 0.06, 0.1, 0.8)
+	bg.position = Vector2(20, 16)
+	bg.size = Vector2(r.size.x - 20, 2)
+	combo_box.add_child(bg)
+	_combo_bar = ColorRect.new()
+	_combo_bar.position = Vector2(20, 16)
+	_combo_bar.size = Vector2(r.size.x - 20, 2)
+	combo_box.add_child(_combo_bar)
+	_combo_msg = PixelFont.label("", "small", Color("#ffe14a"))
+	_combo_msg.position = Vector2(-40, 20)
+	_combo_msg.size = Vector2(r.size.x + 40, 10)
+	_combo_msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_combo_msg.add_theme_color_override("font_outline_color", Color("#140e1a"))
+	_combo_msg.add_theme_constant_override("outline_size", 3)
+	combo_box.add_child(_combo_msg)
+
+
+func combo_show(n: int) -> void:
+	if n < 3:
+		return                                          # 한두 대는 콤보라 부르지 않는다
+	_combo_n.text = "%d" % n
+	var c: Color = COMBO_COLS[clampi(n / 10, 0, COMBO_COLS.size() - 1)]
+	_combo_n.add_theme_color_override("font_color", c)
+	_combo_bar.color = c
+	_combo_pop = 1.0
+	_combo_fade = 1.0
+
+
+func combo_reward(n: int, msg: String) -> void:
+	_combo_msg.text = "%d 콤보! %s" % [n, msg]
+	_combo_msg_t = 1.8
+	_combo_pop = 1.6
+
+
+func combo_end(n: int) -> void:
+	_combo_fade = minf(_combo_fade, 0.99)              # 천천히 사라짐 (아래 _combo_tick)
+	if n >= 15:
+		_combo_msg.text = "최고 %d 콤보" % n
+		_combo_msg_t = 1.4
+
+
+func _combo_tick(dt: float) -> void:
+	if combo_box == null:
+		return
+	_combo_pop = move_toward(_combo_pop, 0.0, dt * 6.0)
+	var k := 1.0 + 0.35 * _combo_pop * _combo_pop
+	combo_box.scale = Vector2(roundf(k * 4.0) / 4.0, roundf(k * 4.0) / 4.0)
+	var live := player != null and is_instance_valid(player) and player.combo >= 3
+	if live:
+		_combo_fade = 1.0
+		_combo_bar.size.x = roundf((WIDGETS["combo"]["rect"].size.x - 20) * clampf(player.combo_t / Player.COMBO_KEEP, 0.0, 1.0))
+	else:
+		_combo_fade = move_toward(_combo_fade, 0.0, dt * 1.6)
+	_combo_msg_t -= dt
+	_combo_msg.visible = _combo_msg_t > 0.0
+	combo_box.modulate.a = maxf(_combo_fade, 1.0 if _combo_msg_t > 0.0 else 0.0)

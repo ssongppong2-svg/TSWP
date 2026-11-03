@@ -9,10 +9,12 @@ extends Fighter
 signal killed(e: Enemy, by: Node)
 
 const ATLAS := "res://assets/sprites/enemies.png"
-const FPS := {"idle": 3.0, "move": 9.0, "attack": 10.0, "hurt": 1.0}
+const FPS := {"idle": 5.0, "move": 11.0, "attack": 10.0, "hurt": 8.0, "die": 11.0}
+const COUNTS := {"idle": 4, "move": 6, "attack": 3, "hurt": 2, "die": 4}
 
 var kind := "acorn"
-var sk := "acorn"                  # 그림·소리 이름 (특수 적은 기본 적 그림을 색만 바꿔 쓴다)
+var sk := "acorn"                  # 소리·파편 색 이름 (특수 적은 기본 적 것을 쓴다)
+var art := "acorn"                 # 그림 이름 (특수 적도 자기 그림 — 없으면 기본 적 그림 + 색)
 var elite := false                 # 엘리트: 크고 질기고 일부 상태이상 면역 · 좋은 것을 떨어뜨린다
 var viewer := ""                   # 방송: 이 적에 붙은 시청자 이름
 var E: Dictionary
@@ -52,6 +54,7 @@ func _ready() -> void:
 	team = 1
 	E = (DB.ENEMIES[kind] as Dictionary).duplicate()
 	sk = String(E.get("sprite", kind))
+	art = kind if (BB.atlas(ATLAS)["rects"] as Dictionary).has("%s_idle0" % kind) else sk
 	var lv := Diff.level()
 	E["dmg"] = float(E["dmg"]) * Diff.DMG[lv]
 	base_max_hp = float(E["hp"]) * Diff.HP[lv]
@@ -75,16 +78,16 @@ func _ready() -> void:
 	cs.shape = sph
 	cs.position.y = 0.3
 	add_child(cs)
-	mesh = BB.make(ATLAS, "%s_idle0" % sk, {"unique": true, "up_normal": 0.7, "shade_k": 0.6})
+	mesh = BB.make(ATLAS, "%s_idle0" % art, {"unique": true, "up_normal": 0.7, "shade_k": 0.6})
 	spr_mat = mesh.material_override
 	add_child(mesh)
-	if E.has("tint"):
+	if E.has("tint") and art == sk:
 		spr_mat.set_shader_parameter("tint", E["tint"])
 	if elite or Diff.meme("tiny_foes"):
 		var sc := 1.32 if elite else 0.7
 		mesh.scale = Vector3(sc, sc, 1)
 		body_h *= sc
-	if elite or E.has("tint") or viewer != "":
+	if elite or viewer != "" or (E.has("tint") and art == sk):    # 특수 적은 이제 자기 그림이 있어서 이름표 없이도 알아본다
 		var nl := Label3D.new()
 		nl.text = viewer if viewer != "" else ("엘리트 " + String(E["name"]) if elite else String(E["name"]))
 		nl.font = PixelFont.get_font("small")
@@ -111,6 +114,11 @@ func _ready() -> void:
 func _physics_process(dt: float) -> void:
 	tick_status(dt)
 	if dead:
+		# 쓰러지면서도 맞은 쪽으로 미끄러진다 (손맛)
+		if kv.length() > 0.2 or not is_on_floor():
+			velocity = Vector3(kv.x, velocity.y - 22.0 * dt + maxf(0.0, kv.y), kv.z)
+			kv = Vector3(kv.x, 0.0, kv.z).move_toward(Vector3.ZERO, 26.0 * dt)
+			move_and_slide()
 		return
 	if held:
 		_set_anim("attack", 0)
@@ -387,12 +395,11 @@ func _anim_tick(dt: float) -> void:
 		bone_sx.target = 1.0
 	spr_mat.set_shader_parameter("squash", Vector2(bone_sx.step(dt), bone_sy.step(dt)))
 	spr_mat.set_shader_parameter("skew", bone_lean.step(dt))
-	var counts := {"idle": 2, "move": 4, "attack": 3, "hurt": 1}
 	var a := "hurt" if flash > 0.06 or disabled() else anim
-	var i: int = int(anim_t * float(FPS[a])) % int(counts[a])
+	var i: int = int(anim_t * float(FPS[a])) % int(COUNTS[a])
 	if a == "attack":
 		i = int({"windup": 0, "strike": 1, "recover": 2}.get(state, 0))
-	spr_mat.set_shader_parameter("region", BB.region_uv(ATLAS, "%s_%s%d" % [sk, a, i]))
+	spr_mat.set_shader_parameter("region", BB.region_uv(ATLAS, "%s_%s%d" % [art, a, i]))
 	spr_mat.set_shader_parameter("flip", 1.0 if flip else 0.0)
 
 
@@ -402,6 +409,21 @@ func _on_hurt(h: Hit, amt: float) -> void:
 		var scr_r := Vector3(1, 0, 0).rotated(Vector3.UP, rig.yaw if rig else 0.0)
 		bone_lean.kick(signf(h.knock.dot(scr_r) + 0.001) * 3.5)
 		Particles.burst(get_parent(), center(), Color("#fff4d0"), Color("#c88a4a"), 8, 3.5)
+		# 맞은 자리 터짐: 때린 쪽을 향한 몸 가장자리 (치명타는 크고 노랗게 + 멈춤 + 흔들림)
+		var hp_at := center()
+		if h.source is Node3D and is_instance_valid(h.source):
+			var to := (h.source as Node3D).global_position - global_position
+			to.y = 0.0
+			if to.length() > 0.01:
+				hp_at += to.normalized() * body_r * 0.8
+		if h.crit:
+			Fx.pop(get_parent(), hp_at, ["crit0", "crit1", "crit2", "crit3"], 22.0)
+			Combat.hitstop(get_tree(), 0.06)
+			if rig:
+				rig.shake(1.6)
+			Audio.play("crit", global_position)
+		elif not (h.kind in DOT_KINDS):
+			Fx.pop(get_parent(), hp_at, ["hit0", "hit1", "hit2", "hit3"], 24.0)
 		bone_sy.kick(-7.0)
 		bone_sx.kick(6.0)
 		# 맞으면 예고 중이던 공격이 끊긴다 (때리는 맛)
@@ -421,9 +443,22 @@ func _die() -> void:
 	if String(E["role"]) == "bomber":
 		_explode()
 	Particles.burst(get_parent(), center(), cc[0], cc[1], 22, 5.0)
+	Fx.pop(get_parent(), center(), ["kpop0", "kpop1", "kpop2", "kpop3"], 16.0)
+	if last_hit_by is Player:
+		Combat.hitstop(get_tree(), 0.05 if not elite else 0.12)
+		if rig:
+			rig.shake(1.2 if not elite else 3.0)
 	Fx.pop(get_parent(), global_position, ["dust0", "dust1", "dust2", "dust3"], 12.0)
 	Fx.pop(get_parent(), global_position + Vector3(0, 0.3, 0), ["spark0", "spark1", "spark2"], 12.0)
 	collision_layer = 0
+	# 쓰러지는 그림 4장 → 잠깐 누워 있다가 사라짐
+	var sc := mesh.scale
 	var tw := create_tween()
-	tw.tween_property(mesh, "scale", Vector3(1.4, 0.0, 1.0), 0.22)
+	tw.tween_property(mesh, "scale", Vector3(sc.x * 1.25, sc.y * 0.8, 1.0), 0.06)
+	tw.tween_property(mesh, "scale", sc, 0.1)
+	for k in 4:
+		tw.tween_callback(func(): spr_mat.set_shader_parameter("region", BB.region_uv(ATLAS, "%s_die%d" % [art, k])))
+		tw.tween_interval(0.09)
+	tw.tween_interval(0.5)
+	tw.tween_property(mesh, "transparency", 1.0, 0.35)
 	tw.tween_callback(queue_free)

@@ -144,6 +144,7 @@ func side() -> bool:
 # ------------------------------------------------------------------ 매 프레임
 func _physics_process(dt: float) -> void:
 	tick_status(dt)
+	_combo_tick(dt)
 	if dead:
 		_dead_tick(dt)
 		return
@@ -713,6 +714,8 @@ func _items_tick(dt: float) -> void:
 func on_dealt(target: Fighter, amt: float, h: Hit, friendly: bool) -> void:
 	if not friendly and target.team != team:
 		ult = minf(DB.ULT_MAX, ult + amt * DB.ULT_PER_DMG * stat("ult"))
+		if not (h.kind in DOT_KINDS):
+			_combo_add()
 	if inv == null or h.kind in ["chain", "burn", "thorns", "item"]:
 		return
 	var atk := stat("attack")
@@ -753,10 +756,65 @@ func _chain_lightning(from: Fighter, dmg: float) -> void:
 
 
 ## 내가 적을 쓰러뜨림 (Party 가 부른다)
+# ------------------------------------------------------------------ 콤보 (연속으로 때리면 쌓이고 2.4초 쉬면 끊긴다)
+##  10: 궁극기 +10% · 20: 불붙음(공격 속도 +25% 5초) · 30부터 10마다: 금화 2 · 50: 체력 20% 회복
+var combo := 0
+var combo_t := 0.0
+const COMBO_KEEP := 2.4
+
+
+func _combo_add() -> void:
+	combo += 1
+	combo_t = COMBO_KEEP + (1.5 if inv and inv.fx("combo_keep") > 0 else 0.0)
+	if inv and inv.fx("combo_keep") > 0 and combo % 10 == 0:
+		set_mod("combo_band", {"attack": 0.03 * float(combo / 10)})
+	if local:
+		get_tree().call_group("hud", "combo_show", combo)
+	if combo % 10 != 0:
+		return
+	var msg := ""
+	if combo == 10:
+		ult = minf(DB.ULT_MAX, ult + DB.ULT_MAX * 0.1)
+		msg = "궁극기 +10%"
+	elif combo == 20:
+		set_timed_mod("combo_fire", {"atk_rate": 0.25}, 5.0)
+		msg = "불붙음! 공격 속도 ↑"
+	elif combo == 50:
+		var hh := Hit.make(max_hp() * 0.2, self, Vector3.ZERO, "item")
+		hh.heal = true
+		take(hh)
+		msg = "체력 회복!"
+	else:
+		collect_gold(2)
+		msg = "금화 +2"
+	if local:
+		Audio.play_pitched("combo", 1.0 + minf(combo, 60) / 60.0)
+		get_tree().call_group("hud", "combo_reward", combo, msg)
+	Fx.pop(get_parent(), center() + Vector3(0, 0.8, 0), ["spark0", "spark1", "spark2"], 14.0)
+
+
+func _combo_tick(dt: float) -> void:
+	if combo == 0:
+		return
+	combo_t -= dt
+	if combo_t <= 0.0 or dead:
+		if local:
+			get_tree().call_group("hud", "combo_end", combo)
+		if mods.has("combo_band"):
+			set_mod("combo_band", {})
+			if combo >= 3 and not dead:
+				set_timed_mod("combo_break", {"speed": -0.3}, 1.5)
+		combo = 0
+
+
 func on_kill(_e: Node) -> void:
 	ult = minf(DB.ULT_MAX, ult + DB.ULT_PER_KILL * stat("ult"))
 	if inv == null:
 		return
+	# 암살자의 단검: 치명타로 마무리하면 잠깐 숨는다
+	if inv.fx("crit_hide") > 0 and _e is Fighter and (_e as Fighter).last_crit:
+		hidden_t = maxf(hidden_t, 1.0)
+		Fx.pop(get_parent(), center(), ["dust0", "dust1", "dust2", "dust3"], 14.0)
 	var vamp := inv.fx("kill_heal")
 	if vamp > 0 and not dead:
 		var h := Hit.make(5.0 * vamp, self, Vector3.ZERO, "item")

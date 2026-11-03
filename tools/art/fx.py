@@ -9,37 +9,116 @@ DUST = ["#c8b890", "#e0d4b0", "#f4ecd4"]
 SPARK = ["#ffffff", "#fff0a0", "#ffb040"]
 
 
-def slash(i, W=40, H=40):
-    """오른쪽을 향한 초승달 궤적 (땅에 눕혀 조준 방향으로 돌린다). i: 0 시작 … 3 사라짐"""
+def slash(i, W=44, H=44):
+    """오른쪽을 향한 굵은 초승달 궤적 (땅에 눕혀 조준 방향으로 돌린다). i: 0 시작 … 3 사라짐
+    흰 심 → 노란 띠 → 주황 꼬리. 앞쪽 끝이 두껍고 뒤로 갈수록 가늘어진다 (휘두른 방향이 읽히게)"""
     a = canvas(W, H)
     xs, ys = grid(W, H)
-    cx, cy = W * 0.3, H / 2
-    r_out = 17.0
-    thick = [5.5, 6.5, 4.0, 2.0][i]
-    sweep = [0.55, 1.0, 1.0, 1.0][i]
+    cx, cy = W * 0.28, H / 2
+    r_out = 19.0
+    thick = [6.0, 8.0, 5.0, 2.5][i]
     ang = np.arctan2(ys + 0.5 - cy, xs + 0.5 - cx)
     rr = np.sqrt((xs + 0.5 - cx) ** 2 + (ys + 0.5 - cy) ** 2)
-    lo = -1.25 * sweep
-    hi = 1.25 * sweep if i < 2 else 1.25
-    if i >= 2:
-        lo = -1.25 + (i - 1) * 0.6
-    within = (ang > lo) & (ang < hi)
-    # 가운데가 가장 두껍고 끝으로 갈수록 가늘게
-    u = np.clip(1 - np.abs(ang) / 1.25, 0, 1)
-    band = (rr < r_out) & (rr > r_out - thick * (0.35 + 0.65 * u))
+    head = [-0.2, 1.25, 1.35, 1.35][i]                 # 칼끝 (위 → 아래로 휘두름: 각이 커짐)
+    tail = [-1.3, -1.25, -0.35, 0.55][i]
+    within = (ang > tail) & (ang < head)
+    u = np.clip((ang - tail) / max(head - tail, 0.01), 0, 1)       # 0 꼬리 … 1 칼끝
+    w = thick * (0.25 + 0.75 * u ** 0.7)
+    band = (rr < r_out) & (rr > r_out - w)
     m = within & band
-    t = (rr - (r_out - thick)) / max(thick, 0.1)
-    ramp(a, m, SLASH[::-1], np.clip(t + 0.15 - i * 0.12, 0, 1), 0.3)
+    t = (rr - (r_out - w)) / np.maximum(w, 0.1)                     # 0 안쪽 … 1 바깥 가장자리
+    cols = ["#c8642a", "#f0a040", "#ffe08a", "#fffbe8"]
+    k = np.clip((t * 0.7 + u * 0.5 - i * 0.15) * 4, 0, 3.999).astype(int)
+    pal = np.array([hx(c) for c in cols], np.uint8)
+    a[m] = pal[k[m]]
+    if i == 1:                                          # 칼끝 반짝
+        tx, ty = cx + math.cos(head) * (r_out - 2), cy + math.sin(head) * (r_out - 2)
+        for d in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1), (2, 0), (-2, 0), (0, 2), (0, -2)):
+            x, y = int(tx + d[0]), int(ty + d[1])
+            if 0 <= x < W and 0 <= y < H:
+                a[y, x] = hx("#ffffff")
     return a
 
 
-def dust(i, W=14, H=10):
+def hit(i, big=False):
+    """맞음 터짐 4프레임: 흰 섬광 → 사방 빛줄기 → 고리 → 부스러기 (치명타는 크고 노랗다)"""
+    S = 32 if big else 22
+    a = canvas(S, S)
+    xs, ys = grid(S, S)
+    c = S / 2
+    d = np.sqrt((xs + 0.5 - c) ** 2 + (ys + 0.5 - c) ** 2)
+    ang = np.arctan2(ys + 0.5 - c, xs + 0.5 - c)
+    core_c = "#fff4a0" if big else "#ffffff"
+    mid_c = "#ffc030" if big else "#ffe9a8"
+    edge_c = "#ff7a20" if big else "#f0a050"
+    sc = S / 22
+    if i == 0:
+        paint(a, d < 5.5 * sc, mid_c)
+        paint(a, d < 3.8 * sc, core_c)
+    if i in (0, 1):
+        n = 8
+        rays = np.abs(((ang / (2 * math.pi) * n) % 1) - 0.5) > (0.40 if i == 0 else 0.44)
+        L = (9 if i == 0 else 10.5) * sc
+        paint(a, rays & (d < L) & (d > 2 * sc), mid_c)
+        paint(a, rays & (d < L * 0.6) & (d > 2 * sc), core_c)
+        long = np.abs(((ang / (2 * math.pi) * 4 + 0.125) % 1) - 0.5) > 0.47
+        paint(a, long & (d < L * 1.05) & (d >= L * 0.6), edge_c)
+    if i == 1:
+        paint(a, d < 3 * sc, core_c)
+    if i == 2:
+        paint(a, (d < 8.5 * sc) & (d > 7.0 * sc), mid_c)
+        R = random.Random(5)
+        for k in range(6):
+            t = R.uniform(0, 2 * math.pi)
+            r = R.uniform(4, 7) * sc
+            x, y = int(c + math.cos(t) * r), int(c + math.sin(t) * r)
+            a[y, x] = hx(core_c)
+    if i == 3:
+        paint(a, (d < 10 * sc) & (d > 9.2 * sc) & ((xs.astype(int) + ys.astype(int)) % 2 == 0), edge_c)
+        R = random.Random(8)
+        for k in range(5):
+            t = R.uniform(0, 2 * math.pi)
+            r = R.uniform(7, 10) * sc
+            x, y = int(c + math.cos(t) * r), int(c + math.sin(t) * r)
+            if 0 <= x < S and 0 <= y < S:
+                a[y, x] = hx(mid_c)
+    return a
+
+
+def kill_pop(i, S=36):
+    """처치 순간: 커지는 별 고리 + 흩어지는 별 (4프레임)"""
+    a = canvas(S, S)
+    xs, ys = grid(S, S)
+    c = S / 2
+    d = np.sqrt((xs + 0.5 - c) ** 2 + (ys + 0.5 - c) ** 2)
+    r = [4, 9, 13, 16][i]
+    w = [4, 2.5, 1.6, 1.0][i]
+    paint(a, (d < r) & (d > r - w), ["#ffffff", "#fff0a0", "#ffd060", "#ffb040"][i])
+    if i == 0:
+        paint(a, d < 3, "#ffffff")
+    for k in range(6):
+        t = k * math.pi / 3 + 0.3
+        rr = r + 2 + i * 1.5
+        x, y = c + math.cos(t) * rr, c + math.sin(t) * rr
+        if i < 3:
+            for dd in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+                xx, yy = int(x + dd[0]), int(y + dd[1])
+                if 0 <= xx < S and 0 <= yy < S:
+                    a[yy, xx] = hx("#ffffff" if dd == (0, 0) else "#ffe070")
+        else:
+            xx, yy = int(x), int(y)
+            if 0 <= xx < S and 0 <= yy < S:
+                a[yy, xx] = hx("#ffd060")
+    return a
+
+
+def dust(i, W=20, H=14):
     a = canvas(W, H)
     R = random.Random(3)
     for k in range(4):
-        x = W / 2 + R.uniform(-4, 4) * (1 + i * 0.25)
-        y = H - 3 - R.uniform(0, 2) - i * 0.8
-        r = [2.2, 2.8, 2.4, 1.4][i] * R.uniform(0.8, 1.1)
+        x = W / 2 + R.uniform(-5, 5) * (1 + i * 0.3)
+        y = H - 4 - R.uniform(0, 2) - i * 1.0
+        r = [3.0, 3.8, 3.2, 1.8][i] * R.uniform(0.8, 1.1)
         m = ell(W, H, x, y, r, r * 0.85)
         ramp(a, m, DUST, 0.7 - (grid(W, H)[1] - y) / (r * 2), 0.3)
     return a
@@ -205,6 +284,10 @@ def main():
         items.append((f"dust{i}", dust(i)))
     for i in range(3):
         items.append((f"spark{i}", spark(i)))
+    for i in range(4):
+        items.append((f"hit{i}", hit(i)))
+        items.append((f"crit{i}", hit(i, True)))
+        items.append((f"kpop{i}", kill_pop(i)))
     items.append(("cursor", cursor()))
     items.append(("arrow", arrow()))
     items.append(("syringe", syringe()))

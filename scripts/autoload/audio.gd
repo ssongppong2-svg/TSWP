@@ -50,6 +50,8 @@ const KITS := {
 	# ---- 전투 (플레이어)
 	"swing": {"v": -8.0, "p": 0.08, "n": 6, "cd": 0.02, "r": 420.0},
 	"sword_hit": {"v": -4.0, "p": 0.08, "n": 6, "cd": 0.025, "r": 480.0},
+	"crit": {"v": -3.0, "p": 0.06, "n": 3, "cd": 0.04, "r": 520.0},
+	"combo": {"v": -8.0, "p": 0.0, "n": 2, "ui": true},
 	"smash": {"v": -1.0, "p": 0.04, "n": 3, "r": 520.0, "duck": 4.0, "cap": "강타"},
 	"throw": {"v": -10.0, "p": 0.08, "n": 5, "cd": 0.03, "r": 380.0},
 	"bomb_bounce": {"v": -10.0, "p": 0.15, "n": 6, "cd": 0.04, "r": 420.0},
@@ -405,6 +407,14 @@ func _bus_for(sp: Dictionary, voice := false) -> String:
 
 # ================================================================== 재생
 ## 소리 재생. pos 가 있으면 세계 속 그 자리에서 (입체), 없으면 화면 소리.
+var _force_pitch := 0.0
+## 정해진 높이로 (콤보 단계처럼 올라가는 소리)
+func play_pitched(sfx_name: String, pitch: float, vol_db := 0.0) -> void:
+	_force_pitch = pitch
+	play(sfx_name, null, vol_db)
+	_force_pitch = 0.0
+
+
 func play(sfx_name: String, pos: Variant = null, vol_db: float = 0.0, pitch_var: float = -1.0) -> void:
 	var n: String = ALIAS.get(sfx_name, sfx_name)
 	var kit: Dictionary = KITS.get(n, {})
@@ -417,6 +427,9 @@ func play(sfx_name: String, pos: Variant = null, vol_db: float = 0.0, pitch_var:
 	_last_time[n] = now
 	var pv: float = float(kit.get("p", 0.06)) if pitch_var < 0.0 else pitch_var
 	var pitch := 1.0 + randf_range(-pv, pv)
+	if _force_pitch > 0.0:
+		pitch = _force_pitch
+		_force_pitch = 0.0
 	var v: float = float(kit.get("v", -6.0)) + vol_db
 	var positional: bool = pos != null and not bool(kit.get("ui", false)) and not pool3d.is_empty()
 	var p: Node = null

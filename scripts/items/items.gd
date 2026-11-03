@@ -11,7 +11,7 @@ extends RefCounted
 ## mods: Fighter.set_mod 로 들어가는 능력치 (+0.2 = +20%)
 ##   attack 공격력 · speed 이동 · max_hp 최대 체력 · atk_rate 공격 속도 · cd 스킬 대기시간(-0.25 = 25% 짧게)
 ##   dmg_taken 받는 피해 · knock_taken 받는 넉백 · heal_taken 받는 회복 · gold 금화 · roll 구르기 거리 · iframe 구르기 무적
-##   ult 궁극기 충전 · threat 적이 노리는 정도
+##   ult 궁극기 충전 · threat 적이 노리는 정도 · crit 치명타 확률(+0.1 = +10%p, 기본 8%) · crit_dmg 치명타 배율(기본 1.8배)
 ## fx: 특수 효과 (Inventory / Player 가 처리)
 
 const SLOTS := 5
@@ -35,6 +35,8 @@ const ITEMS := {
 		"mods": {"atk_rate": 0.22, "attack": -0.08}, "desc": "공격 속도 +22%", "risk": "공격력 -8%"},
 	"feather_boots": {"name": "깃털 신발", "type": "armor", "rarity": "common",
 		"mods": {"speed": 0.15, "knock_taken": 0.4}, "desc": "이동 속도 +15%", "risk": "맞으면 40% 더 멀리 날아간다"},
+	"whetstone": {"name": "날카로운 숫돌", "type": "weapon", "rarity": "common",
+		"mods": {"crit": 0.1, "atk_rate": -0.06}, "desc": "치명타 확률 +10%", "risk": "공격 속도 -6%"},
 	"lucky_coin": {"name": "행운의 동전", "type": "accessory", "rarity": "common",
 		"mods": {"gold": 0.5}, "fx": ["coin_drop"], "desc": "금화 +50%", "risk": "맞을 때마다 파티 금화 1개를 흘린다 (아무나 주울 수 있다)"},
 	# ---------------------------------------------------------------- 고급
@@ -48,6 +50,8 @@ const ITEMS := {
 		"fx": ["burn"], "desc": "공격이 3초 동안 불태운다 (초당 3)", "risk": "맞을 때 20% 확률로 나도 불붙는다"},
 	"venom_fang": {"name": "독사의 이빨", "type": "weapon", "rarity": "uncommon",
 		"mods": {"heal_taken": -0.3}, "fx": ["venom"], "desc": "공격에 독 (초당 2.5, 3초)", "risk": "받는 회복 -30%"},
+	"combo_band": {"name": "연타 머리띠", "type": "accessory", "rarity": "uncommon",
+		"fx": ["combo_keep"], "desc": "콤보가 1.5초 더 이어진다 · 10콤보마다 공격력 +3% (콤보가 끊기면 사라짐)", "risk": "콤보가 끊기면 1.5초 느려진다"},
 	"giant_belt": {"name": "거인의 허리띠", "type": "armor", "rarity": "uncommon",
 		"mods": {"max_hp": 0.3, "roll": -0.3}, "desc": "최대 체력 +30%", "risk": "구르기 거리 -30%"},
 	"heart_locket": {"name": "심장 목걸이", "type": "accessory", "rarity": "uncommon",
@@ -63,6 +67,8 @@ const ITEMS := {
 		"mods": {"iframe": 1.4, "attack": -0.1}, "fx": ["roll_stealth"], "desc": "구르기 무적 시간 2.4배 · 구른 뒤 1초 숨기", "risk": "공격력 -10%"},
 	"ult_battery": {"name": "번개 전지", "type": "accessory", "rarity": "rare",
 		"mods": {"ult": 0.6, "cd": 0.15}, "desc": "궁극기 충전 +60%", "risk": "스킬 대기시간 +15%"},
+	"gambler_dice": {"name": "도박꾼의 주사위", "type": "accessory", "rarity": "rare",
+		"mods": {"crit": 0.25, "crit_dmg": 0.3, "attack": -0.15}, "desc": "치명타 확률 +25% · 치명타 피해 +30%", "risk": "공격력 -15% (운이 나쁘면 약하다)"},
 	"prank_glove": {"name": "장난꾸러기 장갑", "type": "weapon", "rarity": "rare",
 		"mods": {"attack": -0.1}, "fx": ["prank"], "desc": "아군을 때리면 피해 대신 크게 날려 보내고 1초 빨라지게 한다", "risk": "적에게 공격력 -10%"},
 	# ---------------------------------------------------------------- 영웅
@@ -70,6 +76,8 @@ const ITEMS := {
 		"mods": {"attack": 1.0, "max_hp": -0.5}, "desc": "공격력 +100%", "risk": "최대 체력 -50%"},
 	"phoenix_feather": {"name": "불사조 깃털", "type": "accessory", "rarity": "epic",
 		"mods": {"max_hp": -0.1}, "fx": ["revive"], "desc": "쓰러지면 그 자리에서 체력 50%로 한 번 되살아난다 (깃털은 타서 없어짐)", "risk": "최대 체력 -10%"},
+	"assassin_dagger": {"name": "암살자의 단검", "type": "weapon", "rarity": "epic",
+		"mods": {"crit": 0.12, "crit_dmg": 1.0, "max_hp": -0.2}, "fx": ["crit_hide"], "desc": "치명타 확률 +12% · 치명타 피해 2배 · 치명타로 쓰러뜨리면 1초 숨는다", "risk": "최대 체력 -20%"},
 	"echo_bell": {"name": "메아리 종", "type": "relic", "rarity": "epic",
 		"mods": {"cd": 0.3}, "fx": ["echo"], "desc": "스킬이 0.7초 뒤 절반 위력으로 한 번 더 나간다", "risk": "스킬 대기시간 +30%"},
 	# ---------------------------------------------------------------- 전설

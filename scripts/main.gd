@@ -15,6 +15,8 @@ extends Node
 ##    --selftest          화면 흐름 자가 시험 (tools/test_flow.gd) · --itemtest 아이템·궁극기 시험 (tools/test_items.gd)
 ##    --autostart=초      타이틀에서 몇 초 뒤 자동 시작 (영상용)
 ##    --give=id,id        (시험) 아이템을 넣고 시작 · --ultfull 궁극기 가득
+##    --zoo               (시험) 적을 종류별로 한 줄로 세움
+##    --diff=0~3          (시험) 난이도 겁쟁이·인간·신·밈
 ##    --menu=ach|credits|controls|keys   (시험) 타이틀에서 그 메뉴를 연다 · --result 는 가짜 기록을 채운다
 
 const MAPS := {"camp": "캠프", "forest": "속삭이는 숲", "nest": "거미 여왕의 둥지"}
@@ -60,6 +62,8 @@ func _ready() -> void:
 		var kv := String(a).trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	Controls.ensure()
+	if args.has("diff"):
+		Prefs.difficulty = clampi(int(args["diff"]), 0, 3)        # 시험: 난이도 (저장 안 함)
 	process_mode = Node.PROCESS_MODE_ALWAYS          # 메뉴·커서는 일시정지 중에도 돈다
 	add_to_group("game")
 	pv = PixelView.new()
@@ -355,6 +359,13 @@ func _process(dt: float) -> void:
 		img.save_png(String(args["shot"]))
 		print("saved ", args["shot"])
 		get_tree().quit()
+	if args.has("zoo") and _frame == 20:                 # 시험: 적을 한 줄로 세워 보기
+		var ks: Array = DB.ENEMIES.keys()
+		for k in ks.size():
+			var at := walker.global_position + Vector3(-6.0 + k * 2.0, 0, -2.5 - (k % 2) * 1.5)
+			at.y = map.terrain.height_at(at) + 0.1
+			var e := Enemy.spawn(map, String(ks[k]), at, map.terrain, rig, args["zoo"] == "elite" and k == 0)
+			e.E["aggro"] = 0.0
 	if args.has("wardrobe") and _frame == 40:
 		open_wardrobe(walker)
 	if args.has("result") and _frame == 40:
@@ -451,7 +462,7 @@ func _bot(dt: float) -> void:
 		var want_job: String = DB.JOB_ORDER[int(_bot_t / 6.0) % DB.JOB_ORDER.size()]
 		if walker.job != want_job:
 			walker.set_job(want_job)
-	elif args["bot"] != "1" and walker.job != args["bot"]:
+	elif args["bot"] != "1" and DB.JOBS.has(args["bot"]) and walker.job != args["bot"]:
 		walker.set_job(String(args["bot"]))
 	var best: Node3D = null
 	var bd := 1e9

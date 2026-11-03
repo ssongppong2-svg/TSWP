@@ -26,7 +26,9 @@ static func pop(at: Fighter, amount: float, kind := "enemy") -> void:
 	n.render_priority = 10
 	n.outline_render_priority = 9
 	n.double_sided = true
-	if amount >= 40.0 and kind != "heal":
+	if kind == "crit":
+		n.text += "!"
+	if (amount >= 40.0 and kind != "heal") or kind == "crit":
 		n.font = PixelFont.get_font("big")
 		n.font_size = PixelFont.size_of("big")
 		n.outline_size = 3

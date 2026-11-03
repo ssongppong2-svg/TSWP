@@ -357,7 +357,56 @@ def curse_doll():
     return fin(a)
 
 
+def whetstone():
+    a = canvas(S, S)
+    stone = poly([(2, 11), (9, 5), (14, 8), (7, 14)])
+    shade(a, stone, ["#4a5060", "#8a92a6", "#c8d0e0"])
+    paint(a, linem([(4, 11), (10, 7)]), "#6a7286")
+    blade = poly([(5, 4), (11, 1), (12, 2), (6, 6)])
+    shade(a, blade, STEEL)
+    for x, y in ((12, 4), (13, 3), (14, 5)):
+        px1(a, [(x, y)], "#ffffff")
+    return fin(a)
+
+
+def gambler_dice():
+    a = canvas(S, S)
+    d1 = rectm(2, 5, 9, 12)
+    shade(a, d1, CREAM)
+    px1(a, [(4, 7), (7, 10), (5, 9)], "#d02a3a")
+    d2 = poly([(8, 3), (13, 2), (15, 7), (10, 9)])
+    shade(a, d2, ["#8a2030", "#d84850", "#ff9a90"])
+    px1(a, [(11, 4), (12, 6)], "#fff8e8")
+    return fin(a)
+
+
+def combo_band():
+    a = canvas(S, S)
+    band = ellm(1, 4, 14, 12) & ~ellm(4, 6, 11, 10)
+    shade(a, band, ORNG)
+    knot = poly([(11, 3), (15, 1), (14, 5)])
+    shade(a, knot, RED)
+    tail = poly([(12, 9), (15, 13), (13, 14)])
+    shade(a, tail, RED)
+    px1(a, [(3, 7), (5, 5)], "#fff0c0")
+    return fin(a)
+
+
+def assassin_dagger():
+    a = canvas(S, S)
+    blade = poly([(3, 12), (12, 2), (14, 3), (5, 14)])
+    shade(a, blade, ["#3a2a50", "#8a6ab8", "#e0d0ff"])
+    paint(a, linem([(5, 12), (12, 4)]), "#c0a8f0")
+    guard = linem([(2, 9), (7, 14)], 2)
+    paint(a, guard, GOLD[1])
+    grip = linem([(1, 14), (3, 12)], 2)
+    paint(a, grip, LEATH[1])
+    px1(a, [(13, 3)], "#ffffff")
+    return fin(a)
+
+
 ICONS = {
+    "whetstone": whetstone, "gambler_dice": gambler_dice, "combo_band": combo_band, "assassin_dagger": assassin_dagger,
     "rusty_sword": rusty_sword, "swift_glove": swift_glove, "berserk_helm": berserk_helm, "turtle_shell": turtle_shell,
     "feather_boots": feather_boots, "vampire_fang": vampire_fang, "thorn_armor": thorn_armor, "lucky_coin": lucky_coin,
     "storm_ring": storm_ring, "flame_charm": flame_charm, "phoenix_feather": phoenix_feather, "shadow_cloak": shadow_cloak,

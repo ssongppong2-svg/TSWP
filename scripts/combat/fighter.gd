@@ -7,7 +7,9 @@ extends CharacterBody3D
 signal died(f: Fighter)
 signal damaged(f: Fighter, hit: Hit, amount: float)
 
+const DOT_KINDS := ["burn", "poison", "chain", "thorns", "bleed", "status"]
 const GRAV := 26.0
+var last_crit := false              # 마지막으로 맞은 것이 치명타였나 (마무리 효과용)
 static var grav_k := 1.0           # 밈 모드 '달 중력' (0.45)
 
 var team := 0                      # 0 플레이어 · 1 적
@@ -114,6 +116,12 @@ func take(h: Hit) -> void:
 			knock = (away.normalized() if away.length() > 0.01 else Vector3(1, 0, 0)) * 14.0 + Vector3(0, 5.0, 0)
 			set_timed_mod("prank", {"speed": 0.5}, 1.0)
 			Audio.play("troll", global_position, -6.0)
+	# 치명타: 플레이어 → 적 (지속 피해·연쇄 번개 제외). 기본 8% + 아이템 (crit)
+	if team == 1 and h.source is Player and not (h.kind in DOT_KINDS):
+		var cc := 0.08 + ((h.source as Player).stat("crit") - 1.0)
+		if randf() < cc:
+			h.crit = true
+			amt *= 1.8 * (h.source as Player).stat("crit_dmg")
 	amt *= stat("dmg_taken")
 	if friendly and h.source is Player and (h.source as Player).local:
 		Achievements.add(get_tree(), "ff_hits")
@@ -122,6 +130,7 @@ func take(h: Hit) -> void:
 		return
 	hp -= amt
 	last_hit_by = h.source
+	last_crit = h.crit
 	flash = 0.12
 	kv += knock
 	if h.poison > 0.0:
@@ -137,7 +146,7 @@ func take(h: Hit) -> void:
 		status.erase("freeze")                      # 빙결: 맞으면 깨진다
 		Audio.play("crystal_ping", global_position, -6.0)
 	if amt > 0.0:
-		DmgNum.pop(self, amt, "ally" if friendly else ("player" if team == 0 else "enemy"))
+		DmgNum.pop(self, amt, "ally" if friendly else ("player" if team == 0 else ("crit" if h.crit else "enemy")))
 	damaged.emit(self, h, amt)
 	_on_hurt(h, amt)
 	# 때린 플레이어에게 알림 (궁극기 충전 · 아이템 효과)
